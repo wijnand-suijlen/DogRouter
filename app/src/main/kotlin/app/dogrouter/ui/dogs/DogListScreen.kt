@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -30,17 +29,17 @@ import org.koin.androidx.compose.koinViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DogListScreen(
+    onAddClick: () -> Unit,
+    onDogClick: (dogId: String) -> Unit,
     viewModel: DogListViewModel = koinViewModel(),
 ) {
     val dogs by viewModel.dogs.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("Dogs") })
-        },
+        topBar = { TopAppBar(title = { Text("Dogs") }) },
         floatingActionButton = {
-            FloatingActionButton(onClick = viewModel::addExampleDog) {
-                Icon(Icons.Default.Add, contentDescription = "Add test dog")
+            FloatingActionButton(onClick = onAddClick) {
+                Icon(Icons.Default.Add, contentDescription = "Add dog")
             }
         },
     ) { innerPadding ->
@@ -51,7 +50,7 @@ fun DogListScreen(
                     .padding(innerPadding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("No dogs yet. Tap + to add a test entry.")
+                Text("No dogs yet. Tap + to add one.")
             }
         } else {
             LazyColumn(
@@ -60,8 +59,7 @@ fun DogListScreen(
                     .padding(innerPadding),
             ) {
                 items(dogs, key = { it.id }) { dog ->
-                    DogRow(dog = dog, onDelete = { viewModel.deleteDog(dog) })
-                    HorizontalDivider()
+                    DogRow(dog = dog, onClick = { onDogClick(dog.id) })
                 }
             }
         }
@@ -71,20 +69,22 @@ fun DogListScreen(
 @Composable
 private fun DogRow(
     dog: Dog,
-    onDelete: () -> Unit,
+    onClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
-        onClick = onDelete,
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        onClick = onClick,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = dog.name, style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "${dog.weightKg} kg · ${dog.ownerName}",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            val subtitle = buildString {
+                dog.breed?.let { append(it).append(" · ") }
+                append("${dog.weightKg} kg")
+            }
+            Text(text = subtitle, style = MaterialTheme.typography.bodySmall)
+            Text(text = dog.ownerName, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

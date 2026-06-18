@@ -2,9 +2,10 @@ package app.dogrouter.di
 
 import androidx.room.Room
 import app.dogrouter.data.db.AppDatabase
+import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
 import org.koin.android.ext.koin.androidContext
-import org.koin.core.module.dsl.viewModel
+import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
 
 val appModule = module {
@@ -18,4 +19,5 @@ val appModule = module {
     single { get<AppDatabase>().dogDao() }
 
     viewModel { DogListViewModel(get()) }
+    viewModel { (dogId: String?) -> DogEditViewModel(get(), dogId) }
 }

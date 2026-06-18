@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "app.dogrouter"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "app.dogrouter"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
 

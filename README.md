@@ -12,7 +12,7 @@ trade-off analysis.
 ## Tech stack
 
 - Kotlin + Jetpack Compose (Material 3)
-- `minSdk=26`, `compileSdk=37`, `targetSdk=37`
+- `minSdk=26`, `compileSdk=35`, `targetSdk=35`
 - Gradle 8.10.2 + AGP 8.7.2 + Kotlin 2.1.0
 - JDK 17 source/target (using the JBR 21 bundled with Android Studio)
 

@@ -56,6 +56,13 @@ data bewerkt.
 - **Backup via export/import.** Handmatig exporteren van de database naar
   een bestand (en terug-importeren) zodat de uitlater na een telefoonwissel
   of -verlies kan herstellen.
+- **Geschiedenis van voltooide dagen.** Elk dagplan dat daadwerkelijk
+  uitgevoerd wordt, laat een blijvend record achter: datum, welke honden
+  mee waren, in welke volgorde, wanneer de uitlater begon en eindigde. Een
+  Geschiedenis-scherm ontsluit dit zodat de uitlater eerdere dagen kan
+  terugzien en wandelingen per hond/klant kan optellen voor *externe*
+  facturatie. Het record is op boekhouding-niveau, geen logboek — zie de
+  buiten-scope-lijst voor wat bewust níet wordt vastgelegd.
 
 ## Buiten scope (v1)
 

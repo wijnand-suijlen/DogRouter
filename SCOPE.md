@@ -49,6 +49,12 @@ edits data.
   results or straight-line distance when offline.
 - **Backup via export/import.** Manual export of the database to a file (and
   re-import) so the walker can recover after a phone change or loss.
+- **Completed-day history.** Each day plan that is actually executed leaves
+  a durable record: date, which dogs went out, in which order, when the
+  walker started and finished. A History screen surfaces this so the
+  walker can review past work and tally walks per dog/client for *external*
+  invoicing. The record is bookkeeping-grade, not journaling — see the
+  out-of-scope list for what is deliberately not captured.
 
 ## Out of scope (v1)
 

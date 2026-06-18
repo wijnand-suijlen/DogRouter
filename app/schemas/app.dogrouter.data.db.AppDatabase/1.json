@@ -1,0 +1,257 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "894b116f93ee9db3ae585c32bb8e032d",
+    "entities": [
+      {
+        "tableName": "dogs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `breed` TEXT, `weightKg` REAL NOT NULL, `photoUri` TEXT, `ownerName` TEXT NOT NULL, `ownerPhone` TEXT, `address` TEXT NOT NULL, `stopNotes` TEXT, `stopAdjustmentMinutes` INTEGER NOT NULL, `inCargoBike` TEXT NOT NULL, `inBackpack` TEXT NOT NULL, `notes` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "breed",
+            "columnName": "breed",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "weightKg",
+            "columnName": "weightKg",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "photoUri",
+            "columnName": "photoUri",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ownerName",
+            "columnName": "ownerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerPhone",
+            "columnName": "ownerPhone",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stopNotes",
+            "columnName": "stopNotes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stopAdjustmentMinutes",
+            "columnName": "stopAdjustmentMinutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inCargoBike",
+            "columnName": "inCargoBike",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inBackpack",
+            "columnName": "inBackpack",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "dog_schedule_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `dogId` TEXT NOT NULL, `weekday` INTEGER NOT NULL, `earliestPickup` TEXT, `latestDropoff` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`dogId`) REFERENCES `dogs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dogId",
+            "columnName": "dogId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "weekday",
+            "columnName": "weekday",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "earliestPickup",
+            "columnName": "earliestPickup",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "latestDropoff",
+            "columnName": "latestDropoff",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dog_schedule_entries_dogId",
+            "unique": false,
+            "columnNames": [
+              "dogId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dog_schedule_entries_dogId` ON `${TABLE_NAME}` (`dogId`)"
+          },
+          {
+            "name": "index_dog_schedule_entries_dogId_weekday",
+            "unique": false,
+            "columnNames": [
+              "dogId",
+              "weekday"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dog_schedule_entries_dogId_weekday` ON `${TABLE_NAME}` (`dogId`, `weekday`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dogs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dogId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "dog_incompatibilities",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`dogIdA` TEXT NOT NULL, `dogIdB` TEXT NOT NULL, PRIMARY KEY(`dogIdA`, `dogIdB`), FOREIGN KEY(`dogIdA`) REFERENCES `dogs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`dogIdB`) REFERENCES `dogs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "dogIdA",
+            "columnName": "dogIdA",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dogIdB",
+            "columnName": "dogIdB",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "dogIdA",
+            "dogIdB"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_dog_incompatibilities_dogIdA",
+            "unique": false,
+            "columnNames": [
+              "dogIdA"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dog_incompatibilities_dogIdA` ON `${TABLE_NAME}` (`dogIdA`)"
+          },
+          {
+            "name": "index_dog_incompatibilities_dogIdB",
+            "unique": false,
+            "columnNames": [
+              "dogIdB"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_dog_incompatibilities_dogIdB` ON `${TABLE_NAME}` (`dogIdB`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "dogs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dogIdA"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "dogs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "dogIdB"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '894b116f93ee9db3ae585c32bb8e032d')"
+    ]
+  }
+}

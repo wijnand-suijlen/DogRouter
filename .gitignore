@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+!gradle-wrapper.jar
+
+# Android
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+output.json
+release/
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+out/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Keystores (never commit signing keys)
+*.jks
+*.keystore
+
+# Claude Code local-only settings
+.claude/settings.local.json

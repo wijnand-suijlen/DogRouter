@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -26,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -57,6 +60,8 @@ import org.koin.core.parameter.parametersOf
 fun DogEditScreen(
     dogId: String?,
     onDone: () -> Unit,
+    onPickOnMap: (lat: Double?, lon: Double?) -> Unit,
+    pickedAddress: AddressSuggestion? = null,
     viewModel: DogEditViewModel = koinViewModel { parametersOf(dogId) },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -71,6 +76,11 @@ fun DogEditScreen(
                 is DogEditEvent.ValidationError -> snackbarHostState.showSnackbar(event.message)
             }
         }
+    }
+
+    // Apply a picked address as soon as the navigation result arrives.
+    LaunchedEffect(pickedAddress) {
+        if (pickedAddress != null) viewModel.pickAddressSuggestion(pickedAddress)
     }
 
     Scaffold(
@@ -112,6 +122,9 @@ fun DogEditScreen(
                 onChange = viewModel::update,
                 onAddressTextChange = viewModel::onAddressTextChange,
                 onAddressPick = viewModel::pickAddressSuggestion,
+                onOpenMapPicker = {
+                    onPickOnMap(state.addressLatitude, state.addressLongitude)
+                },
                 onAddScheduleRule = viewModel::addScheduleRule,
                 onRemoveScheduleRule = viewModel::removeScheduleRule,
                 onToggleWeekday = viewModel::toggleWeekday,
@@ -152,6 +165,7 @@ private fun DogForm(
     onChange: (DogFormState.() -> DogFormState) -> Unit,
     onAddressTextChange: (String) -> Unit,
     onAddressPick: (AddressSuggestion) -> Unit,
+    onOpenMapPicker: () -> Unit,
     onAddScheduleRule: () -> Unit,
     onRemoveScheduleRule: (ruleId: String) -> Unit,
     onToggleWeekday: (ruleId: String, day: java.time.DayOfWeek) -> Unit,
@@ -217,10 +231,21 @@ private fun DogForm(
             onValueChange = onAddressTextChange,
             onPick = onAddressPick,
         )
+        OutlinedButton(
+            onClick = onOpenMapPicker,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Place, contentDescription = null)
+            Text("  Pick on map")
+        }
         val lat = state.addressLatitude
         val lon = state.addressLongitude
         if (lat != null && lon != null) {
-            AddressMapPreview(latitude = lat, longitude = lon)
+            AddressMapPreview(
+                latitude = lat,
+                longitude = lon,
+                modifier = Modifier.clickable(onClick = onOpenMapPicker),
+            )
         }
         OutlinedTextField(
             value = state.stopNotes,

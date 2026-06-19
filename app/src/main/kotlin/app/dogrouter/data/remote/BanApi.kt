@@ -44,6 +44,30 @@ class BanApi(
         }
     }
 
+    /**
+     * Reverse-geocode a coordinate to the closest known address.
+     * Returns null if BAN has nothing nearby or the call fails.
+     */
+    suspend fun reverse(latitude: Double, longitude: Double): AddressSuggestion? {
+        return withContext(Dispatchers.IO) {
+            val url = "https://api-adresse.data.gouv.fr/reverse/".toHttpUrl().newBuilder()
+                .addQueryParameter("lat", latitude.toString())
+                .addQueryParameter("lon", longitude.toString())
+                .addQueryParameter("limit", "1")
+                .build()
+
+            val request = Request.Builder().url(url).get().build()
+            runCatching {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body?.string() ?: return@use null
+                    val parsed = json.decodeFromString<BanResponse>(body)
+                    parsed.features.firstNotNullOfOrNull { it.toSuggestion() }
+                }
+            }.getOrNull()
+        }
+    }
+
     private companion object {
         // Meudon centre — proximity bias for autocomplete results.
         const val BIAS_LAT = 48.81

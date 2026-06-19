@@ -4,6 +4,7 @@ import androidx.room.Room
 import app.dogrouter.data.db.ALL_MIGRATIONS
 import app.dogrouter.data.db.AppDatabase
 import app.dogrouter.data.remote.BanApi
+import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
 import kotlinx.serialization.json.Json
@@ -42,4 +43,5 @@ val appModule = module {
 
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), dogId) }
+    viewModel { AddressPickerViewModel(get()) }
 }

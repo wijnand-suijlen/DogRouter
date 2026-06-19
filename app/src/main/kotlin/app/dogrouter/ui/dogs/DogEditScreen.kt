@@ -102,6 +102,12 @@ fun DogEditScreen(
             DogForm(
                 state = state,
                 onChange = viewModel::update,
+                onAddScheduleRule = viewModel::addScheduleRule,
+                onRemoveScheduleRule = viewModel::removeScheduleRule,
+                onToggleWeekday = viewModel::toggleWeekday,
+                onEarliestStartChange = viewModel::setEarliestStart,
+                onLatestEndChange = viewModel::setLatestEnd,
+                onDurationChange = viewModel::setDurationMinutes,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -133,6 +139,12 @@ fun DogEditScreen(
 private fun DogForm(
     state: DogFormState,
     onChange: (DogFormState.() -> DogFormState) -> Unit,
+    onAddScheduleRule: () -> Unit,
+    onRemoveScheduleRule: (ruleId: String) -> Unit,
+    onToggleWeekday: (ruleId: String, day: java.time.DayOfWeek) -> Unit,
+    onEarliestStartChange: (ruleId: String, time: java.time.LocalTime?) -> Unit,
+    onLatestEndChange: (ruleId: String, time: java.time.LocalTime?) -> Unit,
+    onDurationChange: (ruleId: String, minutes: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -217,6 +229,18 @@ private fun DogForm(
         TransportStateChooser(
             value = state.inBackpack,
             onChange = { v -> onChange { copy(inBackpack = v) } },
+        )
+
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Schedule")
+        ScheduleEditor(
+            rules = state.scheduleRules,
+            onAddRule = onAddScheduleRule,
+            onRemoveRule = onRemoveScheduleRule,
+            onToggleWeekday = onToggleWeekday,
+            onEarliestStartChange = onEarliestStartChange,
+            onLatestEndChange = onLatestEndChange,
+            onDurationChange = onDurationChange,
         )
 
         Spacer(Modifier.height(8.dp))

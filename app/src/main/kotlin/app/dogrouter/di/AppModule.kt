@@ -1,6 +1,7 @@
 package app.dogrouter.di
 
 import androidx.room.Room
+import app.dogrouter.data.db.ALL_MIGRATIONS
 import app.dogrouter.data.db.AppDatabase
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
@@ -14,10 +15,13 @@ val appModule = module {
             androidContext(),
             AppDatabase::class.java,
             "dogrouter.db",
-        ).build()
+        )
+            .addMigrations(*ALL_MIGRATIONS)
+            .build()
     }
     single { get<AppDatabase>().dogDao() }
+    single { get<AppDatabase>().dogScheduleDao() }
 
     viewModel { DogListViewModel(get()) }
-    viewModel { (dogId: String?) -> DogEditViewModel(get(), dogId) }
+    viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), dogId) }
 }

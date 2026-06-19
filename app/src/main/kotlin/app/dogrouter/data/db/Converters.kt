@@ -2,7 +2,6 @@ package app.dogrouter.data.db
 
 import androidx.room.TypeConverter
 import app.dogrouter.data.entity.TransportState
-import java.time.DayOfWeek
 import java.time.LocalTime
 
 class Converters {
@@ -11,12 +10,6 @@ class Converters {
 
     @TypeConverter
     fun toLocalTime(value: String?): LocalTime? = value?.let(LocalTime::parse)
-
-    @TypeConverter
-    fun fromDayOfWeek(value: DayOfWeek?): Int? = value?.value
-
-    @TypeConverter
-    fun toDayOfWeek(value: Int?): DayOfWeek? = value?.let(DayOfWeek::of)
 
     @TypeConverter
     fun fromTransportState(value: TransportState?): String? = value?.name

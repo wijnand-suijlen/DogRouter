@@ -1,12 +1,18 @@
 package app.dogrouter.di
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStoreFile
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import app.dogrouter.data.db.ALL_MIGRATIONS
 import app.dogrouter.data.db.AppDatabase
+import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.BanApi
 import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
+import app.dogrouter.ui.settings.SettingsViewModel
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
@@ -27,6 +33,13 @@ val appModule = module {
     single { get<AppDatabase>().dogDao() }
     single { get<AppDatabase>().dogScheduleDao() }
 
+    single<DataStore<Preferences>> {
+        PreferenceDataStoreFactory.create(
+            produceFile = { androidContext().preferencesDataStoreFile("settings") },
+        )
+    }
+    single { SettingsRepository(get()) }
+
     single {
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -44,4 +57,5 @@ val appModule = module {
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
+    viewModel { SettingsViewModel(get()) }
 }

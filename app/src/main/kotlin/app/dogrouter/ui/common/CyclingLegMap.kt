@@ -25,10 +25,11 @@ import org.koin.compose.koinInject
 private val DEFAULT_LEG_MAP_HEIGHT = 150.dp
 
 /**
- * Inline cycling-leg mini-map: loads the route geometry between [from] and
- * [to] (cached), draws a static map, and opens the full-screen interactive
- * view via [onOpenFullscreen] when tapped. Shows a placeholder while the
- * geometry is being computed.
+ * Inline cycling-leg preview: loads the route geometry between [from] and
+ * [to] (cached) and draws a lightweight route-shape sketch — no map tiles,
+ * so a list of these stays cheap. Tapping opens the full-screen
+ * interactive street map via [onOpenFullscreen]. Shows a placeholder while
+ * the geometry is being computed.
  */
 @Composable
 fun CyclingLegMap(
@@ -46,31 +47,16 @@ fun CyclingLegMap(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .clip(MaterialTheme.shapes.medium),
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { onOpenFullscreen(from, to) },
+        contentAlignment = Alignment.Center,
     ) {
         val current = track
         if (current == null) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(strokeWidth = 2.dp)
-            }
+            CircularProgressIndicator(strokeWidth = 2.dp)
         } else {
-            RouteLegMap(
-                track = current,
-                interactive = false,
-                modifier = Modifier.matchParentSize(),
-            )
-            // Transparent layer on top so a tap opens the full-screen map
-            // instead of being swallowed by the embedded MapView.
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable { onOpenFullscreen(from, to) },
-            )
+            RoutePreview(track = current, modifier = Modifier.fillMaxWidth().height(height))
         }
     }
 }

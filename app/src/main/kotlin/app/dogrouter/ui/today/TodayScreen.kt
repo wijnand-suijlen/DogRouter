@@ -262,7 +262,7 @@ private fun LegRow(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "↓ ${formatDuration(leg.seconds)} cycling · tap map to enlarge",
+            text = "↓ ${formatDuration(leg.seconds)} cycling · tap to open map",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

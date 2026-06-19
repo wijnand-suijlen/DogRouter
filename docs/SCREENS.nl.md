@@ -49,8 +49,9 @@ verwijderd, dus de onderste balk heeft nu vier tabs.
 - Per stop: hondnaam, adres, verwachte aankomsttijd, eventuele
   eigenaardigheden ("aanbellen, ~3 min wachten"), planner-schatting van de
   duur.
-- Elk fietsbeen tussen stops toont een mini-kaartje van de route; tik erop
-  voor een volledig-scherm kaart die je kunt zoomen en verschuiven.
+- Elk fietsbeen tussen stops toont een lichtgewicht route-vormpreview
+  (zonder kaarttegels); tik erop voor een volledig-scherm straatkaart die
+  je kunt zoomen en verschuiven.
 - Inline acties *(gepland, niet gebouwd)*: stops herordenen, een hond naar
   een andere rit verplaatsen, geschatte duur van een leg overschrijven, een
   stop overslaan, een tijdelijke obstructie toevoegen ("X-straat vandaag
@@ -65,8 +66,8 @@ verwijderd, dus de onderste balk heeft nu vier tabs.
   een uitgelichte notitie. Hondfoto wordt nog niet getoond (geen
   image-loader in het project).
 - Wanneer je de stop fietsend bereikt vanaf de vorige, toont een
-  mini-kaartje de fietsroute van dat been (BRouter-geometrie op osmdroid);
-  tik erop voor een volledig-scherm kaart die je kunt zoomen en verschuiven.
+  lichtgewicht route-vormpreview dat been; tik erop voor een
+  volledig-scherm straatkaart die je kunt zoomen en verschuiven.
 - Volgende 1–2 stops kleiner eronder.
 - Eén tik op de grote "Done — next stop"-knop gaat verder; "Back"
   corrigeert een misklik. Een voortgangsbalk en "Stop n of N" tonen de

@@ -234,7 +234,7 @@ private fun CurrentStop(
             if (legFrom != null) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Cycling route here · tap to enlarge",
+                    text = "Cycling route here · tap to open map",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

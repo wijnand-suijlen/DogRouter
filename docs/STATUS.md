@@ -20,8 +20,8 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   controls. Summary card with on-the-clock + cycling + walking totals.
   Red conflict panel if any walks are unschedulable. "Start trip" FAB
   (shown when the day has events) hands off to Follow plan. Each cycling
-  leg row shows a `CyclingLegMap` mini-map of that leg; tapping it opens
-  the full-screen interactive map.
+  leg row shows a `CyclingLegMap` route preview of that leg; tapping it
+  opens the full-screen interactive map.
 - **Follow plan**: full-screen on-the-bike execution of one day's plan.
   Current stop dominates (big ETA, title, address, owner phone, quirks
   highlighted), next two stops listed below, large "Done — next stop" /
@@ -29,14 +29,17 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   "Stop n of N", and a "Trip complete" end state. Hides the bottom bar.
   The plan comes from the shared `DayPlanService`, the same pipeline
   Today uses. When a stop is reached by cycling from the previous one,
-  the card shows a `CyclingLegMap` mini-map of the BRouter cycling route
-  for that leg; tapping it opens the full-screen interactive map.
-- **Leg maps**: `RouteLegMap` (osmdroid) draws one cycling leg as a
-  polyline with an endpoint marker each end. `CyclingLegMap` loads the
-  geometry (cached via `LegGeometryCache`), shows a static tappable
-  mini-map, and a full-screen `LegMapScreen` route gives pinch-zoom and
-  pan. Used by both Today and Follow plan; falls back to a straight line
-  if BRouter cannot trace the leg.
+  the card shows a `CyclingLegMap` route preview of the BRouter cycling
+  route; tapping it opens the full-screen interactive map.
+- **Leg maps**: inline previews are tile-free. `CyclingLegMap` loads the
+  leg geometry (cached via `LegGeometryCache`) and draws it with
+  `RoutePreview` — a plain Compose `Canvas` that sketches the route shape,
+  no map tiles, no MapView. Tapping opens `LegMapScreen`, a full-screen
+  osmdroid map (`RouteLegMap`) with pinch-zoom and pan — one MapView at a
+  time. Used by both Today and Follow plan; falls back to a straight line
+  if BRouter cannot trace the leg. **Why tile-free inline:** many
+  simultaneous osmdroid MapViews in the Today list caused memory/ANR
+  pressure when switching between Today and Follow plan a lot.
 - **BRouter** running embedded on-device via `org.btools:brouter-core`
   from GitHub Packages. Profile `bakfiets.brf` shipped in assets,
   derived from trekking.brf. Lookups.dat also shipped.
@@ -76,7 +79,8 @@ domain/
             LegGeometryCache (memoises route geometry per leg)
 ui/
   common/  AddressAutocompleteField, AddressMapPreview,
-           RouteLegMap, CyclingLegMap, LegMapScreen
+           RoutePreview (tile-free inline sketch), CyclingLegMap,
+           RouteLegMap + LegMapScreen (full-screen osmdroid map)
   dogs/    DogListScreen + ViewModel, DogEditScreen + ViewModel,
            ScheduleEditor, ScheduleRuleDraft
   today/   TodayScreen, TodayViewModel
@@ -108,9 +112,14 @@ ui/
    15 min". For now Mode B always extends the walk to the max
    duration; with `allowLongerWalk=true` (default) that is acceptable.
 
-4. **Cost matrix not cached across dates**. Switching days rebuilds the
-   matrix with fresh BRouter calls. For ≤5 dogs about 10 calls = a few
-   seconds. Becomes annoying as dog count grows.
+4. **Plan not cached; recomputed per subscription**. `DayPlanService`
+   rebuilds the whole PDPTW plan (and its ~N² BRouter matrix) every time
+   a screen subscribes — switching days, and notably each time Follow
+   plan is opened (its own ViewModel re-subscribes). Heavy with more
+   dogs and the main reason rapid Today⇄Follow-plan switching does a lot
+   of background work. Worth caching the plan per (date + inputs). This
+   is background work (IO), not the ANR fixed by the tile-free previews,
+   but it adds memory/GC churn.
 
 5. **dayStart / dayEnd are hardcoded 08:00–20:00** in the
    `DayPlanner` constructor. Belongs in Settings eventually.

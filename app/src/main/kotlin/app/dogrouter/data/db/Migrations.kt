@@ -39,4 +39,15 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
+/**
+ * Add nullable `latitude` and `longitude` to dogs so addresses chosen via
+ * the BAN autocomplete carry their coordinates.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `dogs` ADD COLUMN `latitude` REAL")
+        db.execSQL("ALTER TABLE `dogs` ADD COLUMN `longitude` REAL")
+    }
+}
+
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)

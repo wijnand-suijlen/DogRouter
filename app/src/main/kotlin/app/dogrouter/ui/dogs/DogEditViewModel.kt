@@ -6,11 +6,20 @@ import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogScheduleDao
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.TransportState
+import app.dogrouter.data.remote.AddressSuggestion
+import app.dogrouter.data.remote.BanApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -25,6 +34,8 @@ data class DogFormState(
     val ownerName: String = "",
     val ownerPhone: String = "",
     val address: String = "",
+    val addressLatitude: Double? = null,
+    val addressLongitude: Double? = null,
     val stopNotes: String = "",
     val stopAdjustmentMinutes: String = "0",
     val inCargoBike: TransportState = TransportState.NotTested,
@@ -39,9 +50,11 @@ sealed interface DogEditEvent {
     data class ValidationError(val message: String) : DogEditEvent
 }
 
+@OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class DogEditViewModel(
     private val dogDao: DogDao,
     private val dogScheduleDao: DogScheduleDao,
+    private val banApi: BanApi,
     private val dogId: String?,
 ) : ViewModel() {
 
@@ -52,6 +65,20 @@ class DogEditViewModel(
 
     private val _events = Channel<DogEditEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
+
+    private val _addressQuery = MutableStateFlow("")
+
+    /**
+     * Live BAN-API autocomplete results for the current address text.
+     * Empty whenever the query is shorter than 3 characters or matches the
+     * last picked suggestion exactly.
+     */
+    val addressSuggestions: StateFlow<List<AddressSuggestion>> = _addressQuery
+        .debounce(SEARCH_DEBOUNCE_MS)
+        .filter { it.length >= 3 }
+        .distinctUntilChanged()
+        .mapLatest { query -> banApi.search(query) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         if (dogId != null) loadExisting(dogId)
@@ -72,6 +99,8 @@ class DogEditViewModel(
                 ownerName = existing.ownerName,
                 ownerPhone = existing.ownerPhone.orEmpty(),
                 address = existing.address,
+                addressLatitude = existing.latitude,
+                addressLongitude = existing.longitude,
                 stopNotes = existing.stopNotes.orEmpty(),
                 stopAdjustmentMinutes = existing.stopAdjustmentMinutes.toString(),
                 inCargoBike = existing.inCargoBike,
@@ -85,6 +114,26 @@ class DogEditViewModel(
 
     fun update(transform: DogFormState.() -> DogFormState) {
         _state.update(transform)
+    }
+
+    /** Free-text edit: clear lat/lon because the typed string is unvalidated. */
+    fun onAddressTextChange(text: String) {
+        _state.update { it.copy(address = text, addressLatitude = null, addressLongitude = null) }
+        _addressQuery.value = text
+    }
+
+    /** User tapped a dropdown suggestion: address + coordinates set together. */
+    fun pickAddressSuggestion(suggestion: AddressSuggestion) {
+        _state.update {
+            it.copy(
+                address = suggestion.label,
+                addressLatitude = suggestion.latitude,
+                addressLongitude = suggestion.longitude,
+            )
+        }
+        // Mirror the picked label so the debounced search doesn't keep
+        // re-firing for the same text.
+        _addressQuery.value = suggestion.label
     }
 
     fun addScheduleRule() {
@@ -157,6 +206,8 @@ class DogEditViewModel(
                 ownerName = s.ownerName.trim(),
                 ownerPhone = s.ownerPhone.trim().ifBlank { null },
                 address = s.address.trim(),
+                latitude = s.addressLatitude,
+                longitude = s.addressLongitude,
                 stopNotes = s.stopNotes.trim().ifBlank { null },
                 stopAdjustmentMinutes = adjustment,
                 inCargoBike = s.inCargoBike,
@@ -175,15 +226,13 @@ class DogEditViewModel(
     fun delete() {
         val id = dogId ?: return
         viewModelScope.launch {
-            // Schedule rules are cleaned up by the CASCADE foreign key on dogs.id.
             dogDao.findById(id)?.let { dogDao.delete(it) }
             _events.send(DogEditEvent.Closed)
         }
     }
 
     private companion object {
-        // Mon–Fri pre-selected for new rules; matches the most common case
-        // for daily-walking clients.
+        const val SEARCH_DEBOUNCE_MS = 300L
         val DEFAULT_WEEKDAYS: Set<DayOfWeek> = setOf(
             DayOfWeek.MONDAY,
             DayOfWeek.TUESDAY,

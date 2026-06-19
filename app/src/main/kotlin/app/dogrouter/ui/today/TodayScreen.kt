@@ -65,7 +65,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
-    onStartTrip: () -> Unit,
+    onStartTrip: (LocalDate) -> Unit,
     viewModel: TodayViewModel = koinViewModel(),
 ) {
     val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
@@ -86,7 +86,7 @@ fun TodayScreen(
         floatingActionButton = {
             if (dayRoute?.events?.isNotEmpty() == true) {
                 ExtendedFloatingActionButton(
-                    onClick = onStartTrip,
+                    onClick = { onStartTrip(selectedDate) },
                     icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                     text = { Text("Start trip") },
                 )

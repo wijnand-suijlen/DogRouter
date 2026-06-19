@@ -12,10 +12,12 @@ import app.dogrouter.data.remote.BanApi
 import app.dogrouter.data.routing.BRouterRoutingProvider
 import app.dogrouter.data.routing.RoutingDataInstaller
 import app.dogrouter.data.routing.RoutingDataPaths
+import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.routing.RoutingProvider
 import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
+import app.dogrouter.ui.followplan.FollowPlanViewModel
 import app.dogrouter.ui.settings.SettingsViewModel
 import app.dogrouter.ui.today.TodayViewModel
 import kotlinx.serialization.json.Json
@@ -23,6 +25,7 @@ import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.dsl.module
+import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 val appModule = module {
@@ -79,9 +82,12 @@ val appModule = module {
     }
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
 
+    single { DayPlanService(get(), get(), get(), get(), get()) }
+
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get()) }
-    viewModel { TodayViewModel(get(), get(), get(), get(), get()) }
+    viewModel { TodayViewModel(get()) }
+    viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }
 }

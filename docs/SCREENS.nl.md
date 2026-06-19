@@ -27,7 +27,7 @@ gekoppeld maar placeholder · **Gepland** = nog niet begonnen.
 | # | Scherm | Hoofdgebruik | Toegang | Status |
 |---|---|---|---|---|
 | 1 | **Vandaag** | Plan van vandaag bekijken en finetunen (of een andere dag kiezen). | Standaard openings-scherm. | Gebouwd (read-only timeline; finetune-acties gepland) |
-| 2 | **Plan volgen** | Fietsmodus — huidige stop groot, volgende stops eronder, afvinken onderweg. | "Start rit" vanuit Vandaag (volledig scherm). | Stub (gekoppeld; uitvoer-UI te bouwen) |
+| 2 | **Plan volgen** | Fietsmodus — huidige stop groot, volgende stops eronder, afvinken onderweg. | "Start rit" vanuit Vandaag (volledig scherm). | Gebouwd (foto + hervatten-na-afsluiten volgt) |
 | 3 | **Honden** | Lijst + add/edit. Elke hond bundelt eigenaar, adres, eigenaardigheden, rooster, gewicht, etc. | Onderste tab. | Gebouwd |
 | 4 | **Geschiedenis** | Afgesloten dagen uit het verleden, filterbaar op hond. Genoeg detail om externe facturatie te ondersteunen. | Onderste tab. | Stub |
 | 5 | **Instellingen** | Planning-parameters + app-voorkeuren + data-backup/import. | Onderste tab of overflow. | Gebouwd |
@@ -55,17 +55,20 @@ verwijderd, dus de onderste balk heeft nu vier tabs.
   dicht" — alleen voor het plan van vandaag).
 - Knop "Start rit" → opent Plan volgen *(gepland)*.
 
-### 2. Plan volgen *(Stub — uitvoer-UI te bouwen)*
-- Nu al bereikbaar: een "Start rit"-knop op Vandaag opent een volledig-scherm
-  placeholder die de onderste balk verbergt en terugkeert naar Vandaag. De
-  glanceable uitvoer-indeling hieronder is het doel, nog niet gebouwd.
+### 2. Plan volgen *(Gebouwd — foto + hervatten-na-afsluiten volgt)*
 - Volledig scherm, grote tekst, ontworpen om in één blik tijdens het
-  fietsen te lezen.
-- Huidige stop domineert: hondnaam + foto, adres, eigenaardigheden,
-  verwachte aankomsttijd.
+  fietsen te lezen; verbergt de onderste balk.
+- Huidige stop domineert: grote verwachte aankomsttijd, titel (bv.
+  "Pickup Rex"), adres, telefoonnummer eigenaar, en eigenaardigheden in
+  een uitgelichte notitie. Hondfoto wordt nog niet getoond (geen
+  image-loader in het project).
 - Volgende 1–2 stops kleiner eronder.
-- Eén tik: "klaar bij deze stop" → ga naar volgende.
-- Afsluiten gaat terug naar Vandaag (gesuspendeerde staat — hervatbaar).
+- Eén tik op de grote "Done — next stop"-knop gaat verder; "Back"
+  corrigeert een misklik. Een voortgangsbalk en "Stop n of N" tonen de
+  positie; een "Trip complete"-staat sluit de rit af.
+- Afsluiten gaat terug naar Vandaag. Voortgang overleeft nu rotatie maar
+  niet het verlaten van het scherm — een hervatbare gesuspendeerde rit is
+  een vervolgstap.
 
 ### 3. Honden *(Gebouwd)*
 - Lijst met foto, naam, eigenaar; zoek/filter.

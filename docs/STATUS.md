@@ -18,7 +18,15 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   BRouter map download (~125 MB IDF segment) + self-test.
 - **Today tab**: PDPTW event timeline. Date picker with prev/next/today
   controls. Summary card with on-the-clock + cycling + walking totals.
-  Red conflict panel if any walks are unschedulable.
+  Red conflict panel if any walks are unschedulable. "Start trip" FAB
+  (shown when the day has events) hands off to Follow plan.
+- **Follow plan**: full-screen on-the-bike execution of one day's plan.
+  Current stop dominates (big ETA, title, address, owner phone, quirks
+  highlighted), next two stops listed below, large "Done — next stop" /
+  "Finish trip" button advances, Back corrects a mis-tap, progress bar +
+  "Stop n of N", and a "Trip complete" end state. Hides the bottom bar.
+  The plan comes from the shared `DayPlanService`, the same pipeline
+  Today uses.
 - **BRouter** running embedded on-device via `org.btools:brouter-core`
   from GitHub Packages. Profile `bakfiets.brf` shipped in assets,
   derived from trekking.brf. Lookups.dat also shipped.
@@ -48,7 +56,8 @@ domain/
   planner/  PlannedWalk (the only survivor of the old planner)
   dayplan/  RouteEvent (sealed: HomeStart/Pickup/Dropoff/Walk/HomeEnd),
             DayRoute, PlanConflict, PlanningConstraint,
-            DistanceMatrix, DayPlanner
+            DistanceMatrix, DayPlanner,
+            DayPlanService (shared plan pipeline: Today + Follow plan)
             constraints/  Capacity, TimeWindow, WalkDuration,
                           Incompatibility
   routing/  RouteEstimate, RoutingProvider, GeoPoint
@@ -57,7 +66,8 @@ ui/
   dogs/    DogListScreen + ViewModel, DogEditScreen + ViewModel,
            ScheduleEditor, ScheduleRuleDraft
   today/   TodayScreen, TodayViewModel
-  followplan/ FollowPlanScreen (full-screen stub, "Start trip" target)
+  followplan/ FollowPlanScreen + FollowPlanViewModel (on-the-bike
+              execution, "Start trip" target)
   history/  HistoryScreen (stub)
   settings/ SettingsScreen, SettingsViewModel
   addresspicker/ AddressPickerScreen + ViewModel
@@ -99,18 +109,24 @@ ui/
 
 ## Roadmap, prioritised
 
-### Promoted: Follow-plan execution screen
-The **Follow-plan** screen ("Start trip" handoff from Today) is now a
-named v1 screen, not a "someday" item — see `docs/SCREENS.md` #2.
-**Stubbed and wired** (2026-06-19): Today shows a "Start trip" extended
-FAB when a plan has events; tapping it navigates to
-`FollowPlanRoutes.ROUTE`, a full-screen `FollowPlanScreen` that hides the
-bottom bar (via `FULL_SCREEN_ROUTES` in `AppNavigation`) and exits back
-to Today on close or system back.
-The real execution UI is still to build: current stop dominates (dog name
-+ photo, address, quirks, ETA), next 1–2 stops smaller below, single tap
-to advance, resumable on exit. This is the intended next major feature
-once a small correctness/cosmetic item is cleared.
+### Done: Follow-plan execution screen
+The **Follow-plan** screen ("Start trip" handoff from Today) is built
+(2026-06-19) — see `docs/SCREENS.md` #2 and "What works today" above.
+Today's "Start trip" FAB passes the selected date to
+`FollowPlanRoutes.route(date)`; `FollowPlanScreen` + `FollowPlanViewModel`
+walk through the day's events one stop at a time. Plan computation was
+extracted from `TodayViewModel` into `DayPlanService` so both screens
+share one pipeline.
+
+Remaining polish (not blocking):
+- **Resumable across exit**: step progress lives in the ViewModel, so it
+  survives rotation but resets if you leave and re-enter the screen. The
+  SCREENS doc wants a resumable suspended trip — needs persistence
+  (DataStore or a small Room row keyed by date).
+- **Dog photo**: the current-stop card is text-only. No image loader is
+  in the project yet (the dog list has none either); adding one (e.g.
+  Coil) needs the user's OK first.
+- **Conflicts** (unscheduled walks) are not surfaced in Follow plan.
 
 ### Next round candidates (pick one)
 1. **Walk-location bug fix** (item 1 above). Tiny code change, real

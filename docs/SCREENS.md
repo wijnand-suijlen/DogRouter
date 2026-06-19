@@ -25,7 +25,7 @@ placeholder · **Planned** = not yet started.
 | # | Screen | Primary use | Entry point | Status |
 |---|---|---|---|---|
 | 1 | **Today** | View and fine-tune today's plan (or pick another day). | Default landing screen. | Built (read-only timeline; fine-tune actions planned) |
-| 2 | **Follow plan** | Cycling mode — current stop big, next stops listed, tick off as you go. | "Start trip" from Today (full-screen). | Stub (wired; execution UI to build) |
+| 2 | **Follow plan** | Cycling mode — current stop big, next stops listed, tick off as you go. | "Start trip" from Today (full-screen). | Built (photo + resume-on-exit to come) |
 | 3 | **Dogs** | List + add/edit. Each dog bundles owner, address, quirks, schedule, weight, etc. | Bottom tab. | Built |
 | 4 | **History** | Past completed days, filterable by dog. Enough detail to support external invoicing. | Bottom tab. | Stub |
 | 5 | **Settings** | Planning parameters + app prefs + data backup/import. | Bottom tab or overflow. | Built |
@@ -50,15 +50,18 @@ navigation code, so the bottom bar now has four tabs.
   plan).
 - "Start trip" button → enters Follow plan *(planned)*.
 
-### 2. Follow plan *(Stub — execution UI to build)*
-- Reachable today: a "Start trip" button on Today opens a full-screen
-  placeholder that hides the bottom bar and exits back to Today. The
-  glanceable execution layout below is the target, not yet built.
-- Full-screen, large text, designed to glance at while cycling.
-- Current stop dominates: dog name + photo, address, quirks, ETA.
+### 2. Follow plan *(Built — photo + resume-on-exit to come)*
+- Full-screen, large text, designed to glance at while cycling; hides the
+  bottom bar.
+- Current stop dominates: big ETA, title (e.g. "Pickup Rex"), address,
+  owner phone, and quirks in a highlighted note. Dog photo is not shown
+  yet (no image loader in the project).
 - Next 1–2 stops listed smaller below.
-- Single tap: "done at this stop" → advances.
-- Exit returns to Today (suspended state — resumable).
+- Single tap on the large "Done — next stop" button advances; "Back"
+  corrects a mis-tap. A progress bar and "Stop n of N" show position; a
+  "Trip complete" state ends the run.
+- Exit returns to Today. Progress currently survives rotation but not
+  leaving the screen — a resumable suspended trip is a follow-up.
 
 ### 3. Dogs *(Built)*
 - List with photo, name, owner; search/filter.

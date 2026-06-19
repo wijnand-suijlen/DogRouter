@@ -33,6 +33,7 @@ import app.dogrouter.ui.today.TodayScreen
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
+import java.time.LocalDate
 
 object DogsRoutes {
     const val GRAPH = "dogs"
@@ -43,7 +44,11 @@ object DogsRoutes {
 }
 
 object FollowPlanRoutes {
-    const val ROUTE = "follow-plan"
+    const val ARG_DATE = "date"
+    const val ROUTE = "follow-plan/{$ARG_DATE}"
+
+    /** [date] is formatted as ISO-8601 (e.g. 2026-06-19). */
+    fun route(date: LocalDate): String = "follow-plan/$date"
 }
 
 object AddressPickerRoutes {
@@ -102,11 +107,15 @@ fun AppNavigation() {
         ) {
             composable(TabDestination.Today.route) {
                 TodayScreen(
-                    onStartTrip = { navController.navigate(FollowPlanRoutes.ROUTE) },
+                    onStartTrip = { date -> navController.navigate(FollowPlanRoutes.route(date)) },
                 )
             }
-            composable(FollowPlanRoutes.ROUTE) {
-                FollowPlanScreen(onExit = { navController.popBackStack() })
+            composable(
+                route = FollowPlanRoutes.ROUTE,
+                arguments = listOf(navArgument(FollowPlanRoutes.ARG_DATE) { type = NavType.StringType }),
+            ) { entry ->
+                val date = LocalDate.parse(entry.arguments?.getString(FollowPlanRoutes.ARG_DATE))
+                FollowPlanScreen(date = date, onExit = { navController.popBackStack() })
             }
             composable(TabDestination.History.route) { HistoryScreen() }
             composable(TabDestination.Settings.route) { entry ->

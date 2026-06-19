@@ -74,6 +74,8 @@ data class SettingsDto(
     val bikeCapacityKg: Float,
     val stopBufferMinutes: Int,
     val cyclingSpeedKmh: Float,
+    val walkingSpeedKmh: Float = AppSettings.DEFAULTS.walkingSpeedKmh,
+    val bikeOverheadMinutes: Int = AppSettings.DEFAULTS.bikeOverheadMinutes,
     val homeAddress: String,
     val homeLatitude: Double? = null,
     val homeLongitude: Double? = null,
@@ -101,7 +103,8 @@ fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
 
 fun AppSettings.toDto() = SettingsDto(
     bikeCapacityKg = bikeCapacityKg, stopBufferMinutes = stopBufferMinutes,
-    cyclingSpeedKmh = cyclingSpeedKmh, homeAddress = homeAddress,
+    cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
+    bikeOverheadMinutes = bikeOverheadMinutes, homeAddress = homeAddress,
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
 )
 
@@ -128,7 +131,8 @@ fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)
 
 fun SettingsDto.toAppSettings() = AppSettings(
     bikeCapacityKg = bikeCapacityKg, stopBufferMinutes = stopBufferMinutes,
-    cyclingSpeedKmh = cyclingSpeedKmh, homeAddress = homeAddress,
+    cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
+    bikeOverheadMinutes = bikeOverheadMinutes, homeAddress = homeAddress,
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
 )
 

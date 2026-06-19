@@ -18,6 +18,8 @@ class SettingsRepository(
             bikeCapacityKg = prefs[BIKE_CAPACITY_KG] ?: AppSettings.DEFAULTS.bikeCapacityKg,
             stopBufferMinutes = prefs[STOP_BUFFER_MINUTES] ?: AppSettings.DEFAULTS.stopBufferMinutes,
             cyclingSpeedKmh = prefs[CYCLING_SPEED_KMH] ?: AppSettings.DEFAULTS.cyclingSpeedKmh,
+            walkingSpeedKmh = prefs[WALKING_SPEED_KMH] ?: AppSettings.DEFAULTS.walkingSpeedKmh,
+            bikeOverheadMinutes = prefs[BIKE_OVERHEAD_MINUTES] ?: AppSettings.DEFAULTS.bikeOverheadMinutes,
             homeAddress = prefs[HOME_ADDRESS] ?: AppSettings.DEFAULTS.homeAddress,
             homeLatitude = prefs[HOME_LATITUDE],
             homeLongitude = prefs[HOME_LONGITUDE],
@@ -36,6 +38,14 @@ class SettingsRepository(
         dataStore.edit { it[STOP_BUFFER_MINUTES] = minutes }
     }
 
+    suspend fun setWalkingSpeed(kmh: Float) {
+        dataStore.edit { it[WALKING_SPEED_KMH] = kmh }
+    }
+
+    suspend fun setBikeOverheadMinutes(minutes: Int) {
+        dataStore.edit { it[BIKE_OVERHEAD_MINUTES] = minutes }
+    }
+
     suspend fun setHomeAddress(address: String, latitude: Double?, longitude: Double?) {
         dataStore.edit { prefs ->
             prefs[HOME_ADDRESS] = address
@@ -50,6 +60,8 @@ class SettingsRepository(
             prefs[BIKE_CAPACITY_KG] = settings.bikeCapacityKg
             prefs[STOP_BUFFER_MINUTES] = settings.stopBufferMinutes
             prefs[CYCLING_SPEED_KMH] = settings.cyclingSpeedKmh
+            prefs[WALKING_SPEED_KMH] = settings.walkingSpeedKmh
+            prefs[BIKE_OVERHEAD_MINUTES] = settings.bikeOverheadMinutes
             prefs[HOME_ADDRESS] = settings.homeAddress
             settings.homeLatitude?.let { prefs[HOME_LATITUDE] = it } ?: prefs.remove(HOME_LATITUDE)
             settings.homeLongitude?.let { prefs[HOME_LONGITUDE] = it } ?: prefs.remove(HOME_LONGITUDE)
@@ -59,6 +71,8 @@ class SettingsRepository(
     private companion object {
         val BIKE_CAPACITY_KG = floatPreferencesKey("bike_capacity_kg")
         val STOP_BUFFER_MINUTES = intPreferencesKey("stop_buffer_minutes")
+        val WALKING_SPEED_KMH = floatPreferencesKey("walking_speed_kmh")
+        val BIKE_OVERHEAD_MINUTES = intPreferencesKey("bike_overhead_minutes")
         val HOME_ADDRESS = stringPreferencesKey("home_address")
         val HOME_LATITUDE = doublePreferencesKey("home_latitude")
         val HOME_LONGITUDE = doublePreferencesKey("home_longitude")

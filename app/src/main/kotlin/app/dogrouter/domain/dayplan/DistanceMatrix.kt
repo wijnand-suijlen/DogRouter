@@ -4,34 +4,33 @@ import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 
 /**
- * Precomputed cycling-time matrix between a finite set of points.
- * Treats routes as symmetric: A→B and B→A share an entry. The error
- * from one-way streets is small versus the optimisation gain of one
- * routing call per pair.
+ * Precomputed road-distance matrix (metres) between a finite set of points.
+ * Treats routes as symmetric: A→B and B→A share an entry. The error from
+ * one-way streets is small versus the optimisation gain of one routing call
+ * per pair.
  *
- * BRouter is used for its accurate cycling distance — the actual road
- * network with cargo-bike-aware choices — but its kinematic model
- * underestimates a loaded cargo bike, so the time we store is
- * `distance / userCyclingSpeedKmh` instead of BRouter's own duration.
+ * Stores DISTANCE, not time, so the planner can turn it into either a bike
+ * time (distance ÷ cyclingSpeed + overhead) or an on-foot time
+ * (distance ÷ walkingSpeed). BRouter's cycling distance is reused as the
+ * on-foot distance too — a deliberate approximation, good enough for the
+ * short hops where walking is chosen.
  */
 class DistanceMatrix(
-    private val seconds: Map<Pair<GeoPoint, GeoPoint>, Int>,
+    private val meters: Map<Pair<GeoPoint, GeoPoint>, Int>,
 ) {
-    fun secondsBetween(from: GeoPoint, to: GeoPoint): Int {
+    fun metersBetween(from: GeoPoint, to: GeoPoint): Int {
         if (from == to) return 0
-        return seconds[from to to] ?: seconds[to to from] ?: FALLBACK_SECONDS
+        return meters[from to to] ?: meters[to to from] ?: FALLBACK_METERS
     }
 
     companion object {
         /** Used when routing fails for a pair; large enough to deter the planner. */
-        private const val FALLBACK_SECONDS = 30 * 60
+        private const val FALLBACK_METERS = 30_000
 
         suspend fun build(
             points: Set<GeoPoint>,
             routing: RoutingProvider,
-            cyclingSpeedKmh: Float,
         ): DistanceMatrix {
-            val metersPerSecond = (cyclingSpeedKmh / 3.6).coerceAtLeast(0.1)
             val cache = mutableMapOf<Pair<GeoPoint, GeoPoint>, Int>()
             val list = points.toList()
             for (i in list.indices) {
@@ -39,12 +38,7 @@ class DistanceMatrix(
                     val a = list[i]
                     val b = list[j]
                     val estimate = routing.route(a.latitude, a.longitude, b.latitude, b.longitude)
-                    val seconds = if (estimate == null) {
-                        FALLBACK_SECONDS
-                    } else {
-                        (estimate.distanceMeters / metersPerSecond).toInt()
-                    }
-                    cache[a to b] = seconds
+                    cache[a to b] = estimate?.distanceMeters ?: FALLBACK_METERS
                 }
             }
             return DistanceMatrix(cache)

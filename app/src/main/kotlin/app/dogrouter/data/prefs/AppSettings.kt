@@ -15,6 +15,13 @@ data class AppSettings(
     val bikeCapacityKg: Float,
     val stopBufferMinutes: Int,
     val cyclingSpeedKmh: Float,
+    // Walking speed on foot with a group of dogs. Used when the planner
+    // moves between nearby stops on foot instead of by bike.
+    val walkingSpeedKmh: Float,
+    // Fixed overhead added to each bike ride: loading dogs into the cargo
+    // box, unlocking, helmet on — and the reverse on arrival. This is what
+    // makes short hops cheaper to walk than to bike.
+    val bikeOverheadMinutes: Int,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -25,13 +32,16 @@ data class AppSettings(
     companion object {
         /**
          * Defaults rooted in SCOPE.md: ~70 kg cargo-bike payload, a
-         * 5-minute buffer per stop for handovers, and no home address
-         * yet — the walker enters that on first launch.
+         * 5-minute buffer per stop for handovers, a slow 3 km/h on-foot
+         * group pace, a 3-minute bike mount/dismount overhead, and no home
+         * address yet — the walker enters that on first launch.
          */
         val DEFAULTS = AppSettings(
             bikeCapacityKg = 70f,
             stopBufferMinutes = 5,
             cyclingSpeedKmh = 15f,
+            walkingSpeedKmh = 3f,
+            bikeOverheadMinutes = 3,
             homeAddress = "",
             homeLatitude = null,
             homeLongitude = null,

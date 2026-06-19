@@ -137,6 +137,8 @@ fun SettingsScreen(
                 onBikeCapacityChange = viewModel::onBikeCapacityTextChange,
                 onStopBufferChange = viewModel::onStopBufferTextChange,
                 onCyclingSpeedChange = viewModel::onCyclingSpeedTextChange,
+                onWalkingSpeedChange = viewModel::onWalkingSpeedTextChange,
+                onBikeOverheadChange = viewModel::onBikeOverheadTextChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
                 onOpenHomeMapPicker = {
@@ -196,6 +198,8 @@ private fun SettingsForm(
     onBikeCapacityChange: (String) -> Unit,
     onStopBufferChange: (String) -> Unit,
     onCyclingSpeedChange: (String) -> Unit,
+    onWalkingSpeedChange: (String) -> Unit,
+    onBikeOverheadChange: (String) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
     onOpenHomeMapPicker: () -> Unit,
@@ -284,6 +288,38 @@ private fun SettingsForm(
                     if (!state.cyclingSpeedValid) "Enter a positive number"
                     else "BRouter picks the route; this speed turns its " +
                         "distances into the times you see in Today.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = state.walkingSpeedText,
+            onValueChange = onWalkingSpeedChange,
+            label = { Text("Walking speed (group on foot)") },
+            suffix = { Text("km/h") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            isError = !state.walkingSpeedValid,
+            supportingText = if (!state.walkingSpeedValid) {
+                { Text("Enter a positive number") }
+            } else null,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = state.bikeOverheadText,
+            onValueChange = onBikeOverheadChange,
+            label = { Text("Bike mount/dismount overhead") },
+            suffix = { Text("min") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            isError = !state.bikeOverheadValid,
+            supportingText = {
+                Text(
+                    if (!state.bikeOverheadValid) "Enter zero or a positive whole number"
+                    else "Added to each bike ride for loading dogs in the box, " +
+                        "unlocking and helmet. Higher means short hops are walked.",
                 )
             },
             modifier = Modifier.fillMaxWidth(),

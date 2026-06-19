@@ -43,6 +43,10 @@ data class SettingsFormState(
     val stopBufferValid: Boolean,
     val cyclingSpeedText: String,
     val cyclingSpeedValid: Boolean,
+    val walkingSpeedText: String,
+    val walkingSpeedValid: Boolean,
+    val bikeOverheadText: String,
+    val bikeOverheadValid: Boolean,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -55,6 +59,10 @@ data class SettingsFormState(
             stopBufferValid = true,
             cyclingSpeedText = settings.cyclingSpeedKmh.formatLight(),
             cyclingSpeedValid = true,
+            walkingSpeedText = settings.walkingSpeedKmh.formatLight(),
+            walkingSpeedValid = true,
+            bikeOverheadText = settings.bikeOverheadMinutes.toString(),
+            bikeOverheadValid = true,
             homeAddress = settings.homeAddress,
             homeLatitude = settings.homeLatitude,
             homeLongitude = settings.homeLongitude,
@@ -127,6 +135,18 @@ class SettingsViewModel(
         val parsed = parsePositiveFloat(text)
         _form.update { it?.copy(cyclingSpeedText = text, cyclingSpeedValid = parsed != null) }
         parsed?.let { kmh -> viewModelScope.launch { repo.setCyclingSpeed(kmh) } }
+    }
+
+    fun onWalkingSpeedTextChange(text: String) {
+        val parsed = parsePositiveFloat(text)
+        _form.update { it?.copy(walkingSpeedText = text, walkingSpeedValid = parsed != null) }
+        parsed?.let { kmh -> viewModelScope.launch { repo.setWalkingSpeed(kmh) } }
+    }
+
+    fun onBikeOverheadTextChange(text: String) {
+        val parsed = text.toIntOrNull()?.takeIf { it >= 0 }
+        _form.update { it?.copy(bikeOverheadText = text, bikeOverheadValid = parsed != null) }
+        parsed?.let { minutes -> viewModelScope.launch { repo.setBikeOverheadMinutes(minutes) } }
     }
 
     fun onHomeAddressTextChange(text: String) {

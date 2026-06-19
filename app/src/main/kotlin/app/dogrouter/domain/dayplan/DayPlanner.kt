@@ -48,6 +48,10 @@ class DayPlanner(
     private val stopBufferSeconds: Int,
     private val cyclingSpeedKmh: Float,
     private val incompatibilities: Set<Pair<String, String>>,
+    // On-foot group pace, and the fixed overhead added to every bike ride
+    // (load dogs in the box, unlock, helmet, and the reverse on arrival).
+    private val walkingSpeedKmh: Float = 3f,
+    private val bikeOverheadSeconds: Int = 0,
     private val dayStartSeconds: Int = 8 * 3600,
     private val dayEndSeconds: Int = 20 * 3600,
     private val restarts: Int = 60,
@@ -85,7 +89,7 @@ class DayPlanner(
         }
 
         val points = (routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } + home).toSet()
-        val matrix = DistanceMatrix.build(points, routingProvider, cyclingSpeedKmh)
+        val matrix = DistanceMatrix.build(points, routingProvider)
         val constraints = listOf(
             CapacityConstraint(capacityKg),
             TimeWindowConstraint(),
@@ -158,7 +162,7 @@ class DayPlanner(
         }
 
         val totalCycling = events.zipWithNext { a, b ->
-            if (b is RouteEvent.Walk) 0 else matrix.secondsBetween(a.location, b.location)
+            if (b is RouteEvent.Walk) 0 else matrix.cyclingOnlySeconds(a.location, b.location)
         }.sum()
         val totalWalking = events.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds }
 
@@ -348,7 +352,7 @@ class DayPlanner(
         for ((i, event) in events.withIndex()) {
             if (i > 0) {
                 val prev = retimed.last()
-                val travel = if (event is RouteEvent.Walk) 0 else matrix.secondsBetween(prev.location, event.location)
+                val travel = if (event is RouteEvent.Walk) 0 else matrix.bikeSeconds(prev.location, event.location)
                 t += travel
             }
             if (event is RouteEvent.Pickup) {
@@ -373,7 +377,7 @@ class DayPlanner(
         // algorithm toward schedules with less idle time.
         val firstNonHome = retimed.getOrNull(1)
         if (firstNonHome != null && retimed[0] is RouteEvent.HomeStart) {
-            val travelHomeToFirst = matrix.secondsBetween(retimed[0].location, firstNonHome.location)
+            val travelHomeToFirst = matrix.bikeSeconds(retimed[0].location, firstNonHome.location)
             val effectiveLeave = maxOf(dayStartSeconds, firstNonHome.timeSeconds - travelHomeToFirst)
             retimed[0] = (retimed[0] as RouteEvent.HomeStart).copy(timeSeconds = effectiveLeave)
         }
@@ -391,6 +395,21 @@ class DayPlanner(
 
     private fun homeStart() = RouteEvent.HomeStart(dayStartSeconds, home!!)
     private fun homeEnd(t: Int) = RouteEvent.HomeEnd(t, home!!)
+
+    private val cyclingMetersPerSecond: Double = (cyclingSpeedKmh / 3.6).coerceAtLeast(0.1)
+    private val walkingMetersPerSecond: Double = (walkingSpeedKmh / 3.6).coerceAtLeast(0.1)
+
+    /** Bike-ride time: cycling time plus the per-ride mount/dismount overhead. */
+    private fun DistanceMatrix.bikeSeconds(from: GeoPoint, to: GeoPoint): Int =
+        (metersBetween(from, to) / cyclingMetersPerSecond).toInt() + bikeOverheadSeconds
+
+    /** Cycling time only (no overhead), for the displayed cycling total. */
+    private fun DistanceMatrix.cyclingOnlySeconds(from: GeoPoint, to: GeoPoint): Int =
+        (metersBetween(from, to) / cyclingMetersPerSecond).toInt()
+
+    /** On-foot time between two points (no overhead). */
+    private fun DistanceMatrix.footSeconds(from: GeoPoint, to: GeoPoint): Int =
+        (metersBetween(from, to) / walkingMetersPerSecond).toInt()
 
     private fun PlannedWalk.geoPoint(): GeoPoint =
         GeoPoint(dog.latitude!!, dog.longitude!!)

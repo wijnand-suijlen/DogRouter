@@ -139,7 +139,51 @@ class DayPlanner(
             }
         }
 
+        // Mode C: ride along — pick the dog up, let it tag along through one
+        // or more existing walks WITHOUT lengthening them, then drop it off.
+        // The walk-duration constraint sums the walks in the span, so this is
+        // how a long required walk gets split across several shorter group
+        // walks the walker is doing anyway (cheap: no extra walking time).
+        for (pickPos in 1 until events.size - 1) {
+            for (dropPos in pickPos + 1 until events.size) {
+                val spannedWalks = (pickPos until dropPos).count { events[it] is RouteEvent.Walk }
+                if (spannedWalks == 0) continue
+                val candidate = insertRideAlong(events, walk, pickPos, dropPos, matrix)
+                val (eventList, cost) = candidate ?: continue
+                if (cost >= bestCost) continue
+                if (constraints.violation(eventList) != null) continue
+                best = eventList
+                bestCost = cost
+            }
+        }
+
         return best
+    }
+
+    private fun insertRideAlong(
+        events: List<RouteEvent>,
+        walk: PlannedWalk,
+        pickPos: Int,
+        dropPos: Int,
+        matrix: DistanceMatrix,
+    ): Pair<List<RouteEvent>, Int>? {
+        val loc = walk.geoPoint()
+        val result = mutableListOf<RouteEvent>()
+        for (i in 0..events.size) {
+            if (i == pickPos) result.add(RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
+            if (i == dropPos) result.add(RouteEvent.Dropoff(0, loc, walk.dog))
+            if (i < events.size) {
+                val e = events[i]
+                // Add the dog to every existing walk inside the carry span;
+                // their durations stay unchanged (the dog only rides along).
+                if (e is RouteEvent.Walk && i in pickPos until dropPos) {
+                    result.add(e.copy(dogs = e.dogs + walk.dog))
+                } else {
+                    result.add(e)
+                }
+            }
+        }
+        return retimeAndCost(result, matrix)
     }
 
     private fun insertNewTriplet(

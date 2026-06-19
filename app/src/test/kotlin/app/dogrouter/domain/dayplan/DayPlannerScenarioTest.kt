@@ -142,6 +142,43 @@ class DayPlannerScenarioTest {
         assertTrue("conflicts:$summary", route.conflicts.isEmpty())
     }
 
+    /**
+     * A 120-min walk should be satisfied by riding along two separate
+     * 60-min group walks (split), not by a dedicated 120-min walk. Bo
+     * (09:00-10:30) and Cy (11:00-12:30) force two distinct walks; Apple
+     * (120 min, wide window) is placed last and should tag along both.
+     */
+    @Test
+    fun longWalkSplitsAcrossTwoGroupWalks() = runBlocking {
+        val apple = dog("apple", "Apple", 5f, 48.8140, 2.2360)
+        val bo = dog("bo", "Bo", 5f, 48.8120, 2.2340)
+        val cy = dog("cy", "Cy", 5f, 48.8150, 2.2370)
+
+        val walks = listOf(
+            PlannedWalk(apple, rule("apple1", "apple", "08:00", "14:00", 120)),
+            PlannedWalk(bo, rule("bo1", "bo", "09:00", "10:30", 60)),
+            PlannedWalk(cy, rule("cy1", "cy", "11:00", "12:30", 60)),
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+        )
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks)
+        val summary = buildString {
+            appendLine()
+            route.events.forEach { e -> appendLine("  ${fmt(e.timeSeconds)}  ${describe(e)}") }
+            appendLine("CONFLICTS (${route.conflicts.size}): " + route.conflicts.joinToString { "${it.dog.name}=${it.reason}" })
+        }
+        println(summary)
+        assertTrue("conflicts:$summary", route.conflicts.isEmpty())
+        val appleWalks = route.events.filterIsInstance<RouteEvent.Walk>()
+            .filter { w -> w.dogs.any { it.id == "apple" } }
+        assertTrue(
+            "Apple should ride along 2 walks (split), got ${appleWalks.size}:$summary",
+            appleWalks.size == 2,
+        )
+    }
+
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"
         is RouteEvent.HomeEnd -> "HomeEnd"

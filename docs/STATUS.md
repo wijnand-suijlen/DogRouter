@@ -51,8 +51,10 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   BRouter track as a polyline for map drawing (Follow plan); the planner
   still uses `route()`, which keeps no geometry per cost-matrix cell.
 - **PDPTW planner** (`domain/dayplan/DayPlanner.kt`): greedy insertion
-  heuristic, two modes (new pickup-walk-dropoff triplet, or join an
-  existing walk). Pluggable `PlanningConstraint` interface with four
+  heuristic, three modes (new pickup-walk-dropoff triplet; join an
+  existing walk and extend it; ride along several existing walks without
+  extending them, which splits one required duration across shorter
+  sessions). Pluggable `PlanningConstraint` interface with four
   concrete checks today: capacity, time windows, walk duration
   (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
   pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
@@ -114,10 +116,17 @@ ui/
    event and the pickup includes the wait. Cosmetic; we should split
    wait into its own row.
 
-3. **No walk-splitting**. Each dog gets exactly one walk event in the
-   algorithm. Cannot generate "Yankee alone 45 min, then with Ouna for
-   15 min". For now Mode B always extends the walk to the max
-   duration; with `allowLongerWalk=true` (default) that is acceptable.
+3. **Walk-splitting works, but the greedy rarely restructures a day to
+   use it.** Mode C (ride-along) lets one required duration be split
+   across several existing walks, and `longWalkSplitsAcrossTwoGroupWalks`
+   proves it. But the greedy inserts walks one at a time and tends to
+   merge dogs into a single session, so it does not, on its own, break a
+   day into the multiple sessions splitting needs. In the 19-June day Alfa
+   still gets one 120-min walk rather than 60+60. Realising the efficiency
+   gain reliably needs a re-optimisation / local-search pass (remove a
+   placed walk and re-insert it against the finished plan) — a larger
+   follow-up. Note: removal would need walk-duration to be recomputed
+   from the remaining dogs, which the current model does not track.
 
 4. **Plan not cached; recomputed per subscription**. `DayPlanService`
    rebuilds the whole PDPTW plan (and its ~N² BRouter matrix) every time

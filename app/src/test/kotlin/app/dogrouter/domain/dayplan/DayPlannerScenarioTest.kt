@@ -5,9 +5,12 @@ import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RouteEstimate
+import app.dogrouter.domain.dayplan.constraints.NoDogLeftBehindConstraint
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -112,7 +115,31 @@ class DayPlannerScenarioTest {
         }
         println(summary)
         assertTrue("Expected a feasible plan but got conflicts:$summary", route.conflicts.isEmpty())
+        assertNoOneLeftBehind(route, summary)
+        assertTrue("A walk has more than 4 dogs:$summary", maxWalkGroup(route) <= 4)
     }
+
+    /** Every dog aboard during a walk must be in that walk. */
+    private fun assertNoOneLeftBehind(route: app.dogrouter.domain.dayplan.DayRoute, summary: String) {
+        val inBag = mutableSetOf<String>()
+        route.events.forEach { e ->
+            when (e) {
+                is RouteEvent.Pickup -> inBag.add(e.dog.id)
+                is RouteEvent.Dropoff -> inBag.remove(e.dog.id)
+                is RouteEvent.Walk -> {
+                    val walking = e.dogs.mapTo(HashSet()) { it.id }
+                    assertTrue(
+                        "A dog is left in the bike during the walk at ${fmt(e.timeSeconds)}:$summary",
+                        inBag.all { it in walking },
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    private fun maxWalkGroup(route: app.dogrouter.domain.dayplan.DayRoute): Int =
+        route.events.filterIsInstance<RouteEvent.Walk>().maxOfOrNull { it.dogs.size } ?: 0
 
     /**
      * Same scenario, but Charlie's second walk is given a distinct dog id
@@ -310,6 +337,36 @@ class DayPlannerScenarioTest {
         route.events.filterIsInstance<RouteEvent.Walk>()
             .filter { w -> w.dogs.any { it.id == "yankee" } }
             .minOf { it.timeSeconds }
+
+    @Test
+    fun noDogLeftBehindConstraintFlagsAnIdleDog() {
+        val a = dog("a", "A", 5f, 48.81, 2.23)
+        val b = dog("b", "B", 5f, 48.82, 2.24)
+        val loc = GeoPoint(48.81, 2.23)
+        val ra = rule("ra", "a", "10:00", "12:00", 60)
+        val rb = rule("rb", "b", "10:00", "12:00", 60)
+        val constraint = NoDogLeftBehindConstraint()
+
+        // B is aboard while only A is walked -> violation.
+        val leftBehind = listOf(
+            RouteEvent.Pickup(0, loc, a, ra),
+            RouteEvent.Pickup(0, loc, b, rb),
+            RouteEvent.Walk(0, loc, listOf(a), 3600),
+            RouteEvent.Dropoff(0, loc, a),
+            RouteEvent.Dropoff(0, loc, b),
+        )
+        assertNotNull(constraint.violation(leftBehind))
+
+        // Both walked together -> fine.
+        val together = listOf(
+            RouteEvent.Pickup(0, loc, a, ra),
+            RouteEvent.Pickup(0, loc, b, rb),
+            RouteEvent.Walk(0, loc, listOf(a, b), 3600),
+            RouteEvent.Dropoff(0, loc, a),
+            RouteEvent.Dropoff(0, loc, b),
+        )
+        assertNull(constraint.violation(together))
+    }
 
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"

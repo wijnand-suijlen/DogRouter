@@ -64,12 +64,17 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   which splits one required duration across shorter sessions); the best
   of `restarts` builds is kept. A `seed` makes a build reproducible (for
   caching) while different seeds explore alternatives (the refresh
-  button). Pluggable `PlanningConstraint` interface with four
-  concrete checks today: capacity, time windows (start-from / start-by /
-  home-by, each independent and optional; start-by bounds the actual walk
-  start, not the pickup, so a dog cannot be picked up in time and then
-  carried to a much later walk), walk duration
-  (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
+  button). Pluggable `PlanningConstraint` interface with six concrete
+  checks today: capacity; time windows (start-from / start-by / home-by,
+  each independent and optional; start-by bounds the actual walk start, not
+  the pickup, so a dog cannot be picked up in time and then carried to a
+  much later walk); walk duration (min + max for `allowLongerWalk=false`);
+  incompatibilities; no-dog-left-behind (every dog aboard during a walk
+  must be in it — nobody waits in the bike while the others walk); and a
+  group-size cap (`maxGroupSize`, default 4). A soft preference for
+  `preferredGroupSize` (default 3) is a planning-cost penalty in the plan
+  score, so a 4th dog is added to a walk only when it lets a dog be placed
+  that otherwise could not — never just to shorten the day. Constraints
   pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
   schedule rules (two walks in a day) is handled correctly. The planner
   takes `WalkOption`s: a single alternative is a required walk, several are

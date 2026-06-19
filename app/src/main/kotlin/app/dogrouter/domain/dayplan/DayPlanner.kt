@@ -1,7 +1,9 @@
 package app.dogrouter.domain.dayplan
 
 import app.dogrouter.domain.dayplan.constraints.CapacityConstraint
+import app.dogrouter.domain.dayplan.constraints.GroupSizeConstraint
 import app.dogrouter.domain.dayplan.constraints.IncompatibilityConstraint
+import app.dogrouter.domain.dayplan.constraints.NoDogLeftBehindConstraint
 import app.dogrouter.domain.dayplan.constraints.TimeWindowConstraint
 import app.dogrouter.domain.dayplan.constraints.WalkDurationConstraint
 import app.dogrouter.domain.planner.PlannedWalk
@@ -9,6 +11,14 @@ import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 import java.time.LocalDate
 import kotlin.random.Random
+
+/**
+ * Cost added per dog beyond the preferred group size. Far larger than any
+ * realistic day length in seconds, so the planner never grows a group past
+ * the preferred size merely to save time — only when it lets a dog be
+ * placed that otherwise could not (fewer conflicts win first).
+ */
+private const val OVERSIZE_PENALTY_SECONDS = 1_000_000L
 
 /**
  * Composes a day route from a list of scheduled walks using a greedy
@@ -41,6 +51,11 @@ class DayPlanner(
     private val dayStartSeconds: Int = 8 * 3600,
     private val dayEndSeconds: Int = 20 * 3600,
     private val restarts: Int = 60,
+    // Walk-group size: never more than [maxGroupSize] dogs at once (hard),
+    // and a strong preference for at most [preferredGroupSize] (soft, via a
+    // planning-cost penalty so bigger groups are used only when needed).
+    private val maxGroupSize: Int = 4,
+    private val preferredGroupSize: Int = 3,
 ) {
     /**
      * Build a day route. [seed] drives the randomised multi-start search:
@@ -76,6 +91,8 @@ class DayPlanner(
             TimeWindowConstraint(),
             WalkDurationConstraint(),
             IncompatibilityConstraint(incompatibilities),
+            NoDogLeftBehindConstraint(),
+            GroupSizeConstraint(maxGroupSize),
         )
 
         // Multi-start: build several plans from different insertion orders
@@ -93,11 +110,23 @@ class DayPlanner(
         return best!!
     }
 
-    /** A plan is better when it leaves fewer walks unplaced, then when its day is shorter. */
+    /**
+     * A plan is better when it leaves fewer walks unplaced; then when its
+     * [score] is lower. The score adds a big penalty per dog over the
+     * preferred group size, so larger groups are used only when they place
+     * a dog that otherwise could not go — never just to shorten the day.
+     */
     private fun DayRoute.isBetterThan(other: DayRoute): Boolean = when {
         conflicts.size != other.conflicts.size -> conflicts.size < other.conflicts.size
-        else -> elapsedSeconds() < other.elapsedSeconds()
+        else -> score() < other.score()
     }
+
+    private fun DayRoute.score(): Long =
+        elapsedSeconds().toLong() + dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
+
+    private fun DayRoute.dogsOverPreferred(): Int =
+        events.filterIsInstance<RouteEvent.Walk>()
+            .sumOf { (it.dogs.size - preferredGroupSize).coerceAtLeast(0) }
 
     private fun DayRoute.elapsedSeconds(): Int =
         if (events.size >= 2) events.last().timeSeconds - events.first().timeSeconds else 0

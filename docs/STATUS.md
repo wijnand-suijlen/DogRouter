@@ -158,7 +158,17 @@ once a small correctness/cosmetic item is cleared.
 - **User context**: Wijnand Suijlen, Dutch-speaking, lives and works
   in Meudon (92) in Île-de-France. Two phones, Android 15 and 16.
 - **Build**: GitHub PAT with `read:packages` scope required for the
-  brouter artifact; documented in `README.md`.
+  brouter artifact; documented in `README.md`. There is no system JDK on
+  the dev machine — the only JDK is the one bundled with Android Studio,
+  so CLI builds need `JAVA_HOME` pointed at it:
+
+  ```
+  JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+    ./gradlew :app:compileDebugKotlin
+  ```
+
+  The Gradle wrapper (8.13) is committed, so no separate Gradle install
+  is needed.
 - **Schema migrations**: any change to a Room entity requires a
   migration AND a schema-version bump. Schema JSON files are
   committed to `app/schemas/`.

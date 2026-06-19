@@ -13,6 +13,7 @@ import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
 import app.dogrouter.ui.settings.SettingsViewModel
+import app.dogrouter.ui.today.TodayViewModel
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
@@ -58,4 +59,5 @@ val appModule = module {
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get()) }
+    viewModel { TodayViewModel(get(), get(), get()) }
 }

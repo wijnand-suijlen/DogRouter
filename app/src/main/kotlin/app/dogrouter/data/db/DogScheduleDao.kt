@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DogScheduleDao {
+    @Query("SELECT * FROM dog_schedule_rules")
+    fun observeAll(): Flow<List<DogScheduleRule>>
+
     @Query("SELECT * FROM dog_schedule_rules WHERE dogId = :dogId")
     fun observeForDog(dogId: String): Flow<List<DogScheduleRule>>
 

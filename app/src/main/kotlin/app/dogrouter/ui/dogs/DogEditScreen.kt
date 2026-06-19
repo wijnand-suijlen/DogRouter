@@ -217,6 +217,11 @@ private fun DogForm(
             onValueChange = onAddressTextChange,
             onPick = onAddressPick,
         )
+        val lat = state.addressLatitude
+        val lon = state.addressLongitude
+        if (lat != null && lon != null) {
+            AddressMapPreview(latitude = lat, longitude = lon)
+        }
         OutlinedTextField(
             value = state.stopNotes,
             onValueChange = { v -> onChange { copy(stopNotes = v) } },

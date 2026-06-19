@@ -17,10 +17,15 @@ class SettingsRepository(
         AppSettings(
             bikeCapacityKg = prefs[BIKE_CAPACITY_KG] ?: AppSettings.DEFAULTS.bikeCapacityKg,
             stopBufferMinutes = prefs[STOP_BUFFER_MINUTES] ?: AppSettings.DEFAULTS.stopBufferMinutes,
+            cyclingSpeedKmh = prefs[CYCLING_SPEED_KMH] ?: AppSettings.DEFAULTS.cyclingSpeedKmh,
             homeAddress = prefs[HOME_ADDRESS] ?: AppSettings.DEFAULTS.homeAddress,
             homeLatitude = prefs[HOME_LATITUDE],
             homeLongitude = prefs[HOME_LONGITUDE],
         )
+    }
+
+    suspend fun setCyclingSpeed(kmh: Float) {
+        dataStore.edit { it[CYCLING_SPEED_KMH] = kmh }
     }
 
     suspend fun setBikeCapacity(kg: Float) {
@@ -45,7 +50,6 @@ class SettingsRepository(
         val HOME_ADDRESS = stringPreferencesKey("home_address")
         val HOME_LATITUDE = doublePreferencesKey("home_latitude")
         val HOME_LONGITUDE = doublePreferencesKey("home_longitude")
-        // Legacy "cycling_speed_kmh" key intentionally left orphan; the
-        // value is unused and DataStore tolerates stale entries.
+        val CYCLING_SPEED_KMH = floatPreferencesKey("cycling_speed_kmh")
     }
 }

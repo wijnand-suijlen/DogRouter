@@ -95,6 +95,7 @@ fun SettingsScreen(
                 homeSuggestions = homeSuggestions,
                 onBikeCapacityChange = viewModel::onBikeCapacityTextChange,
                 onStopBufferChange = viewModel::onStopBufferTextChange,
+                onCyclingSpeedChange = viewModel::onCyclingSpeedTextChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
                 onOpenHomeMapPicker = {
@@ -119,6 +120,7 @@ private fun SettingsForm(
     homeSuggestions: List<AddressSuggestion>,
     onBikeCapacityChange: (String) -> Unit,
     onStopBufferChange: (String) -> Unit,
+    onCyclingSpeedChange: (String) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
     onOpenHomeMapPicker: () -> Unit,
@@ -192,11 +194,22 @@ private fun SettingsForm(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Text(
-            text = "Cycling speed is computed by the on-device routing " +
-                "engine from the cargo-bike profile; not exposed here.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        OutlinedTextField(
+            value = state.cyclingSpeedText,
+            onValueChange = onCyclingSpeedChange,
+            label = { Text("Average cycling speed") },
+            suffix = { Text("km/h") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            isError = !state.cyclingSpeedValid,
+            supportingText = {
+                Text(
+                    if (!state.cyclingSpeedValid) "Enter a positive number"
+                    else "BRouter picks the route; this speed turns its " +
+                        "distances into the times you see in Today.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(Modifier.height(16.dp))

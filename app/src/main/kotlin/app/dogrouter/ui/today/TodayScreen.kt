@@ -5,20 +5,27 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,32 +45,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.dogrouter.domain.planner.PlannedWalk
-import app.dogrouter.domain.planner.RouteLeg
-import app.dogrouter.domain.planner.TimeWindow
-import app.dogrouter.domain.planner.Trip
+import app.dogrouter.domain.dayplan.DayRoute
+import app.dogrouter.domain.dayplan.PlanConflict
+import app.dogrouter.domain.dayplan.RouteEvent
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
-
-private val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
     viewModel: TodayViewModel = koinViewModel(),
 ) {
-    val dayPlan by viewModel.dayPlan.collectAsStateWithLifecycle()
+    val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -90,23 +93,7 @@ fun TodayScreen(
                 onPickDate = { showDatePicker = true },
             )
             HorizontalDivider()
-            if (dayPlan.trips.isEmpty()) {
-                EmptyState()
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    itemsIndexed(dayPlan.trips) { index, trip ->
-                        TripCard(
-                            tripIndex = index + 1,
-                            trip = trip,
-                            capacityKg = settings.bikeCapacityKg,
-                        )
-                    }
-                }
-            }
+            DayRouteContent(dayRoute)
         }
     }
 
@@ -117,6 +104,210 @@ fun TodayScreen(
             onDismiss = { showDatePicker = false },
         )
     }
+}
+
+@Composable
+private fun DayRouteContent(route: DayRoute?) {
+    when {
+        route == null -> LoadingBox()
+        route.events.isEmpty() && route.conflicts.isEmpty() -> EmptyState()
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            item { Summary(route) }
+            if (route.conflicts.isNotEmpty()) {
+                item { ConflictPanel(route.conflicts) }
+            }
+            val timeline = buildTimelineRows(route.events)
+            items(timeline) { row -> TimelineRowView(row) }
+        }
+    }
+}
+
+@Composable
+private fun LoadingBox() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun EmptyState() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = "No walks scheduled for this day.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun Summary(route: DayRoute) {
+    val totalElapsed = if (route.events.size >= 2) {
+        route.events.last().timeSeconds - route.events.first().timeSeconds
+    } else 0
+    Card {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "${formatDuration(totalElapsed)} on the clock",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "${formatDuration(route.totalCyclingSeconds)} cycling · " +
+                    "${formatDuration(route.totalWalkingSeconds)} walking",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConflictPanel(conflicts: List<PlanConflict>) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "${conflicts.size} unscheduled",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            conflicts.forEach { conflict ->
+                Text(
+                    text = "• ${conflict.dog.name}: ${conflict.reason}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+/** UI-only view-model rows: each is either an event row or a cycling-leg row. */
+private sealed interface TimelineRow {
+    data class Event(val event: RouteEvent) : TimelineRow
+    data class Leg(val seconds: Int) : TimelineRow
+}
+
+private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
+    if (events.isEmpty()) return emptyList()
+    val rows = mutableListOf<TimelineRow>(TimelineRow.Event(events[0]))
+    for (i in 1 until events.size) {
+        val prev = events[i - 1]
+        val current = events[i]
+        // Walks happen in place: zero leg when entering a walk, and when
+        // leaving a walk we subtract the walk's own duration from the
+        // gap so the remaining number really is just cycling time.
+        val gap = current.timeSeconds - prev.timeSeconds
+        val cyclingSeconds = when {
+            current is RouteEvent.Walk -> 0
+            prev is RouteEvent.Walk -> gap - prev.durationSeconds
+            else -> gap
+        }
+        if (cyclingSeconds > 0) rows.add(TimelineRow.Leg(cyclingSeconds))
+        rows.add(TimelineRow.Event(current))
+    }
+    return rows
+}
+
+@Composable
+private fun TimelineRowView(row: TimelineRow) {
+    when (row) {
+        is TimelineRow.Leg -> LegRow(row.seconds)
+        is TimelineRow.Event -> EventRow(row.event)
+    }
+}
+
+@Composable
+private fun LegRow(seconds: Int) {
+    Row(
+        modifier = Modifier.padding(start = 28.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "↓ ${formatDuration(seconds)} cycling",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun EventRow(event: RouteEvent) {
+    val icon = event.icon()
+    val title = event.title()
+    val subtitle = event.subtitle()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = formatTime(event.timeSeconds),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.width(56.dp),
+        )
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = event.tint(),
+            modifier = Modifier.padding(top = 2.dp).size(20.dp),
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RouteEvent.tint() = when (this) {
+    is RouteEvent.HomeStart, is RouteEvent.HomeEnd -> MaterialTheme.colorScheme.primary
+    is RouteEvent.Pickup -> MaterialTheme.colorScheme.secondary
+    is RouteEvent.Dropoff -> MaterialTheme.colorScheme.tertiary
+    is RouteEvent.Walk -> MaterialTheme.colorScheme.primary
+}
+
+private fun RouteEvent.icon(): ImageVector = when (this) {
+    is RouteEvent.HomeStart, is RouteEvent.HomeEnd -> Icons.Default.Home
+    is RouteEvent.Pickup -> Icons.Default.ArrowDownward
+    is RouteEvent.Dropoff -> Icons.Default.ArrowUpward
+    is RouteEvent.Walk -> Icons.AutoMirrored.Filled.DirectionsWalk
+}
+
+private fun RouteEvent.title(): String = when (this) {
+    is RouteEvent.HomeStart -> "Start at home"
+    is RouteEvent.HomeEnd -> "Return home"
+    is RouteEvent.Pickup -> "Pickup ${dog.name}"
+    is RouteEvent.Dropoff -> "Dropoff ${dog.name}"
+    is RouteEvent.Walk -> "Walk ${dogs.joinToString { it.name }} · ${formatDuration(durationSeconds)}"
+}
+
+private fun RouteEvent.subtitle(): String? = when (this) {
+    is RouteEvent.Pickup -> dog.address.ifBlank { null }
+    is RouteEvent.Dropoff -> dog.address.ifBlank { null }
+    else -> null
 }
 
 @Composable
@@ -139,172 +330,12 @@ private fun DateSelector(
         IconButton(onClick = onPrevious) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous day")
         }
-        TextButton(
-            onClick = onPickDate,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text(
-                text = date.format(formatter),
-                style = MaterialTheme.typography.titleMedium,
-            )
+        TextButton(onClick = onPickDate, modifier = Modifier.weight(1f)) {
+            Text(text = date.format(formatter), style = MaterialTheme.typography.titleMedium)
         }
         IconButton(onClick = onNext) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next day")
         }
-    }
-}
-
-@Composable
-private fun EmptyState() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "No walks scheduled for this day.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TripCard(
-    tripIndex: Int,
-    trip: Trip,
-    capacityKg: Float,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = buildString {
-                        append("Trip $tripIndex")
-                        formatTripWindow(trip.window)?.let { append(" · ").append(it) }
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "${trip.walks.size} stop${if (trip.walks.size == 1) "" else "s"} · ${
-                        trip.totalWeightKg.formatWeight()
-                    } / ${capacityKg.formatWeight()} kg",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            trip.totalTravelSeconds?.takeIf { it > 0 }?.let { seconds ->
-                Text(
-                    text = "${formatDuration(seconds)} cycling total",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (trip.exceedsCapacity) {
-                AssistChip(
-                    onClick = {},
-                    label = { Text("Exceeds capacity") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(AssistChipDefaults.IconSize),
-                        )
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        labelColor = MaterialTheme.colorScheme.error,
-                        leadingIconContentColor = MaterialTheme.colorScheme.error,
-                    ),
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            if (trip.fromHomeLeg != null) {
-                HomeRow()
-                LegRow(trip.fromHomeLeg)
-            }
-            trip.walks.forEachIndexed { index, walk ->
-                if (index > 0) {
-                    val leg = trip.legs?.getOrNull(index - 1)
-                    LegRow(leg)
-                }
-                StopRow(walk = walk)
-            }
-            if (trip.toHomeLeg != null) {
-                LegRow(trip.toHomeLeg)
-                HomeRow()
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeRow() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    ) {
-        Text(
-            text = "🏠",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            text = "  Home",
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
-private fun LegRow(leg: RouteLeg?) {
-    val text = when {
-        leg == null -> "↓"
-        leg.estimate == null -> "↓ no route"
-        else -> "↓ ${formatDistanceMeters(leg.estimate.distanceMeters)} · " +
-            formatDuration(leg.estimate.durationSeconds)
-    }
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
-    )
-}
-
-@Composable
-private fun StopRow(walk: PlannedWalk) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = walk.dog.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${walk.dog.weightKg.formatWeight()} kg",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Text(
-            text = walk.dog.address.ifBlank { "(no address)" },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-        )
-        Text(
-            text = buildString {
-                append(formatWindow(walk.rule.earliestStart, walk.rule.latestEnd))
-                append(" · ")
-                append("${walk.rule.durationMinutes} min walk")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -337,9 +368,10 @@ private fun DatePickerSheet(
     }
 }
 
-private fun Float.formatWeight(): String {
-    val rounded = toInt().toFloat()
-    return if (rounded == this) toInt().toString() else String.format(Locale.ROOT, "%.1f", this)
+private fun formatTime(seconds: Int): String {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return "%02d:%02d".format(h, m)
 }
 
 private fun formatDuration(totalSeconds: Int): String {
@@ -347,34 +379,7 @@ private fun formatDuration(totalSeconds: Int): String {
     return when {
         minutes >= 60 -> "%d h %02d min".format(minutes / 60, minutes % 60)
         minutes >= 1 -> "$minutes min"
-        else -> "<1 min"
+        totalSeconds > 0 -> "<1 min"
+        else -> "0 min"
     }
 }
-
-private fun formatDistanceMeters(meters: Int): String =
-    if (meters >= 1_000) String.format(Locale.ROOT, "%.1f km", meters / 1000.0)
-    else "$meters m"
-
-private fun formatWindow(earliest: LocalTime?, latest: LocalTime?): String {
-    val from = earliest?.format(timeFormatter) ?: "any"
-    val until = latest?.format(timeFormatter) ?: "any"
-    return "$from – $until"
-}
-
-/**
- * Trip-header window formatting. Returns null when the trip has no
- * effective constraint (every walk is unbounded), so the header stays
- * tidy in that case. Otherwise it shows the side(s) that are bounded.
- */
-private fun formatTripWindow(window: TimeWindow): String? {
-    if (window.isUnbounded) return null
-    val from = window.from.takeIf { it != LocalTime.MIN }?.format(timeFormatter)
-    val until = window.until.takeIf { it != LocalTime.MAX }?.format(timeFormatter)
-    return when {
-        from != null && until != null -> "$from – $until"
-        from != null -> "from $from"
-        until != null -> "until $until"
-        else -> null
-    }
-}
-

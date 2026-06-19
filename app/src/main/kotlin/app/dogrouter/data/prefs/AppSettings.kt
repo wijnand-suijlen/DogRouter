@@ -4,15 +4,17 @@ package app.dogrouter.data.prefs
  * Planning-time parameters used by the day planner. Values live in
  * DataStore-Preferences and reach the planner via [SettingsRepository].
  *
- * Cycling speed is intentionally absent: the on-device BRouter engine
- * derives the time estimate itself from the cargo-bike profile
- * (totalMass, bikerPower, drag, rolling resistance). Surfacing a UI
- * slider for "speed" that BRouter would silently ignore would mislead
- * the walker.
+ * Cycling speed is a user-tunable override on top of BRouter: BRouter
+ * picks the actual road network (cycle paths, no stairs, ecargobike
+ * profile) so its distances are accurate, but its kinematic model is
+ * conservative for a real cargo bike with dogs aboard. We use
+ * BRouter's distance and divide by [cyclingSpeedKmh] to land on
+ * realistic times.
  */
 data class AppSettings(
     val bikeCapacityKg: Float,
     val stopBufferMinutes: Int,
+    val cyclingSpeedKmh: Float,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -29,6 +31,7 @@ data class AppSettings(
         val DEFAULTS = AppSettings(
             bikeCapacityKg = 70f,
             stopBufferMinutes = 5,
+            cyclingSpeedKmh = 15f,
             homeAddress = "",
             homeLatitude = null,
             homeLongitude = null,

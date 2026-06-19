@@ -3,14 +3,16 @@ package app.dogrouter.ui.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.db.DogDao
+import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
+import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.entity.DogIncompatibility
+import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
-import app.dogrouter.domain.planner.DayPlan
+import app.dogrouter.domain.dayplan.DayPlanner
+import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.planner.PlannedWalk
-import app.dogrouter.domain.planner.Trip
-import app.dogrouter.domain.planner.TripPacker
-import app.dogrouter.domain.planner.TripRouter
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,36 +30,40 @@ import java.time.LocalDate
 class TodayViewModel(
     dogDao: DogDao,
     scheduleDao: DogScheduleDao,
+    incompatibilityDao: DogIncompatibilityDao,
     settingsRepo: SettingsRepository,
-    routingProvider: RoutingProvider,
+    private val routingProvider: RoutingProvider,
 ) : ViewModel() {
-
-    private val tripRouter = TripRouter(routingProvider)
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
 
-    val dayPlan: StateFlow<DayPlan> = combine(
+    /**
+     * Two-stage emission per input change:
+     *  1. Emit null to mark the route as recomputing — the UI shows a
+     *     loading state immediately.
+     *  2. Run the PDPTW planner and emit the resulting DayRoute.
+     *
+     * flatMapLatest cancels an in-flight plan when inputs change, so we
+     * never mix yesterday's events with today's.
+     */
+    val dayRoute: StateFlow<DayRoute?> = combine(
         _selectedDate,
         dogDao.observeAll(),
         scheduleDao.observeAll(),
+        incompatibilityDao.observeAll(),
         settingsRepo.settings,
-    ) { date, dogs, rules, settings ->
-        DayPlanInputs(date, dogs, rules, settings)
+    ) { date, dogs, rules, incompatibilities, settings ->
+        Inputs(date, dogs, rules, incompatibilities, settings)
     }.flatMapLatest { inputs ->
         flow {
-            val basic = packBasicPlan(inputs)
-            emit(basic)
-            if (basic.trips.isNotEmpty()) {
-                val home = inputs.settings.homeGeoPoint()
-                val routed = basic.copy(trips = tripRouter.routeAll(basic.trips, home))
-                emit(routed)
-            }
+            emit(null)
+            emit(computePlan(inputs))
         }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = DayPlan(date = LocalDate.now(), trips = emptyList()),
+        initialValue = null,
     )
 
     val settings: StateFlow<AppSettings> = settingsRepo.settings.stateIn(
@@ -82,16 +88,29 @@ class TodayViewModel(
         _selectedDate.value = date
     }
 
-    private fun packBasicPlan(inputs: DayPlanInputs): DayPlan {
+    private suspend fun computePlan(inputs: Inputs): DayRoute {
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
         val rulesForDay = inputs.rules.filter { (it.weekdaysMask and bit) != 0 }
         val dogById = inputs.dogs.associateBy { it.id }
         val walks: List<PlannedWalk> = rulesForDay.mapNotNull { rule ->
             dogById[rule.dogId]?.let { PlannedWalk(it, rule) }
         }
-        val trips: List<Trip> = TripPacker.pack(walks, inputs.settings.bikeCapacityKg)
-        return DayPlan(date = inputs.date, trips = trips)
+        val pairs = inputs.incompatibilities
+            .map { canonicalPair(it.dogIdA, it.dogIdB) }
+            .toSet()
+        val planner = DayPlanner(
+            routingProvider = routingProvider,
+            home = inputs.settings.homeGeoPoint(),
+            capacityKg = inputs.settings.bikeCapacityKg,
+            stopBufferSeconds = inputs.settings.stopBufferMinutes * 60,
+            cyclingSpeedKmh = inputs.settings.cyclingSpeedKmh,
+            incompatibilities = pairs,
+        )
+        return planner.plan(inputs.date, walks)
     }
+
+    private fun canonicalPair(a: String, b: String): Pair<String, String> =
+        if (a < b) a to b else b to a
 
     private fun AppSettings.homeGeoPoint(): GeoPoint? {
         val lat = homeLatitude ?: return null
@@ -99,10 +118,11 @@ class TodayViewModel(
         return GeoPoint(lat, lon)
     }
 
-    private data class DayPlanInputs(
+    private data class Inputs(
         val date: LocalDate,
-        val dogs: List<app.dogrouter.data.entity.Dog>,
-        val rules: List<app.dogrouter.data.entity.DogScheduleRule>,
+        val dogs: List<Dog>,
+        val rules: List<DogScheduleRule>,
+        val incompatibilities: List<DogIncompatibility>,
         val settings: AppSettings,
     )
 }

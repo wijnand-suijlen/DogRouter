@@ -37,6 +37,8 @@ data class SettingsFormState(
     val bikeCapacityValid: Boolean,
     val stopBufferText: String,
     val stopBufferValid: Boolean,
+    val cyclingSpeedText: String,
+    val cyclingSpeedValid: Boolean,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -47,6 +49,8 @@ data class SettingsFormState(
             bikeCapacityValid = true,
             stopBufferText = settings.stopBufferMinutes.toString(),
             stopBufferValid = true,
+            cyclingSpeedText = settings.cyclingSpeedKmh.formatLight(),
+            cyclingSpeedValid = true,
             homeAddress = settings.homeAddress,
             homeLatitude = settings.homeLatitude,
             homeLongitude = settings.homeLongitude,
@@ -103,6 +107,12 @@ class SettingsViewModel(
         val parsed = text.toIntOrNull()?.takeIf { it >= 0 }
         _form.update { it?.copy(stopBufferText = text, stopBufferValid = parsed != null) }
         parsed?.let { minutes -> viewModelScope.launch { repo.setStopBufferMinutes(minutes) } }
+    }
+
+    fun onCyclingSpeedTextChange(text: String) {
+        val parsed = parsePositiveFloat(text)
+        _form.update { it?.copy(cyclingSpeedText = text, cyclingSpeedValid = parsed != null) }
+        parsed?.let { kmh -> viewModelScope.launch { repo.setCyclingSpeed(kmh) } }
     }
 
     fun onHomeAddressTextChange(text: String) {

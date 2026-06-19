@@ -35,6 +35,7 @@ class DayPlanner(
     private val home: GeoPoint?,
     private val capacityKg: Float,
     private val stopBufferSeconds: Int,
+    private val cyclingSpeedKmh: Float,
     private val incompatibilities: Set<Pair<String, String>>,
     private val dayStartSeconds: Int = 8 * 3600,
     private val dayEndSeconds: Int = 20 * 3600,
@@ -61,7 +62,7 @@ class DayPlanner(
         }
 
         val points = (routable.map { it.geoPoint() } + home).toSet()
-        val matrix = DistanceMatrix.build(points, routingProvider)
+        val matrix = DistanceMatrix.build(points, routingProvider, cyclingSpeedKmh)
         val constraints = listOf(
             CapacityConstraint(capacityKg),
             TimeWindowConstraint(),
@@ -188,33 +189,54 @@ class DayPlanner(
     /**
      * Walk through [events] forward, filling in [RouteEvent.timeSeconds]
      * for each based on cycling time from the previous location and the
-     * time spent at the previous event. Returns the retimed list together
-     * with the total elapsed seconds (HomeStart to HomeEnd), or null if
-     * any event would land after [dayEndSeconds].
+     * time spent at the previous event.
+     *
+     * If a pickup would arrive before its rule's earliestStart, the
+     * walker waits at the pickup location until the window opens — the
+     * extra idle time pushes every subsequent event later. Without this
+     * the planner refuses every walk whose earliestStart is later than
+     * the trivial 8 AM + travel arrival time.
+     *
+     * Returns the retimed list together with the total elapsed seconds
+     * (HomeStart to HomeEnd), or null if any event would land after
+     * [dayEndSeconds].
      */
     private fun retimeAndCost(events: MutableList<RouteEvent>, matrix: DistanceMatrix): Pair<List<RouteEvent>, Int>? {
         var t = dayStartSeconds
         val retimed = mutableListOf<RouteEvent>()
         for ((i, event) in events.withIndex()) {
-            val arrival: Int = if (i == 0) {
-                t
-            } else {
+            if (i > 0) {
                 val prev = retimed.last()
                 val travel = if (event is RouteEvent.Walk) 0 else matrix.secondsBetween(prev.location, event.location)
                 t += travel
-                t
+            }
+            if (event is RouteEvent.Pickup) {
+                val earliest = event.rule.earliestStart?.toSecondOfDay()
+                if (earliest != null && earliest > t) t = earliest
             }
             val placed: RouteEvent = when (event) {
-                is RouteEvent.HomeStart -> event.copy(timeSeconds = arrival)
-                is RouteEvent.HomeEnd -> event.copy(timeSeconds = arrival)
-                is RouteEvent.Pickup -> event.copy(timeSeconds = arrival)
-                is RouteEvent.Dropoff -> event.copy(timeSeconds = arrival)
-                is RouteEvent.Walk -> event.copy(timeSeconds = arrival)
+                is RouteEvent.HomeStart -> event.copy(timeSeconds = t)
+                is RouteEvent.HomeEnd -> event.copy(timeSeconds = t)
+                is RouteEvent.Pickup -> event.copy(timeSeconds = t)
+                is RouteEvent.Dropoff -> event.copy(timeSeconds = t)
+                is RouteEvent.Walk -> event.copy(timeSeconds = t)
             }
             t += placed.durationAtSeconds(stopBufferSeconds)
             if (t > dayEndSeconds) return null
             retimed.add(placed)
         }
+
+        // Push HomeStart forward to "leave home just in time": no point
+        // standing at the first pickup waiting for its window to open.
+        // Adjusting also shrinks the day's elapsed cost, which steers the
+        // algorithm toward schedules with less idle time.
+        val firstNonHome = retimed.getOrNull(1)
+        if (firstNonHome != null && retimed[0] is RouteEvent.HomeStart) {
+            val travelHomeToFirst = matrix.secondsBetween(retimed[0].location, firstNonHome.location)
+            val effectiveLeave = maxOf(dayStartSeconds, firstNonHome.timeSeconds - travelHomeToFirst)
+            retimed[0] = (retimed[0] as RouteEvent.HomeStart).copy(timeSeconds = effectiveLeave)
+        }
+
         val cost = retimed.last().timeSeconds - retimed.first().timeSeconds
         return retimed to cost
     }

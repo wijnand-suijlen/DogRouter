@@ -49,4 +49,9 @@ class TodayViewModel(
     fun setDate(date: LocalDate) {
         _selectedDate.value = date
     }
+
+    /** Ask the solver for a different plan for the day in view. */
+    fun refresh() {
+        dayPlanService.refresh(_selectedDate.value)
+    }
 }

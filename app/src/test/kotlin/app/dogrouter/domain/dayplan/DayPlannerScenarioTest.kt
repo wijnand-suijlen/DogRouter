@@ -7,6 +7,7 @@ import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RouteEstimate
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -177,6 +178,29 @@ class DayPlannerScenarioTest {
             "Apple should ride along 2 walks (split), got ${appleWalks.size}:$summary",
             appleWalks.size == 2,
         )
+    }
+
+    /**
+     * The same seed and inputs must produce the identical plan — the
+     * invariant the plan cache relies on.
+     */
+    @Test
+    fun sameSeedIsDeterministic() = runBlocking {
+        val apple = dog("apple", "Apple", 5f, 48.8140, 2.2360)
+        val bo = dog("bo", "Bo", 5f, 48.8120, 2.2340)
+        val cy = dog("cy", "Cy", 5f, 48.8150, 2.2370)
+        val walks = listOf(
+            PlannedWalk(apple, rule("apple1", "apple", "08:00", "14:00", 120)),
+            PlannedWalk(bo, rule("bo1", "bo", "09:00", "13:00", 60)),
+            PlannedWalk(cy, rule("cy1", "cy", "10:00", "14:00", 60)),
+        )
+        fun planner() = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+        )
+        val a = planner().plan(LocalDate.of(2026, 6, 22), walks, seed = 7L)
+        val b = planner().plan(LocalDate.of(2026, 6, 22), walks, seed = 7L)
+        assertEquals(a.events.map { "${it.timeSeconds}:${describe(it)}" }, b.events.map { "${it.timeSeconds}:${describe(it)}" })
     }
 
     private fun describe(e: RouteEvent): String = when (e) {

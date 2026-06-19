@@ -13,16 +13,27 @@ import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import java.time.LocalDate
+
+private const val MAX_CACHED_PLANS = 32
 
 /**
  * Builds the PDPTW [DayRoute] for a given date and keeps it live as dogs,
  * schedules, incompatibilities, or settings change. Shared by the Today
  * screen (which browses days) and Follow plan (which executes one day's
  * plan), so the planning pipeline lives in exactly one place.
+ *
+ * Plans are cached by (inputs, seed): while the inputs and seed are
+ * unchanged the same plan is returned without re-running BRouter or the
+ * solver — so re-opening Follow plan or returning to a day is instant.
+ * [refresh] bumps a date's seed to ask the randomised solver for a
+ * different plan.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DayPlanService(
@@ -32,28 +43,53 @@ class DayPlanService(
     private val settingsRepo: SettingsRepository,
     private val routingProvider: RoutingProvider,
 ) {
+    private val seeds = MutableStateFlow<Map<LocalDate, Long>>(emptyMap())
+
+    // Access-ordered LRU: keeps the most recently used plans, evicts the rest.
+    private val cache = object : LinkedHashMap<CacheKey, DayRoute>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<CacheKey, DayRoute>): Boolean =
+            size > MAX_CACHED_PLANS
+    }
+
     /**
-     * Emits null first to signal "recomputing" (so the UI can show a
-     * loading state immediately), then the planned route. Re-emits on any
-     * input change; consumers should collect with flatMapLatest so an
-     * in-flight plan is cancelled when inputs change and yesterday's
-     * events never mix with today's.
+     * Emits the plan for [date]. On a cache hit it emits the cached plan
+     * straight away; on a miss it emits null (so the UI can show a loading
+     * state) and then the freshly computed plan. Re-emits when inputs or
+     * the date's seed change.
      */
     fun observePlan(date: LocalDate): Flow<DayRoute?> = combine(
         dogDao.observeAll(),
         scheduleDao.observeAll(),
         incompatibilityDao.observeAll(),
         settingsRepo.settings,
-    ) { dogs, rules, incompatibilities, settings ->
-        Inputs(date, dogs, rules, incompatibilities, settings)
-    }.flatMapLatest { inputs ->
+        seeds.map { it[date] ?: 0L },
+    ) { dogs, rules, incompatibilities, settings, seed ->
+        Inputs(date, dogs, rules, incompatibilities, settings) to seed
+    }.flatMapLatest { (inputs, seed) ->
         flow {
+            val key = CacheKey(inputs, seed)
+            cached(key)?.let {
+                emit(it)
+                return@flow
+            }
             emit(null)
-            emit(computePlan(inputs))
+            val plan = computePlan(inputs, seed)
+            store(key, plan)
+            emit(plan)
         }
     }
 
-    private suspend fun computePlan(inputs: Inputs): DayRoute {
+    /** Ask for a different plan for [date] (advances its solver seed). */
+    fun refresh(date: LocalDate) {
+        seeds.update { it + (date to ((it[date] ?: 0L) + 1)) }
+    }
+
+    private fun cached(key: CacheKey): DayRoute? = synchronized(cache) { cache[key] }
+    private fun store(key: CacheKey, plan: DayRoute) {
+        synchronized(cache) { cache[key] = plan }
+    }
+
+    private suspend fun computePlan(inputs: Inputs, seed: Long): DayRoute {
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
         val rulesForDay = inputs.rules.filter { (it.weekdaysMask and bit) != 0 }
         val dogById = inputs.dogs.associateBy { it.id }
@@ -71,7 +107,7 @@ class DayPlanService(
             cyclingSpeedKmh = inputs.settings.cyclingSpeedKmh,
             incompatibilities = pairs,
         )
-        return planner.plan(inputs.date, walks)
+        return planner.plan(inputs.date, walks, seed)
     }
 
     private fun canonicalPair(a: String, b: String): Pair<String, String> =
@@ -90,4 +126,6 @@ class DayPlanService(
         val incompatibilities: List<DogIncompatibility>,
         val settings: AppSettings,
     )
+
+    private data class CacheKey(val inputs: Inputs, val seed: Long)
 }

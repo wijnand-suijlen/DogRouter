@@ -19,9 +19,11 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
 - **Today tab**: PDPTW event timeline. Date picker with prev/next/today
   controls. Summary card with on-the-clock + cycling + walking totals.
   Red conflict panel if any walks are unschedulable. "Start trip" FAB
-  (shown when the day has events) hands off to Follow plan. Each cycling
-  leg row has a map icon that opens the full-screen route map (no inline
-  map in the list — see the leg-maps note below).
+  (shown when the day has events) hands off to Follow plan. A refresh
+  action in the app bar asks the randomised solver for an alternative
+  plan for that day. Each cycling leg row has a map icon that opens the
+  full-screen route map (no inline map in the list — see the leg-maps
+  note below).
 - **Follow plan**: full-screen on-the-bike execution of one day's plan.
   Current stop dominates (big ETA, title, address, owner phone, quirks
   highlighted), next two stops listed below, large "Done — next stop" /
@@ -129,14 +131,14 @@ ui/
    `allowLongerWalk=true` dog may be walked a bit longer than asked when
    that shortens the day overall.
 
-4. **Plan not cached; recomputed per subscription**. `DayPlanService`
-   rebuilds the whole PDPTW plan (and its ~N² BRouter matrix) every time
-   a screen subscribes — switching days, and notably each time Follow
-   plan is opened (its own ViewModel re-subscribes). Heavy with more
-   dogs and the main reason rapid Today⇄Follow-plan switching does a lot
-   of background work. Worth caching the plan per (date + inputs). This
-   is background work (IO), not the ANR fixed by the tile-free previews,
-   but it adds memory/GC churn.
+4. **(Resolved) Plan caching.** `DayPlanService` now caches plans by
+   (inputs, seed) in an LRU map (the service is a Koin single, so the
+   cache spans screens and dates). Re-opening Follow plan or returning to
+   a day is a cache hit — no BRouter, no solver. The cache invalidates
+   when any planner-relevant input changes (and on `refresh`, which bumps
+   the date's seed). Remaining nuance: the key includes the full `Inputs`,
+   so editing an irrelevant dog field (e.g. photo) also invalidates it —
+   harmless, just an occasional needless recompute.
 
 5. **dayStart / dayEnd are hardcoded 08:00–20:00** in the
    `DayPlanner` constructor. Belongs in Settings eventually.

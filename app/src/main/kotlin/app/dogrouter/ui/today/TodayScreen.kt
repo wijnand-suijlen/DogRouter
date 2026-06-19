@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.filled.Warning
@@ -81,6 +82,9 @@ fun TodayScreen(
             TopAppBar(
                 title = { Text("Today") },
                 actions = {
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Generate another plan")
+                    }
                     IconButton(onClick = viewModel::goToToday) {
                         Icon(Icons.Default.Today, contentDescription = "Jump to today")
                     }

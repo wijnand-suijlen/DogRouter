@@ -66,7 +66,9 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   caching) while different seeds explore alternatives (the refresh
   button). Pluggable `PlanningConstraint` interface with four
   concrete checks today: capacity, time windows (start-from / start-by /
-  home-by, each independent and optional), walk duration
+  home-by, each independent and optional; start-by bounds the actual walk
+  start, not the pickup, so a dog cannot be picked up in time and then
+  carried to a much later walk), walk duration
   (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
   pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
   schedule rules (two walks in a day) is handled correctly. The planner

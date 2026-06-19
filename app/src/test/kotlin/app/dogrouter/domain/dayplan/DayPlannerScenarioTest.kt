@@ -261,10 +261,9 @@ class DayPlannerScenarioTest {
             listOf(WalkOption(listOf(PlannedWalk(yankee, startWindowRule("y1", "yankee", "11:00", "13:00", 60))))),
         )
         assertTrue(feasible.conflicts.isEmpty())
-        val pickup = feasible.events.filterIsInstance<RouteEvent.Pickup>().single { it.dog.id == "yankee" }
         assertTrue(
-            "Walk must start in 11:00–13:00 but started ${fmt(pickup.timeSeconds)}",
-            pickup.timeSeconds in 11 * 3600..13 * 3600,
+            "Yankee's walk must start in 11:00–13:00",
+            yankeeFirstWalkSeconds(feasible) in 11 * 3600..13 * 3600,
         )
 
         // earliest 14:00 but must start by 13:00 → impossible.
@@ -274,6 +273,43 @@ class DayPlannerScenarioTest {
         )
         assertEquals(1, impossible.conflicts.size)
     }
+
+    /**
+     * Regression: the latest-start bound is on the walk, not the pickup.
+     * With a late walk available (the other dog can only walk 15:00–16:00),
+     * Yankee must not be picked up in time and then carried to that late walk
+     * — his own walk must still start by 13:00.
+     */
+    @Test
+    fun latestStartBoundsTheWalkNotThePickup() = runBlocking {
+        val yankee = dog("yankee", "Yankee", 9f, 48.8159, 2.2317)
+        val late = dog("late", "Late", 9f, 48.8150, 2.2360)
+        val walks = listOf(
+            PlannedWalk(yankee, startWindowRule("y1", "yankee", "11:00", "13:00", 60)),
+            PlannedWalk(late, rule("late1", "late", "15:00", "16:00", 60)),
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+        )
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
+        val summary = buildString {
+            appendLine()
+            route.events.forEach { e -> appendLine("  ${fmt(e.timeSeconds)}  ${describe(e)}") }
+            appendLine("CONFLICTS (${route.conflicts.size}): " + route.conflicts.joinToString { "${it.dog.name}=${it.reason}" })
+        }
+        println(summary)
+        assertTrue("Yankee should be placed:$summary", route.conflicts.none { it.dog.id == "yankee" })
+        assertTrue(
+            "Yankee's walk must start by 13:00:$summary",
+            yankeeFirstWalkSeconds(route) <= 13 * 3600,
+        )
+    }
+
+    private fun yankeeFirstWalkSeconds(route: app.dogrouter.domain.dayplan.DayRoute): Int =
+        route.events.filterIsInstance<RouteEvent.Walk>()
+            .filter { w -> w.dogs.any { it.id == "yankee" } }
+            .minOf { it.timeSeconds }
 
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"

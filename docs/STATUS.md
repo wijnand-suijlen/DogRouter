@@ -50,11 +50,14 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   kinematic time estimate. `RoutingProvider.routeGeometry()` exposes the
   BRouter track as a polyline for map drawing (Follow plan); the planner
   still uses `route()`, which keeps no geometry per cost-matrix cell.
-- **PDPTW planner** (`domain/dayplan/DayPlanner.kt`): greedy insertion
-  heuristic, three modes (new pickup-walk-dropoff triplet; join an
-  existing walk and extend it; ride along several existing walks without
-  extending them, which splits one required duration across shorter
-  sessions). Pluggable `PlanningConstraint` interface with four
+- **PDPTW planner** (`domain/dayplan/DayPlanner.kt`): randomised
+  multi-start greedy. Each start inserts walks in some order using three
+  modes (new pickup-walk-dropoff triplet; join an existing walk and
+  extend it; ride along several existing walks without extending them,
+  which splits one required duration across shorter sessions); the best
+  of `restarts` builds is kept. A `seed` makes a build reproducible (for
+  caching) while different seeds explore alternatives (the refresh
+  button). Pluggable `PlanningConstraint` interface with four
   concrete checks today: capacity, time windows, walk duration
   (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
   pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
@@ -116,17 +119,15 @@ ui/
    event and the pickup includes the wait. Cosmetic; we should split
    wait into its own row.
 
-3. **Walk-splitting works, but the greedy rarely restructures a day to
-   use it.** Mode C (ride-along) lets one required duration be split
-   across several existing walks, and `longWalkSplitsAcrossTwoGroupWalks`
-   proves it. But the greedy inserts walks one at a time and tends to
-   merge dogs into a single session, so it does not, on its own, break a
-   day into the multiple sessions splitting needs. In the 19-June day Alfa
-   still gets one 120-min walk rather than 60+60. Realising the efficiency
-   gain reliably needs a re-optimisation / local-search pass (remove a
-   placed walk and re-insert it against the finished plan) — a larger
-   follow-up. Note: removal would need walk-duration to be recomputed
-   from the remaining dogs, which the current model does not track.
+3. **Walk-splitting exploited via randomised multi-start.** Mode C
+   (ride-along) lets one required duration be split across several walks;
+   the planner now builds from many insertion orders (`restarts`, seeded
+   `Random`) and keeps the best (fewest unplaced, then shortest day), so
+   it discovers the multi-session structures splitting needs. The 19-June
+   Alfa now rides along several sessions instead of one dedicated 120-min
+   walk. The cost function minimises day length, not over-walking, so an
+   `allowLongerWalk=true` dog may be walked a bit longer than asked when
+   that shortens the day overall.
 
 4. **Plan not cached; recomputed per subscription**. `DayPlanService`
    rebuilds the whole PDPTW plan (and its ~N² BRouter matrix) every time

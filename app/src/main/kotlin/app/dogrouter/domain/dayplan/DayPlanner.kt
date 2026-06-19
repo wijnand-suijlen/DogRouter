@@ -8,6 +8,7 @@ import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 import java.time.LocalDate
+import kotlin.random.Random
 
 /**
  * Composes a day route from a list of scheduled walks using a greedy
@@ -39,8 +40,15 @@ class DayPlanner(
     private val incompatibilities: Set<Pair<String, String>>,
     private val dayStartSeconds: Int = 8 * 3600,
     private val dayEndSeconds: Int = 20 * 3600,
+    private val restarts: Int = 60,
 ) {
-    suspend fun plan(date: LocalDate, walks: List<PlannedWalk>): DayRoute {
+    /**
+     * Build a day route. [seed] drives the randomised multi-start search:
+     * the same seed and inputs always yield the same plan (so it can be
+     * cached), while a different seed explores other orderings — the hook
+     * the Today "refresh" button uses to offer alternative plans.
+     */
+    suspend fun plan(date: LocalDate, walks: List<PlannedWalk>, seed: Long = 0L): DayRoute {
         if (home == null) {
             return DayRoute(date, emptyList(), 0, 0, walks.map { PlanConflict(it.dog, "Home address not set") })
         }
@@ -70,12 +78,43 @@ class DayPlanner(
             IncompatibilityConstraint(incompatibilities),
         )
 
-        val sorted = routable.sortedBy { it.deadlineSeconds() }
+        // Multi-start: build several plans from different insertion orders
+        // and keep the best. The deterministic deadline order is always one
+        // of them, so more restarts never produce a worse result. The matrix
+        // is built once above; each restart is pure in-memory work.
+        val rng = Random(seed)
+        val deadlineOrder = routable.sortedBy { it.deadlineSeconds() }
+        var best: DayRoute? = null
+        repeat(restarts.coerceAtLeast(1)) { iteration ->
+            val order = if (iteration == 0) deadlineOrder else routable.shuffled(rng)
+            val candidate = buildOnce(date, order, unroutable, matrix, constraints)
+            if (best == null || candidate.isBetterThan(best!!)) best = candidate
+        }
+        return best!!
+    }
+
+    /** A plan is better when it leaves fewer walks unplaced, then when its day is shorter. */
+    private fun DayRoute.isBetterThan(other: DayRoute): Boolean = when {
+        conflicts.size != other.conflicts.size -> conflicts.size < other.conflicts.size
+        else -> elapsedSeconds() < other.elapsedSeconds()
+    }
+
+    private fun DayRoute.elapsedSeconds(): Int =
+        if (events.size >= 2) events.last().timeSeconds - events.first().timeSeconds else 0
+
+    /** One greedy build over a fixed insertion [order]. */
+    private fun buildOnce(
+        date: LocalDate,
+        order: List<PlannedWalk>,
+        unroutable: List<PlanConflict>,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): DayRoute {
         var events: List<RouteEvent> = listOf(homeStart(), homeEnd(dayStartSeconds))
         val conflicts = mutableListOf<PlanConflict>()
         conflicts.addAll(unroutable)
 
-        for (walk in sorted) {
+        for (walk in order) {
             val placed = tryInsert(events, walk, matrix, constraints)
             if (placed != null) {
                 events = placed

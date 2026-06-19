@@ -62,6 +62,8 @@ verwijderd, dus de onderste balk heeft nu vier tabs.
   "Pickup Rex"), adres, telefoonnummer eigenaar, en eigenaardigheden in
   een uitgelichte notitie. Hondfoto wordt nog niet getoond (geen
   image-loader in het project).
+- Wanneer je de stop fietsend bereikt vanaf de vorige, toont een
+  mini-kaartje de fietsroute van dat been (BRouter-geometrie op osmdroid).
 - Volgende 1–2 stops kleiner eronder.
 - Eén tik op de grote "Done — next stop"-knop gaat verder; "Back"
   corrigeert een misklik. Een voortgangsbalk en "Stop n of N" tonen de

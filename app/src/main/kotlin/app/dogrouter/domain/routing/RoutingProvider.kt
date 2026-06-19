@@ -24,6 +24,19 @@ interface RoutingProvider {
     ): RouteEstimate?
 
     /**
+     * The cycling route geometry between two WGS84 points as an ordered
+     * polyline (start to end), or null when no route can be computed.
+     * Used to draw a leg on a map; the planner uses [route] instead, which
+     * avoids keeping geometry for every cell of the cost matrix.
+     */
+    suspend fun routeGeometry(
+        fromLatitude: Double,
+        fromLongitude: Double,
+        toLatitude: Double,
+        toLongitude: Double,
+    ): List<GeoPoint>?
+
+    /**
      * Human-readable reason the most recent route() call returned null,
      * or null when the last call succeeded (or no call has happened yet).
      * Read AFTER awaiting [route] — there is no concurrency guarantee

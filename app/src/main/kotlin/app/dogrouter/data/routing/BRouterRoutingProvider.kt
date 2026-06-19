@@ -1,9 +1,11 @@
 package app.dogrouter.data.routing
 
 import android.util.Log
+import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RouteEstimate
 import app.dogrouter.domain.routing.RoutingProvider
 import btools.router.OsmNodeNamed
+import btools.router.OsmTrack
 import btools.router.RoutingContext
 import btools.router.RoutingEngine
 import kotlinx.coroutines.Dispatchers
@@ -40,20 +42,56 @@ class BRouterRoutingProvider(
         fromLongitude: Double,
         toLatitude: Double,
         toLongitude: Double,
-    ): RouteEstimate? = withContext(Dispatchers.IO) {
-        if (!paths.isReady()) {
-            lastError = "Routing data not installed"
-            return@withContext null
-        }
-        routingMutex.withLock { computeRoute(fromLatitude, fromLongitude, toLatitude, toLongitude) }
+    ): RouteEstimate? = withTrack(fromLatitude, fromLongitude, toLatitude, toLongitude) { track ->
+        RouteEstimate(
+            distanceMeters = track.distance,
+            durationSeconds = track.totalSeconds,
+        )
     }
 
-    private fun computeRoute(
+    override suspend fun routeGeometry(
+        fromLatitude: Double,
+        fromLongitude: Double,
+        toLatitude: Double,
+        toLongitude: Double,
+    ): List<GeoPoint>? = withTrack(fromLatitude, fromLongitude, toLatitude, toLongitude) { track ->
+        track.nodes.map { node ->
+            // BRouter stores coordinates as fixed-point ints offset by 180°/90°.
+            GeoPoint(
+                latitude = node.iLat / 1_000_000.0 - 90.0,
+                longitude = node.iLon / 1_000_000.0 - 180.0,
+            )
+        }
+    }
+
+    /**
+     * Run BRouter once for the given leg, serialised behind [routingMutex]
+     * and off the main thread, then map the resulting track. Returns null
+     * (and sets [lastError]) when data is missing or no route is found.
+     */
+    private suspend fun <T> withTrack(
         fromLat: Double,
         fromLon: Double,
         toLat: Double,
         toLon: Double,
-    ): RouteEstimate? {
+        map: (OsmTrack) -> T,
+    ): T? = withContext(Dispatchers.IO) {
+        if (!paths.isReady()) {
+            lastError = "Routing data not installed"
+            return@withContext null
+        }
+        routingMutex.withLock {
+            val track = computeTrack(fromLat, fromLon, toLat, toLon) ?: return@withLock null
+            map(track)
+        }
+    }
+
+    private fun computeTrack(
+        fromLat: Double,
+        fromLon: Double,
+        toLat: Double,
+        toLon: Double,
+    ): OsmTrack? {
         val context = RoutingContext().apply {
             // BRouter resolves the profile file as raw bytes from this path.
             localFunction = paths.cargoProfile.absolutePath
@@ -80,10 +118,7 @@ class BRouterRoutingProvider(
                 return null
             }
             lastError = null
-            RouteEstimate(
-                distanceMeters = track.distance,
-                durationSeconds = track.totalSeconds,
-            )
+            track
         } catch (t: Throwable) {
             Log.e("DogRouter", "BRouter routing threw", t)
             lastError = "${t::class.java.simpleName}: ${t.message}"

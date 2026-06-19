@@ -1,6 +1,8 @@
 package app.dogrouter.ui.followplan
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.RouteEvent
+import app.dogrouter.ui.common.RouteLegMap
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.time.LocalDate
@@ -66,6 +70,7 @@ fun FollowPlanScreen(
     BackHandler(onBack = onExit)
     val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
     val currentStep by viewModel.currentStep.collectAsStateWithLifecycle()
+    val currentLeg by viewModel.currentLeg.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -99,6 +104,7 @@ fun FollowPlanScreen(
                 else -> RunningState(
                     route = route,
                     currentStep = currentStep,
+                    currentLeg = currentLeg,
                     onDone = viewModel::advance,
                     onBack = viewModel::goBack,
                     onExit = onExit,
@@ -136,6 +142,7 @@ private fun EmptyState() {
 private fun RunningState(
     route: DayRoute,
     currentStep: Int,
+    currentLeg: RouteLeg?,
     onDone: () -> Unit,
     onBack: () -> Unit,
     onExit: () -> Unit,
@@ -160,6 +167,7 @@ private fun RunningState(
         } else {
             CurrentStop(
                 event = events[currentStep],
+                leg = currentLeg,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -172,14 +180,14 @@ private fun RunningState(
 }
 
 @Composable
-private fun CurrentStop(event: RouteEvent, modifier: Modifier = Modifier) {
+private fun CurrentStop(event: RouteEvent, leg: RouteLeg?, modifier: Modifier = Modifier) {
     val step = event.toStepView()
     Card(modifier = modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
-            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = step.timeLabel,
@@ -212,6 +220,19 @@ private fun CurrentStop(event: RouteEvent, modifier: Modifier = Modifier) {
                     text = step.detail,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (leg != null) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Cycling route here",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                RouteLegMap(
+                    track = leg.track,
+                    modifier = Modifier.clip(MaterialTheme.shapes.medium),
                 )
             }
             if (step.quirks != null) {

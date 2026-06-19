@@ -26,13 +26,18 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   "Finish trip" button advances, Back corrects a mis-tap, progress bar +
   "Stop n of N", and a "Trip complete" end state. Hides the bottom bar.
   The plan comes from the shared `DayPlanService`, the same pipeline
-  Today uses.
+  Today uses. When a stop is reached by cycling from the previous one,
+  the card shows a mini-map (`RouteLegMap`, osmdroid) of the BRouter
+  cycling route for that leg — polyline plus an endpoint marker each end,
+  falling back to a straight line if BRouter cannot trace the leg.
 - **BRouter** running embedded on-device via `org.btools:brouter-core`
   from GitHub Packages. Profile `bakfiets.brf` shipped in assets,
   derived from trekking.brf. Lookups.dat also shipped.
 - **Routing flow**: BRouter for the road network and distance,
   user-configured cycling speed for the time. We do NOT use BRouter's
-  kinematic time estimate.
+  kinematic time estimate. `RoutingProvider.routeGeometry()` exposes the
+  BRouter track as a polyline for map drawing (Follow plan); the planner
+  still uses `route()`, which keeps no geometry per cost-matrix cell.
 - **PDPTW planner** (`domain/dayplan/DayPlanner.kt`): greedy insertion
   heuristic, two modes (new pickup-walk-dropoff triplet, or join an
   existing walk). Pluggable `PlanningConstraint` interface with four

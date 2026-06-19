@@ -56,6 +56,8 @@ navigation code, so the bottom bar now has four tabs.
 - Current stop dominates: big ETA, title (e.g. "Pickup Rex"), address,
   owner phone, and quirks in a highlighted note. Dog photo is not shown
   yet (no image loader in the project).
+- When the stop is reached by cycling from the previous one, a mini-map
+  shows the cycling route for that leg (BRouter geometry on osmdroid).
 - Next 1–2 stops listed smaller below.
 - Single tap on the large "Done — next stop" button advances; "Back"
   corrects a mis-tap. A progress bar and "Stop n of N" show position; a

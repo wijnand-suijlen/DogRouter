@@ -23,7 +23,9 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.dogrouter.data.remote.AddressSuggestion
+import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.ui.addresspicker.AddressPickerScreen
+import app.dogrouter.ui.common.LegMapScreen
 import app.dogrouter.ui.dogs.DogEditScreen
 import app.dogrouter.ui.dogs.DogListScreen
 import app.dogrouter.ui.followplan.FollowPlanScreen
@@ -51,6 +53,20 @@ object FollowPlanRoutes {
     fun route(date: LocalDate): String = "follow-plan/$date"
 }
 
+object LegMapRoutes {
+    const val ARG_FROM_LAT = "fromLat"
+    const val ARG_FROM_LON = "fromLon"
+    const val ARG_TO_LAT = "toLat"
+    const val ARG_TO_LON = "toLon"
+    const val ROUTE =
+        "leg-map?$ARG_FROM_LAT={$ARG_FROM_LAT}&$ARG_FROM_LON={$ARG_FROM_LON}" +
+            "&$ARG_TO_LAT={$ARG_TO_LAT}&$ARG_TO_LON={$ARG_TO_LON}"
+
+    fun route(from: GeoPoint, to: GeoPoint): String =
+        "leg-map?$ARG_FROM_LAT=${from.latitude}&$ARG_FROM_LON=${from.longitude}" +
+            "&$ARG_TO_LAT=${to.latitude}&$ARG_TO_LON=${to.longitude}"
+}
+
 object AddressPickerRoutes {
     const val BASE = "address-picker"
     const val ROUTE = "$BASE?lat={lat}&lon={lon}"
@@ -70,7 +86,7 @@ private const val DEFAULT_LON = 2.24
 const val PICKED_ADDRESS_KEY = "pickedAddressJson"
 
 /** Routes that take over the whole screen and hide the bottom navigation. */
-private val FULL_SCREEN_ROUTES = setOf(FollowPlanRoutes.ROUTE)
+private val FULL_SCREEN_ROUTES = setOf(FollowPlanRoutes.ROUTE, LegMapRoutes.ROUTE)
 
 @Composable
 fun AppNavigation() {
@@ -108,6 +124,7 @@ fun AppNavigation() {
             composable(TabDestination.Today.route) {
                 TodayScreen(
                     onStartTrip = { date -> navController.navigate(FollowPlanRoutes.route(date)) },
+                    onOpenLegMap = { from, to -> navController.navigate(LegMapRoutes.route(from, to)) },
                 )
             }
             composable(
@@ -115,7 +132,31 @@ fun AppNavigation() {
                 arguments = listOf(navArgument(FollowPlanRoutes.ARG_DATE) { type = NavType.StringType }),
             ) { entry ->
                 val date = LocalDate.parse(entry.arguments?.getString(FollowPlanRoutes.ARG_DATE))
-                FollowPlanScreen(date = date, onExit = { navController.popBackStack() })
+                FollowPlanScreen(
+                    date = date,
+                    onExit = { navController.popBackStack() },
+                    onOpenLegMap = { from, to -> navController.navigate(LegMapRoutes.route(from, to)) },
+                )
+            }
+            composable(
+                route = LegMapRoutes.ROUTE,
+                arguments = listOf(
+                    navArgument(LegMapRoutes.ARG_FROM_LAT) { type = NavType.StringType },
+                    navArgument(LegMapRoutes.ARG_FROM_LON) { type = NavType.StringType },
+                    navArgument(LegMapRoutes.ARG_TO_LAT) { type = NavType.StringType },
+                    navArgument(LegMapRoutes.ARG_TO_LON) { type = NavType.StringType },
+                ),
+            ) { entry ->
+                val args = entry.arguments
+                val from = GeoPoint(
+                    args?.getString(LegMapRoutes.ARG_FROM_LAT)?.toDouble() ?: DEFAULT_LAT,
+                    args?.getString(LegMapRoutes.ARG_FROM_LON)?.toDouble() ?: DEFAULT_LON,
+                )
+                val to = GeoPoint(
+                    args?.getString(LegMapRoutes.ARG_TO_LAT)?.toDouble() ?: DEFAULT_LAT,
+                    args?.getString(LegMapRoutes.ARG_TO_LON)?.toDouble() ?: DEFAULT_LON,
+                )
+                LegMapScreen(from = from, to = to, onExit = { navController.popBackStack() })
             }
             composable(TabDestination.History.route) { HistoryScreen() }
             composable(TabDestination.Settings.route) { entry ->

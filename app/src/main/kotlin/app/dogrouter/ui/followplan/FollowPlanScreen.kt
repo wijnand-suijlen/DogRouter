@@ -39,7 +39,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,7 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.RouteEvent
-import app.dogrouter.ui.common.RouteLegMap
+import app.dogrouter.domain.routing.GeoPoint
+import app.dogrouter.ui.common.CyclingLegMap
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.time.LocalDate
@@ -65,12 +65,12 @@ import java.util.Locale
 fun FollowPlanScreen(
     date: LocalDate,
     onExit: () -> Unit,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     viewModel: FollowPlanViewModel = koinViewModel { parametersOf(date) },
 ) {
     BackHandler(onBack = onExit)
     val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
     val currentStep by viewModel.currentStep.collectAsStateWithLifecycle()
-    val currentLeg by viewModel.currentLeg.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -104,7 +104,7 @@ fun FollowPlanScreen(
                 else -> RunningState(
                     route = route,
                     currentStep = currentStep,
-                    currentLeg = currentLeg,
+                    onOpenLegMap = onOpenLegMap,
                     onDone = viewModel::advance,
                     onBack = viewModel::goBack,
                     onExit = onExit,
@@ -142,7 +142,7 @@ private fun EmptyState() {
 private fun RunningState(
     route: DayRoute,
     currentStep: Int,
-    currentLeg: RouteLeg?,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     onDone: () -> Unit,
     onBack: () -> Unit,
     onExit: () -> Unit,
@@ -167,7 +167,8 @@ private fun RunningState(
         } else {
             CurrentStop(
                 event = events[currentStep],
-                leg = currentLeg,
+                arrivedFrom = events.getOrNull(currentStep - 1),
+                onOpenLegMap = onOpenLegMap,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -180,8 +181,16 @@ private fun RunningState(
 }
 
 @Composable
-private fun CurrentStop(event: RouteEvent, leg: RouteLeg?, modifier: Modifier = Modifier) {
+private fun CurrentStop(
+    event: RouteEvent,
+    arrivedFrom: RouteEvent?,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val step = event.toStepView()
+    // Show the leg the walker rides to reach this stop, unless it happens
+    // in place (day start, walk, or a stop sharing the previous address).
+    val legFrom = arrivedFrom?.location?.takeIf { it != event.location }
     Card(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -222,17 +231,18 @@ private fun CurrentStop(event: RouteEvent, leg: RouteLeg?, modifier: Modifier = 
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (leg != null) {
+            if (legFrom != null) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Cycling route here",
+                    text = "Cycling route here · tap to enlarge",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(6.dp))
-                RouteLegMap(
-                    track = leg.track,
-                    modifier = Modifier.clip(MaterialTheme.shapes.medium),
+                CyclingLegMap(
+                    from = legFrom,
+                    to = event.location,
+                    onOpenFullscreen = onOpenLegMap,
                 )
             }
             if (step.quirks != null) {

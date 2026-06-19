@@ -13,6 +13,7 @@ import app.dogrouter.data.routing.BRouterRoutingProvider
 import app.dogrouter.data.routing.RoutingDataInstaller
 import app.dogrouter.data.routing.RoutingDataPaths
 import app.dogrouter.domain.dayplan.DayPlanService
+import app.dogrouter.domain.routing.LegGeometryCache
 import app.dogrouter.domain.routing.RoutingProvider
 import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
@@ -81,6 +82,7 @@ val appModule = module {
         )
     }
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
+    single { LegGeometryCache(get()) }
 
     single { DayPlanService(get(), get(), get(), get(), get()) }
 
@@ -89,5 +91,5 @@ val appModule = module {
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get()) }
     viewModel { TodayViewModel(get()) }
-    viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), get(), date) }
+    viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }
 }

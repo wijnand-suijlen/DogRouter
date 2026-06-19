@@ -54,6 +54,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanConflict
 import app.dogrouter.domain.dayplan.RouteEvent
+import app.dogrouter.domain.routing.GeoPoint
+import app.dogrouter.ui.common.CyclingLegMap
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -66,6 +68,7 @@ import java.util.Locale
 @Composable
 fun TodayScreen(
     onStartTrip: (LocalDate) -> Unit,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     viewModel: TodayViewModel = koinViewModel(),
 ) {
     val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
@@ -105,7 +108,7 @@ fun TodayScreen(
                 onPickDate = { showDatePicker = true },
             )
             HorizontalDivider()
-            DayRouteContent(dayRoute)
+            DayRouteContent(dayRoute, onOpenLegMap)
         }
     }
 
@@ -119,7 +122,10 @@ fun TodayScreen(
 }
 
 @Composable
-private fun DayRouteContent(route: DayRoute?) {
+private fun DayRouteContent(
+    route: DayRoute?,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+) {
     when {
         route == null -> LoadingBox()
         route.events.isEmpty() && route.conflicts.isEmpty() -> EmptyState()
@@ -133,7 +139,7 @@ private fun DayRouteContent(route: DayRoute?) {
                 item { ConflictPanel(route.conflicts) }
             }
             val timeline = buildTimelineRows(route.events)
-            items(timeline) { row -> TimelineRowView(row) }
+            items(timeline) { row -> TimelineRowView(row, onOpenLegMap) }
         }
     }
 }
@@ -209,7 +215,7 @@ private fun ConflictPanel(conflicts: List<PlanConflict>) {
 /** UI-only view-model rows: each is either an event row or a cycling-leg row. */
 private sealed interface TimelineRow {
     data class Event(val event: RouteEvent) : TimelineRow
-    data class Leg(val seconds: Int) : TimelineRow
+    data class Leg(val seconds: Int, val from: GeoPoint, val to: GeoPoint) : TimelineRow
 }
 
 private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
@@ -227,30 +233,44 @@ private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
             prev is RouteEvent.Walk -> gap - prev.durationSeconds
             else -> gap
         }
-        if (cyclingSeconds > 0) rows.add(TimelineRow.Leg(cyclingSeconds))
+        if (cyclingSeconds > 0) {
+            rows.add(TimelineRow.Leg(cyclingSeconds, prev.location, current.location))
+        }
         rows.add(TimelineRow.Event(current))
     }
     return rows
 }
 
 @Composable
-private fun TimelineRowView(row: TimelineRow) {
+private fun TimelineRowView(
+    row: TimelineRow,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+) {
     when (row) {
-        is TimelineRow.Leg -> LegRow(row.seconds)
+        is TimelineRow.Leg -> LegRow(row, onOpenLegMap)
         is TimelineRow.Event -> EventRow(row.event)
     }
 }
 
 @Composable
-private fun LegRow(seconds: Int) {
-    Row(
+private fun LegRow(
+    leg: TimelineRow.Leg,
+    onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+) {
+    Column(
         modifier = Modifier.padding(start = 28.dp, top = 2.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "↓ ${formatDuration(seconds)} cycling",
+            text = "↓ ${formatDuration(leg.seconds)} cycling · tap map to enlarge",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        CyclingLegMap(
+            from = leg.from,
+            to = leg.to,
+            onOpenFullscreen = onOpenLegMap,
+            modifier = Modifier.padding(end = 12.dp),
         )
     }
 }

@@ -1,7 +1,5 @@
 package app.dogrouter.ui.common
 
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -10,8 +8,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -24,14 +20,17 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.util.GeoPoint as OsmGeoPoint
 
-private val DEFAULT_MAP_HEIGHT = 200.dp
 private const val BOUNDS_PADDING_PX = 48
 
 /**
- * Read-only mini-map drawing a single cycling leg: the [track] polyline
- * from a start point to an end point, with a marker at each end. Used in
- * Follow plan so the walker can see the route to the next stop at a
- * glance. Non-interactive by design (gloves, glances).
+ * osmdroid map drawing a single cycling leg: the [track] polyline from a
+ * start point to an end point, with a marker at each end, fitted to the
+ * leg's bounds. The caller sizes it via [modifier].
+ *
+ * When [interactive] is false the map is a static glance (used for the
+ * inline mini-maps, which sit under a tap overlay); when true the user can
+ * pinch-zoom and pan (used for the full-screen view). The fit-to-bounds
+ * runs once per [track] so it never fights the user's pan/zoom.
  *
  * [track] is expected to be ordered start-to-end with at least two points.
  */
@@ -39,19 +38,29 @@ private const val BOUNDS_PADDING_PX = 48
 fun RouteLegMap(
     track: List<GeoPoint>,
     modifier: Modifier = Modifier,
-    height: Dp = DEFAULT_MAP_HEIGHT,
+    interactive: Boolean = false,
     lineColor: Int = androidx.compose.material3.MaterialTheme.colorScheme.primary.toArgb(),
 ) {
     if (track.size < 2) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val mapView = remember(context) {
+    val mapView = remember(context, interactive) {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
-            setMultiTouchControls(false)
-            zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-            setOnTouchListener { _, _ -> true } // swallow drags so it stays glanceable
+            setMultiTouchControls(interactive)
+            zoomController.setVisibility(
+                if (interactive) {
+                    CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT
+                } else {
+                    CustomZoomButtonsController.Visibility.NEVER
+                },
+            )
+            if (!interactive) {
+                // Swallow touches so a static mini-map never pans under the
+                // finger; the caller's tap overlay handles opening it.
+                setOnTouchListener { _, _ -> true }
+            }
         }
     }
 
@@ -71,9 +80,13 @@ fun RouteLegMap(
         }
     }
 
+    // Draw the leg once per track value. Re-running on every recomposition
+    // would reset the camera and undo the user's pan/zoom.
+    val rendered = remember(track) { booleanArrayOf(false) }
     AndroidView(
         factory = { mapView },
         update = { view ->
+            if (rendered[0]) return@AndroidView
             val points = track.map { OsmGeoPoint(it.latitude, it.longitude) }
             view.overlays.clear()
             view.overlays.add(
@@ -85,19 +98,18 @@ fun RouteLegMap(
             )
             view.overlays.add(endMarker(view, points.first()))
             view.overlays.add(endMarker(view, points.last()))
-
             val box = BoundingBox.fromGeoPoints(points)
-            // Defer the fit until the view has been laid out, otherwise the
+            // Defer the fit until the view has a size, otherwise the
             // bounding-box zoom is computed against a zero-size map.
-            view.post { view.zoomToBoundingBox(box, false, BOUNDS_PADDING_PX) }
-            view.invalidate()
+            view.post {
+                view.zoomToBoundingBox(box, false, BOUNDS_PADDING_PX)
+                view.invalidate()
+            }
+            rendered[0] = true
         },
-        modifier = modifier
-            .fillMaxWidth()
-            .height(height)
-            // osmdroid's async tile drawing can spill outside the view's
-            // bounds inside a scrollable Column; clip what it paints.
-            .clipToBounds(),
+        // osmdroid's async tile drawing can spill outside the view's bounds
+        // inside a scrollable parent; clip what it paints.
+        modifier = modifier.clipToBounds(),
     )
 }
 

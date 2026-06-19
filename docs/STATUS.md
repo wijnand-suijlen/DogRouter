@@ -19,7 +19,9 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
 - **Today tab**: PDPTW event timeline. Date picker with prev/next/today
   controls. Summary card with on-the-clock + cycling + walking totals.
   Red conflict panel if any walks are unschedulable. "Start trip" FAB
-  (shown when the day has events) hands off to Follow plan.
+  (shown when the day has events) hands off to Follow plan. Each cycling
+  leg row shows a `CyclingLegMap` mini-map of that leg; tapping it opens
+  the full-screen interactive map.
 - **Follow plan**: full-screen on-the-bike execution of one day's plan.
   Current stop dominates (big ETA, title, address, owner phone, quirks
   highlighted), next two stops listed below, large "Done — next stop" /
@@ -27,9 +29,14 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   "Stop n of N", and a "Trip complete" end state. Hides the bottom bar.
   The plan comes from the shared `DayPlanService`, the same pipeline
   Today uses. When a stop is reached by cycling from the previous one,
-  the card shows a mini-map (`RouteLegMap`, osmdroid) of the BRouter
-  cycling route for that leg — polyline plus an endpoint marker each end,
-  falling back to a straight line if BRouter cannot trace the leg.
+  the card shows a `CyclingLegMap` mini-map of the BRouter cycling route
+  for that leg; tapping it opens the full-screen interactive map.
+- **Leg maps**: `RouteLegMap` (osmdroid) draws one cycling leg as a
+  polyline with an endpoint marker each end. `CyclingLegMap` loads the
+  geometry (cached via `LegGeometryCache`), shows a static tappable
+  mini-map, and a full-screen `LegMapScreen` route gives pinch-zoom and
+  pan. Used by both Today and Follow plan; falls back to a straight line
+  if BRouter cannot trace the leg.
 - **BRouter** running embedded on-device via `org.btools:brouter-core`
   from GitHub Packages. Profile `bakfiets.brf` shipped in assets,
   derived from trekking.brf. Lookups.dat also shipped.
@@ -65,9 +72,11 @@ domain/
             DayPlanService (shared plan pipeline: Today + Follow plan)
             constraints/  Capacity, TimeWindow, WalkDuration,
                           Incompatibility
-  routing/  RouteEstimate, RoutingProvider, GeoPoint
+  routing/  RouteEstimate, RoutingProvider, GeoPoint,
+            LegGeometryCache (memoises route geometry per leg)
 ui/
-  common/  AddressAutocompleteField, AddressMapPreview
+  common/  AddressAutocompleteField, AddressMapPreview,
+           RouteLegMap, CyclingLegMap, LegMapScreen
   dogs/    DogListScreen + ViewModel, DogEditScreen + ViewModel,
            ScheduleEditor, ScheduleRuleDraft
   today/   TodayScreen, TodayViewModel

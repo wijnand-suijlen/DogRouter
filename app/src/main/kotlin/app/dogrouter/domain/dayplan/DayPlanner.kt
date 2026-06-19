@@ -399,9 +399,17 @@ class DayPlanner(
     private val cyclingMetersPerSecond: Double = (cyclingSpeedKmh / 3.6).coerceAtLeast(0.1)
     private val walkingMetersPerSecond: Double = (walkingSpeedKmh / 3.6).coerceAtLeast(0.1)
 
-    /** Bike-ride time: cycling time plus the per-ride mount/dismount overhead. */
-    private fun DistanceMatrix.bikeSeconds(from: GeoPoint, to: GeoPoint): Int =
-        (metersBetween(from, to) / cyclingMetersPerSecond).toInt() + bikeOverheadSeconds
+    /**
+     * Bike-ride time: cycling time plus the per-ride mount/dismount
+     * overhead. A zero-distance hop (a second dog at the same address) is
+     * not a ride at all, so it pays no overhead — the walker just steps
+     * over on foot.
+     */
+    private fun DistanceMatrix.bikeSeconds(from: GeoPoint, to: GeoPoint): Int {
+        val meters = metersBetween(from, to)
+        if (meters == 0) return 0
+        return (meters / cyclingMetersPerSecond).toInt() + bikeOverheadSeconds
+    }
 
     /** Cycling time only (no overhead), for the displayed cycling total. */
     private fun DistanceMatrix.cyclingOnlySeconds(from: GeoPoint, to: GeoPoint): Int =

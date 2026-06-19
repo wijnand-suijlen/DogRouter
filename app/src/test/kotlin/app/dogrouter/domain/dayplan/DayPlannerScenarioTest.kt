@@ -368,6 +368,42 @@ class DayPlannerScenarioTest {
         assertNull(constraint.violation(together))
     }
 
+    /**
+     * Two dogs at the same address (Sierra & Tango) must share one bike
+     * ride: the second one adds no mount/dismount overhead, because there is
+     * no ride to it — the walker just steps over. With a large overhead, the
+     * extra dog should add far less than one overhead to the day.
+     */
+    @Test
+    fun sameAddressDogAddsNoBikeOverhead() = runBlocking {
+        val overhead = 600 // 10 min
+        fun planner() = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            walkingSpeedKmh = 3f, bikeOverheadSeconds = overhead,
+        )
+        val sierra = dog("sierra", "Sierra", 8f, 48.8179, 2.2311)
+        val tango = dog("tango", "Tango", 10f, 48.8179, 2.2311) // same coords
+
+        val solo = planner().plan(
+            LocalDate.of(2026, 6, 22),
+            listOf(PlannedWalk(sierra, rule("s", "sierra", "09:00", "17:00", 60))).asOptions(),
+        )
+        val pair = planner().plan(
+            LocalDate.of(2026, 6, 22),
+            listOf(
+                PlannedWalk(sierra, rule("s", "sierra", "09:00", "17:00", 60)),
+                PlannedWalk(tango, rule("b", "tango", "09:00", "17:00", 60)),
+            ).asOptions(),
+        )
+        assertTrue(pair.conflicts.isEmpty())
+        val added = elapsed(pair) - elapsed(solo)
+        assertTrue("Same-address dog added $added s, near a full overhead", added < overhead / 2)
+    }
+
+    private fun elapsed(route: app.dogrouter.domain.dayplan.DayRoute): Int =
+        if (route.events.size >= 2) route.events.last().timeSeconds - route.events.first().timeSeconds else 0
+
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"
         is RouteEvent.HomeEnd -> "HomeEnd"

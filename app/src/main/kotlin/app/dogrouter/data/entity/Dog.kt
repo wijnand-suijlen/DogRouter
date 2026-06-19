@@ -24,6 +24,12 @@ data class Dog(
     val stopAdjustmentMinutes: Int = 0,
     val inCargoBike: TransportState = TransportState.NotTested,
     val inBackpack: TransportState = TransportState.NotTested,
+    // Whether the planner is allowed to walk this dog longer than the
+    // minimum specified in any of its schedule rules. Default true —
+    // most owners are happy with extra walk time. Puppies and dogs with
+    // injuries (e.g. a sore paw) must be set to false so they walk
+    // exactly the requested duration, never more.
+    val allowLongerWalk: Boolean = true,
     val notes: String?,
     val createdAt: Long = System.currentTimeMillis(),
 )

@@ -12,14 +12,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -128,6 +133,8 @@ fun DogEditScreen(
                 onEarliestStartChange = viewModel::setEarliestStart,
                 onLatestEndChange = viewModel::setLatestEnd,
                 onDurationChange = viewModel::setDurationMinutes,
+                onAllowLongerWalkChange = viewModel::setAllowLongerWalk,
+                onToggleIncompatibility = viewModel::toggleIncompatibility,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -169,6 +176,8 @@ private fun DogForm(
     onEarliestStartChange: (ruleId: String, time: java.time.LocalTime?) -> Unit,
     onLatestEndChange: (ruleId: String, time: java.time.LocalTime?) -> Unit,
     onDurationChange: (ruleId: String, minutes: Int) -> Unit,
+    onAllowLongerWalkChange: (Boolean) -> Unit,
+    onToggleIncompatibility: (otherDogId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -286,6 +295,18 @@ private fun DogForm(
         )
 
         Spacer(Modifier.height(8.dp))
+        SectionTitle("Walk constraints")
+        AllowLongerWalkRow(
+            value = state.allowLongerWalk,
+            onChange = onAllowLongerWalkChange,
+        )
+        IncompatibilitiesSection(
+            selectedIds = state.incompatibleDogIds,
+            candidates = state.incompatibilityCandidates,
+            onToggle = onToggleIncompatibility,
+        )
+
+        Spacer(Modifier.height(8.dp))
         SectionTitle("Notes")
         OutlinedTextField(
             value = state.notes,
@@ -303,6 +324,70 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
     )
+}
+
+@Composable
+private fun AllowLongerWalkRow(
+    value: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!value) },
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = value, onCheckedChange = onChange)
+        Column(modifier = Modifier.padding(start = 4.dp)) {
+            Text(
+                text = "Allow longer walks",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = "Off for puppies and dogs that should not be walked " +
+                    "more than the requested duration.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun IncompatibilitiesSection(
+    selectedIds: Set<String>,
+    candidates: List<IncompatibilityCandidate>,
+    onToggle: (otherDogId: String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Incompatible dogs",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (candidates.isEmpty()) {
+            Text(
+                text = "Add other dogs first to mark incompatible pairs.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                text = "Selected dogs will never share a trip with this one.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                candidates.forEach { candidate ->
+                    FilterChip(
+                        selected = candidate.id in selectedIds,
+                        onClick = { onToggle(candidate.id) },
+                        label = { Text(candidate.name) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

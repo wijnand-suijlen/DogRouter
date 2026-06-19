@@ -50,4 +50,15 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+/**
+ * Add the per-dog `allowLongerWalk` flag (default true). The planner
+ * uses it to decide whether walks may exceed the minimum duration for
+ * a given dog (puppies and injured dogs need exact times).
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `dogs` ADD COLUMN `allowLongerWalk` INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)

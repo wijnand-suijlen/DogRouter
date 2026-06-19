@@ -37,6 +37,7 @@ val appModule = module {
     }
     single { get<AppDatabase>().dogDao() }
     single { get<AppDatabase>().dogScheduleDao() }
+    single { get<AppDatabase>().dogIncompatibilityDao() }
 
     single<DataStore<Preferences>> {
         PreferenceDataStoreFactory.create(
@@ -79,7 +80,7 @@ val appModule = module {
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
 
     viewModel { DogListViewModel(get()) }
-    viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), dogId) }
+    viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get()) }
     viewModel { TodayViewModel(get(), get(), get(), get()) }

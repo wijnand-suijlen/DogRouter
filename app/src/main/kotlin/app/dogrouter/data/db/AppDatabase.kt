@@ -13,11 +13,12 @@ import app.dogrouter.data.entity.DogScheduleRule
         DogScheduleRule::class,
         DogIncompatibility::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dogDao(): DogDao
     abstract fun dogScheduleDao(): DogScheduleDao
+    abstract fun dogIncompatibilityDao(): DogIncompatibilityDao
 }

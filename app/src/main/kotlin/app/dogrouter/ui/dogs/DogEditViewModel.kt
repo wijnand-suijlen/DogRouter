@@ -3,6 +3,7 @@ package app.dogrouter.ui.dogs
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.db.DogDao
+import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.TransportState
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -25,6 +27,12 @@ import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalTime
 import java.util.UUID
+
+/** Lightweight projection of another dog so the form can show pickable peers. */
+data class IncompatibilityCandidate(
+    val id: String,
+    val name: String,
+)
 
 data class DogFormState(
     val name: String = "",
@@ -40,8 +48,11 @@ data class DogFormState(
     val stopAdjustmentMinutes: String = "0",
     val inCargoBike: TransportState = TransportState.NotTested,
     val inBackpack: TransportState = TransportState.NotTested,
+    val allowLongerWalk: Boolean = true,
     val notes: String = "",
     val scheduleRules: List<ScheduleRuleDraft> = emptyList(),
+    val incompatibleDogIds: Set<String> = emptySet(),
+    val incompatibilityCandidates: List<IncompatibilityCandidate> = emptyList(),
     val loading: Boolean = false,
 )
 
@@ -54,6 +65,7 @@ sealed interface DogEditEvent {
 class DogEditViewModel(
     private val dogDao: DogDao,
     private val dogScheduleDao: DogScheduleDao,
+    private val incompatibilityDao: DogIncompatibilityDao,
     private val banApi: BanApi,
     private val dogId: String?,
 ) : ViewModel() {
@@ -68,11 +80,6 @@ class DogEditViewModel(
 
     private val _addressQuery = MutableStateFlow("")
 
-    /**
-     * Live BAN-API autocomplete results for the current address text.
-     * Empty whenever the query is shorter than 3 characters or matches the
-     * last picked suggestion exactly.
-     */
     val addressSuggestions: StateFlow<List<AddressSuggestion>> = _addressQuery
         .debounce(SEARCH_DEBOUNCE_MS)
         .filter { it.length >= 3 }
@@ -81,7 +88,16 @@ class DogEditViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
+        viewModelScope.launch { loadCandidates() }
         if (dogId != null) loadExisting(dogId)
+    }
+
+    private suspend fun loadCandidates() {
+        val candidates = dogDao.observeAll().first()
+            .filter { it.id != dogId }
+            .map { IncompatibilityCandidate(id = it.id, name = it.name) }
+            .sortedBy { it.name.lowercase() }
+        _state.update { it.copy(incompatibilityCandidates = candidates) }
     }
 
     private fun loadExisting(id: String) {
@@ -91,24 +107,31 @@ class DogEditViewModel(
                 return@launch
             }
             val rules = dogScheduleDao.findForDog(id).map { it.toDraft() }
-            _state.value = DogFormState(
-                name = existing.name,
-                breed = existing.breed.orEmpty(),
-                weightKg = existing.weightKg.toString(),
-                photoUri = existing.photoUri,
-                ownerName = existing.ownerName,
-                ownerPhone = existing.ownerPhone.orEmpty(),
-                address = existing.address,
-                addressLatitude = existing.latitude,
-                addressLongitude = existing.longitude,
-                stopNotes = existing.stopNotes.orEmpty(),
-                stopAdjustmentMinutes = existing.stopAdjustmentMinutes.toString(),
-                inCargoBike = existing.inCargoBike,
-                inBackpack = existing.inBackpack,
-                notes = existing.notes.orEmpty(),
-                scheduleRules = rules,
-                loading = false,
-            )
+            val incompatibilities = incompatibilityDao.findForDog(id)
+                .map { pair -> if (pair.dogIdA == id) pair.dogIdB else pair.dogIdA }
+                .toSet()
+            _state.update { current ->
+                current.copy(
+                    name = existing.name,
+                    breed = existing.breed.orEmpty(),
+                    weightKg = existing.weightKg.toString(),
+                    photoUri = existing.photoUri,
+                    ownerName = existing.ownerName,
+                    ownerPhone = existing.ownerPhone.orEmpty(),
+                    address = existing.address,
+                    addressLatitude = existing.latitude,
+                    addressLongitude = existing.longitude,
+                    stopNotes = existing.stopNotes.orEmpty(),
+                    stopAdjustmentMinutes = existing.stopAdjustmentMinutes.toString(),
+                    inCargoBike = existing.inCargoBike,
+                    inBackpack = existing.inBackpack,
+                    allowLongerWalk = existing.allowLongerWalk,
+                    notes = existing.notes.orEmpty(),
+                    scheduleRules = rules,
+                    incompatibleDogIds = incompatibilities,
+                    loading = false,
+                )
+            }
         }
     }
 
@@ -116,13 +139,11 @@ class DogEditViewModel(
         _state.update(transform)
     }
 
-    /** Free-text edit: clear lat/lon because the typed string is unvalidated. */
     fun onAddressTextChange(text: String) {
         _state.update { it.copy(address = text, addressLatitude = null, addressLongitude = null) }
         _addressQuery.value = text
     }
 
-    /** User tapped a dropdown suggestion: address + coordinates set together. */
     fun pickAddressSuggestion(suggestion: AddressSuggestion) {
         _state.update {
             it.copy(
@@ -131,9 +152,22 @@ class DogEditViewModel(
                 addressLongitude = suggestion.longitude,
             )
         }
-        // Mirror the picked label so the debounced search doesn't keep
-        // re-firing for the same text.
         _addressQuery.value = suggestion.label
+    }
+
+    fun toggleIncompatibility(otherDogId: String) {
+        _state.update {
+            val next = if (otherDogId in it.incompatibleDogIds) {
+                it.incompatibleDogIds - otherDogId
+            } else {
+                it.incompatibleDogIds + otherDogId
+            }
+            it.copy(incompatibleDogIds = next)
+        }
+    }
+
+    fun setAllowLongerWalk(value: Boolean) {
+        _state.update { it.copy(allowLongerWalk = value) }
     }
 
     fun addScheduleRule() {
@@ -212,12 +246,17 @@ class DogEditViewModel(
                 stopAdjustmentMinutes = adjustment,
                 inCargoBike = s.inCargoBike,
                 inBackpack = s.inBackpack,
+                allowLongerWalk = s.allowLongerWalk,
                 notes = s.notes.trim().ifBlank { null },
             )
             if (isNew) dogDao.insert(dog) else dogDao.update(dog)
             dogScheduleDao.replaceForDog(
                 dogId = effectiveDogId,
                 rules = s.scheduleRules.map { it.toEntity(effectiveDogId) },
+            )
+            incompatibilityDao.replaceForDog(
+                dogId = effectiveDogId,
+                partnerIds = s.incompatibleDogIds.toList(),
             )
             _events.send(DogEditEvent.Closed)
         }
@@ -226,6 +265,7 @@ class DogEditViewModel(
     fun delete() {
         val id = dogId ?: return
         viewModelScope.launch {
+            // Schedule rules + incompatibility pairs cascade via FK ON DELETE.
             dogDao.findById(id)?.let { dogDao.delete(it) }
             _events.send(DogEditEvent.Closed)
         }

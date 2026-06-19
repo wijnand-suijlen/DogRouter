@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.planner.PlannedWalk
+import app.dogrouter.domain.planner.TimeWindow
 import app.dogrouter.domain.planner.Trip
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
@@ -180,7 +181,10 @@ private fun TripCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Trip $tripIndex",
+                    text = buildString {
+                        append("Trip $tripIndex")
+                        formatTripWindow(trip.window)?.let { append(" · ").append(it) }
+                    },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
@@ -289,5 +293,22 @@ private fun formatWindow(earliest: LocalTime?, latest: LocalTime?): String {
     val from = earliest?.format(timeFormatter) ?: "any"
     val until = latest?.format(timeFormatter) ?: "any"
     return "$from – $until"
+}
+
+/**
+ * Trip-header window formatting. Returns null when the trip has no
+ * effective constraint (every walk is unbounded), so the header stays
+ * tidy in that case. Otherwise it shows the side(s) that are bounded.
+ */
+private fun formatTripWindow(window: TimeWindow): String? {
+    if (window.isUnbounded) return null
+    val from = window.from.takeIf { it != LocalTime.MIN }?.format(timeFormatter)
+    val until = window.until.takeIf { it != LocalTime.MAX }?.format(timeFormatter)
+    return when {
+        from != null && until != null -> "$from – $until"
+        from != null -> "from $from"
+        until != null -> "until $until"
+        else -> null
+    }
 }
 

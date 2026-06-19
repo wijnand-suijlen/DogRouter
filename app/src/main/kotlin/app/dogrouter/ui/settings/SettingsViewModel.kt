@@ -2,6 +2,8 @@ package app.dogrouter.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.dogrouter.data.backup.BackupRepository
+import app.dogrouter.data.backup.BackupSummary
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.AddressSuggestion
@@ -23,9 +25,11 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Form-state mirror of the persisted settings. Held as strings for
@@ -63,12 +67,19 @@ sealed interface RoutingTestEvent {
     data class Failed(val message: String) : RoutingTestEvent
 }
 
+sealed interface BackupEvent {
+    data object Exported : BackupEvent
+    data class Imported(val summary: BackupSummary) : BackupEvent
+    data class Failed(val message: String) : BackupEvent
+}
+
 @OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val banApi: BanApi,
     private val routingInstaller: RoutingDataInstaller,
     private val routingProvider: RoutingProvider,
+    private val backupRepo: BackupRepository,
 ) : ViewModel() {
 
     private val _form = MutableStateFlow<SettingsFormState?>(null)
@@ -81,6 +92,9 @@ class SettingsViewModel(
 
     private val _testInProgress = MutableStateFlow(false)
     val testInProgress: StateFlow<Boolean> = _testInProgress.asStateFlow()
+
+    private val _backupEvents = Channel<BackupEvent>(Channel.BUFFERED)
+    val backupEvents: Flow<BackupEvent> = _backupEvents.receiveAsFlow()
 
     private val _homeAddressQuery = MutableStateFlow("")
     val homeAddressSuggestions: StateFlow<List<AddressSuggestion>> = _homeAddressQuery
@@ -168,6 +182,37 @@ class SettingsViewModel(
             } finally {
                 _testInProgress.value = false
             }
+        }
+    }
+
+    /**
+     * Export all data, handing the JSON to [write] (which the screen backs
+     * with the chosen file URI). IO runs off the main thread.
+     */
+    fun exportData(write: suspend (text: String) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val text = backupRepo.exportToJson()
+                    write(text)
+                }
+            }.onSuccess { _backupEvents.send(BackupEvent.Exported) }
+                .onFailure { _backupEvents.send(BackupEvent.Failed(it.message ?: "Export failed")) }
+        }
+    }
+
+    /**
+     * Import data read by [read] (the screen reads the chosen file URI),
+     * replacing all current data. Confirmation is handled in the UI.
+     */
+    fun importData(read: suspend () -> String) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    backupRepo.importFromJson(read())
+                }
+            }.onSuccess { _backupEvents.send(BackupEvent.Imported(it)) }
+                .onFailure { _backupEvents.send(BackupEvent.Failed(it.message ?: "Import failed")) }
         }
     }
 

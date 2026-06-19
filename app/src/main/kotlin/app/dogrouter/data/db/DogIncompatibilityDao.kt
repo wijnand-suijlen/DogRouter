@@ -13,6 +13,10 @@ interface DogIncompatibilityDao {
     @Query("SELECT * FROM dog_incompatibilities")
     fun observeAll(): Flow<List<DogIncompatibility>>
 
+    /** One-shot snapshot for export. */
+    @Query("SELECT * FROM dog_incompatibilities")
+    suspend fun getAll(): List<DogIncompatibility>
+
     @Query(
         "SELECT * FROM dog_incompatibilities " +
             "WHERE dogIdA = :dogId OR dogIdB = :dogId",

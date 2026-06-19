@@ -13,6 +13,10 @@ interface DogScheduleDao {
     @Query("SELECT * FROM dog_schedule_rules")
     fun observeAll(): Flow<List<DogScheduleRule>>
 
+    /** One-shot snapshot for export. */
+    @Query("SELECT * FROM dog_schedule_rules")
+    suspend fun getAll(): List<DogScheduleRule>
+
     @Query("SELECT * FROM dog_schedule_rules WHERE dogId = :dogId")
     fun observeForDog(dogId: String): Flow<List<DogScheduleRule>>
 

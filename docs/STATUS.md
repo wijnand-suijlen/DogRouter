@@ -15,7 +15,10 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   rules with weekday multi-select + time window + duration.
 - **Settings tab**: home address picker (same widgets as dog stop),
   cycling speed (km/h, user override), bike capacity, stop buffer,
-  BRouter map download (~125 MB IDF segment) + self-test.
+  BRouter map download (~125 MB IDF segment) + self-test, and **data
+  export/import** (Storage Access Framework file picker; JSON backup of
+  dogs, schedules, incompatibilities, settings — for moving between
+  phones; import replaces all data, behind a confirm dialog).
 - **Today tab**: PDPTW event timeline. Date picker with prev/next/today
   controls. Summary card with on-the-clock + cycling + walking totals.
   Red conflict panel if any walks are unschedulable. "Start trip" FAB
@@ -78,6 +81,7 @@ data/
   db/      AppDatabase (v4), DogDao, DogScheduleDao,
            DogIncompatibilityDao, Migrations, Converters
   prefs/   AppSettings, SettingsRepository (DataStore)
+  backup/  BackupModels (JSON DTOs), BackupRepository (export/import)
   remote/  AddressSuggestion, BanApi (autocomplete + reverse)
   routing/ RoutingDataPaths, RoutingDataInstaller,
            BRouterRoutingProvider
@@ -192,7 +196,6 @@ Remaining polish (not blocking):
 - Photo Picker (user explicitly deferred this; less interesting than
   the planner).
 - History tab (in-scope per `SCOPE.md` but not started; nav stub only).
-- Settings: data export/import (in-scope per SCOPE).
 - Profile-tuning workflow (sliders that write to bakfiets.brf).
 
 ### Dropped

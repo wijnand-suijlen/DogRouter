@@ -11,6 +11,7 @@ import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.BanApi
 import app.dogrouter.data.routing.BRouterRoutingProvider
 import app.dogrouter.data.routing.RoutingDataInstaller
+import app.dogrouter.data.backup.BackupRepository
 import app.dogrouter.data.routing.RoutingDataPaths
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.routing.LegGeometryCache
@@ -84,12 +85,14 @@ val appModule = module {
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
     single { LegGeometryCache(get()) }
 
+    single { BackupRepository(get(), get(), get(), get(), get(), get()) }
+
     single { DayPlanService(get(), get(), get(), get(), get()) }
 
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get()) }
     viewModel { TodayViewModel(get()) }
     viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }
 }

@@ -44,6 +44,18 @@ class SettingsRepository(
         }
     }
 
+    /** Overwrite every setting at once (used when importing a backup). */
+    suspend fun replaceAll(settings: AppSettings) {
+        dataStore.edit { prefs ->
+            prefs[BIKE_CAPACITY_KG] = settings.bikeCapacityKg
+            prefs[STOP_BUFFER_MINUTES] = settings.stopBufferMinutes
+            prefs[CYCLING_SPEED_KMH] = settings.cyclingSpeedKmh
+            prefs[HOME_ADDRESS] = settings.homeAddress
+            settings.homeLatitude?.let { prefs[HOME_LATITUDE] = it } ?: prefs.remove(HOME_LATITUDE)
+            settings.homeLongitude?.let { prefs[HOME_LONGITUDE] = it } ?: prefs.remove(HOME_LONGITUDE)
+        }
+    }
+
     private companion object {
         val BIKE_CAPACITY_KG = floatPreferencesKey("bike_capacity_kg")
         val STOP_BUFFER_MINUTES = intPreferencesKey("stop_buffer_minutes")

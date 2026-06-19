@@ -1,5 +1,8 @@
 package app.dogrouter.ui.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +17,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,13 +33,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,6 +66,24 @@ fun SettingsScreen(
     val testInProgress by viewModel.testInProgress.collectAsStateWithLifecycle()
     val homeSuggestions by viewModel.homeAddressSuggestions.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportData { text ->
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(text.toByteArray())
+                } ?: error("Could not open the file for writing")
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) pendingImportUri = uri }
 
     LaunchedEffect(pickedAddress) {
         if (pickedAddress != null) viewModel.applyPickedHomeAddress(pickedAddress)
@@ -68,6 +96,19 @@ fun SettingsScreen(
                     "Test route: ${event.estimate.distanceMeters} m · " +
                         formatDuration(event.estimate.durationSeconds)
                 is RoutingTestEvent.Failed -> "Routing test failed: ${event.message}"
+            }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.backupEvents.collect { event ->
+            val message = when (event) {
+                BackupEvent.Exported -> "Data exported"
+                is BackupEvent.Imported -> with(event.summary) {
+                    "Imported $dogs dogs, $scheduleRules rules, $incompatibilities incompatibilities"
+                }
+                is BackupEvent.Failed -> event.message
             }
             snackbarHostState.showSnackbar(message)
         }
@@ -104,11 +145,45 @@ fun SettingsScreen(
                 onDownloadRoutingData = viewModel::downloadRoutingData,
                 onDeleteRoutingData = viewModel::deleteRoutingData,
                 onRunRoutingSelfTest = viewModel::runRoutingSelfTest,
+                onExportData = { exportLauncher.launch("dogrouter-backup.json") },
+                onImportData = {
+                    importLauncher.launch(
+                        arrayOf("application/json", "application/octet-stream", "text/plain"),
+                    )
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
             )
         }
+    }
+
+    val importUri = pendingImportUri
+    if (importUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingImportUri = null },
+            title = { Text("Replace all data?") },
+            text = {
+                Text(
+                    "Importing replaces every dog, schedule, incompatibility " +
+                        "and setting on this phone with the contents of the file. " +
+                        "This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingImportUri = null
+                    viewModel.importData {
+                        context.contentResolver.openInputStream(importUri)?.use { input ->
+                            input.readBytes().decodeToString()
+                        } ?: error("Could not open the file for reading")
+                    }
+                }) { Text("Replace") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingImportUri = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -127,6 +202,8 @@ private fun SettingsForm(
     onDownloadRoutingData: () -> Unit,
     onDeleteRoutingData: () -> Unit,
     onRunRoutingSelfTest: () -> Unit,
+    onExportData: () -> Unit,
+    onImportData: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -221,6 +298,26 @@ private fun SettingsForm(
             onDelete = onDeleteRoutingData,
             onTest = onRunRoutingSelfTest,
         )
+
+        Spacer(Modifier.height(16.dp))
+        SectionTitle("Data")
+        Text(
+            text = "Move your dogs, schedules and settings to another phone. " +
+                "Export writes a backup file; import replaces all data on this " +
+                "phone with a backup file.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onExportData, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Upload, contentDescription = null)
+                Text("  Export")
+            }
+            OutlinedButton(onClick = onImportData, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Download, contentDescription = null)
+                Text("  Import")
+            }
+        }
     }
 }
 

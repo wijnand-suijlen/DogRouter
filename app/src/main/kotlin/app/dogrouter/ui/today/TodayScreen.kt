@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.planner.PlannedWalk
+import app.dogrouter.domain.planner.RouteLeg
 import app.dogrouter.domain.planner.TimeWindow
 import app.dogrouter.domain.planner.Trip
 import org.koin.androidx.compose.koinViewModel
@@ -196,6 +197,13 @@ private fun TripCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            trip.totalTravelSeconds?.takeIf { it > 0 }?.let { seconds ->
+                Text(
+                    text = "${formatDuration(seconds)} cycling between stops",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (trip.exceedsCapacity) {
                 AssistChip(
                     onClick = {},
@@ -214,12 +222,31 @@ private fun TripCard(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            trip.walks.sortedBy { it.dog.name.lowercase() }.forEachIndexed { index, walk ->
-                if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            trip.walks.forEachIndexed { index, walk ->
+                if (index > 0) {
+                    val leg = trip.legs?.getOrNull(index - 1)
+                    LegRow(leg)
+                }
                 StopRow(walk = walk)
             }
         }
     }
+}
+
+@Composable
+private fun LegRow(leg: RouteLeg?) {
+    val text = when {
+        leg == null -> "↓"
+        leg.estimate == null -> "↓ no route"
+        else -> "↓ ${formatDistanceMeters(leg.estimate.distanceMeters)} · " +
+            formatDuration(leg.estimate.durationSeconds)
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+    )
 }
 
 @Composable
@@ -288,6 +315,19 @@ private fun Float.formatWeight(): String {
     val rounded = toInt().toFloat()
     return if (rounded == this) toInt().toString() else String.format(Locale.ROOT, "%.1f", this)
 }
+
+private fun formatDuration(totalSeconds: Int): String {
+    val minutes = (totalSeconds + 30) / 60
+    return when {
+        minutes >= 60 -> "%d h %02d min".format(minutes / 60, minutes % 60)
+        minutes >= 1 -> "$minutes min"
+        else -> "<1 min"
+    }
+}
+
+private fun formatDistanceMeters(meters: Int): String =
+    if (meters >= 1_000) String.format(Locale.ROOT, "%.1f km", meters / 1000.0)
+    else "$meters m"
 
 private fun formatWindow(earliest: LocalTime?, latest: LocalTime?): String {
     val from = earliest?.format(timeFormatter) ?: "any"

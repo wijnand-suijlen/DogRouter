@@ -82,5 +82,5 @@ val appModule = module {
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get()) }
-    viewModel { TodayViewModel(get(), get(), get()) }
+    viewModel { TodayViewModel(get(), get(), get(), get()) }
 }

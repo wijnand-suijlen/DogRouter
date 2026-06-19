@@ -85,4 +85,7 @@ dependencies {
     implementation(libs.brouter.codec)
     implementation(libs.brouter.expressions)
     implementation(libs.brouter.util)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

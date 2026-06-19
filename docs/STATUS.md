@@ -54,7 +54,12 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   heuristic, two modes (new pickup-walk-dropoff triplet, or join an
   existing walk). Pluggable `PlanningConstraint` interface with four
   concrete checks today: capacity, time windows, walk duration
-  (min + max for `allowLongerWalk=false`), incompatibilities.
+  (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
+  pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
+  schedule rules (two walks in a day) is handled correctly.
+- **Tests**: JVM unit tests under `app/src/test`. `DayPlannerScenarioTest`
+  reproduces the 19-June report (`planningsprobleem-19juni`) with a fake
+  routing provider.
 - **Schema** at v4. Migrations for 1→2, 2→3, 3→4 all in
   `data/db/Migrations.kt`.
 

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -29,6 +30,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +65,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
+    onStartTrip: () -> Unit,
     viewModel: TodayViewModel = koinViewModel(),
 ) {
     val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
@@ -79,6 +82,15 @@ fun TodayScreen(
                     }
                 },
             )
+        },
+        floatingActionButton = {
+            if (dayRoute?.events?.isNotEmpty() == true) {
+                ExtendedFloatingActionButton(
+                    onClick = onStartTrip,
+                    icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                    text = { Text("Start trip") },
+                )
+            }
         },
     ) { innerPadding ->
         Column(

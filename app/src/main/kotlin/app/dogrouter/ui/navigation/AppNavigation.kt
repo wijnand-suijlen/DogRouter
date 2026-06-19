@@ -26,10 +26,10 @@ import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.ui.addresspicker.AddressPickerScreen
 import app.dogrouter.ui.dogs.DogEditScreen
 import app.dogrouter.ui.dogs.DogListScreen
+import app.dogrouter.ui.followplan.FollowPlanScreen
 import app.dogrouter.ui.history.HistoryScreen
 import app.dogrouter.ui.settings.SettingsScreen
 import app.dogrouter.ui.today.TodayScreen
-import app.dogrouter.ui.week.WeekScreen
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
@@ -40,6 +40,10 @@ object DogsRoutes {
     const val NEW = "dogs/new"
     const val EDIT = "dogs/edit/{dogId}"
     fun edit(dogId: String) = "dogs/edit/$dogId"
+}
+
+object FollowPlanRoutes {
+    const val ROUTE = "follow-plan"
 }
 
 object AddressPickerRoutes {
@@ -60,6 +64,9 @@ private const val DEFAULT_LON = 2.24
 
 const val PICKED_ADDRESS_KEY = "pickedAddressJson"
 
+/** Routes that take over the whole screen and hide the bottom navigation. */
+private val FULL_SCREEN_ROUTES = setOf(FollowPlanRoutes.ROUTE)
+
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
@@ -67,17 +74,23 @@ fun AppNavigation() {
     val currentDestination = currentBackStack?.destination
     val json: Json = koinInject()
 
+    // Full-screen destinations (e.g. Follow plan) hide the bottom bar so they
+    // own the whole screen.
+    val showBottomBar = currentDestination?.route !in FULL_SCREEN_ROUTES
+
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                TabDestination.entries.forEach { tab ->
-                    val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = { navController.navigateToTab(tab) },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
-                    )
+            if (showBottomBar) {
+                NavigationBar {
+                    TabDestination.entries.forEach { tab ->
+                        val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { navController.navigateToTab(tab) },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                        )
+                    }
                 }
             }
         },
@@ -87,8 +100,14 @@ fun AppNavigation() {
             startDestination = TabDestination.Today.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(TabDestination.Today.route) { TodayScreen() }
-            composable(TabDestination.Week.route) { WeekScreen() }
+            composable(TabDestination.Today.route) {
+                TodayScreen(
+                    onStartTrip = { navController.navigate(FollowPlanRoutes.ROUTE) },
+                )
+            }
+            composable(FollowPlanRoutes.ROUTE) {
+                FollowPlanScreen(onExit = { navController.popBackStack() })
+            }
             composable(TabDestination.History.route) { HistoryScreen() }
             composable(TabDestination.Settings.route) { entry ->
                 val picked = entry.consumePickedAddress(json)

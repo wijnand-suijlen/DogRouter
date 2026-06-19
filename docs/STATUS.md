@@ -57,6 +57,8 @@ ui/
   dogs/    DogListScreen + ViewModel, DogEditScreen + ViewModel,
            ScheduleEditor, ScheduleRuleDraft
   today/   TodayScreen, TodayViewModel
+  followplan/ FollowPlanScreen (full-screen stub, "Start trip" target)
+  history/  HistoryScreen (stub)
   settings/ SettingsScreen, SettingsViewModel
   addresspicker/ AddressPickerScreen + ViewModel
   navigation/   AppNavigation, TabDestination
@@ -97,6 +99,19 @@ ui/
 
 ## Roadmap, prioritised
 
+### Promoted: Follow-plan execution screen
+The **Follow-plan** screen ("Start trip" handoff from Today) is now a
+named v1 screen, not a "someday" item — see `docs/SCREENS.md` #2.
+**Stubbed and wired** (2026-06-19): Today shows a "Start trip" extended
+FAB when a plan has events; tapping it navigates to
+`FollowPlanRoutes.ROUTE`, a full-screen `FollowPlanScreen` that hides the
+bottom bar (via `FULL_SCREEN_ROUTES` in `AppNavigation`) and exits back
+to Today on close or system back.
+The real execution UI is still to build: current stop dominates (dog name
++ photo, address, quirks, ETA), next 1–2 stops smaller below, single tap
+to advance, resumable on exit. This is the intended next major feature
+once a small correctness/cosmetic item is cleared.
+
 ### Next round candidates (pick one)
 1. **Walk-location bug fix** (item 1 above). Tiny code change, real
    correctness improvement.
@@ -109,9 +124,8 @@ ui/
 
 ### Medium-term
 - **Manual override** of the plan (drag-drop reorder, mark a dog as
-  not-doing-today, etc.).
-- **Follow-plan execution screen** ("Start trip" handoff from Today).
-  Large-text, gloves-friendly, designed for on-the-bike use.
+  not-doing-today, etc.). These are the Today "fine-tune" actions that
+  `docs/SCREENS.md` lists as planned-but-not-built.
 - **Walk merging optimisation** post-pass.
 - **Walk splitting** in the planner for the rare cases where a
   no-longer-walk dog cannot ride along with a long-walking dog.
@@ -119,10 +133,18 @@ ui/
 ### Defer
 - Photo Picker (user explicitly deferred this; less interesting than
   the planner).
-- Week tab (placeholder).
-- History tab (in-scope per `SCOPE.md` but not started).
+- History tab (in-scope per `SCOPE.md` but not started; nav stub only).
 - Settings: data export/import (in-scope per SCOPE).
 - Profile-tuning workflow (sliders that write to bakfiets.brf).
+
+### Dropped
+- **Week tab** — removed from v1 (decided 2026-06-19). It only
+  visualised derived schedule data already editable under Dogs, and its
+  "tap a day" navigation is covered by Today's date picker. Rationale
+  kept under "Considered, not in v1" in `docs/SCREENS.md`. **Done
+  (2026-06-19):** `TabDestination.Week`, `WeekScreen.kt`, and its
+  `composable` in `AppNavigation.kt` are deleted; the bottom bar now has
+  four tabs (Today, Dogs, History, Settings).
 
 ## Project conventions to keep in mind
 

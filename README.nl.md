@@ -20,6 +20,27 @@ Versies staan vast in [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
 
 ## Eerste setup
 
+### GitHub Packages-credentials (verplicht)
+
+De routing-engine BRouter (`org.btools:brouter-core`) wordt alleen via
+**GitHub Packages** gepubliceerd — Maven Central heeft 'm niet. Gradle
+heeft een GitHub personal access token nodig om het artefact te
+downloaden.
+
+1. Open <https://github.com/settings/tokens?type=beta> en maak een
+   fine-grained PAT aan (of een classic) met de `read:packages` scope.
+2. Voeg de credentials toe aan `~/.gradle/gradle.properties` (NIET aan
+   die in dit project — secrets blijven buiten de repo):
+   ```properties
+   gpr.user=<je-github-gebruikersnaam>
+   gpr.key=<de-token-uit-stap-1>
+   ```
+3. Doe een nieuwe Gradle-sync.
+
+CI-alternatief: zet de env-vars `GITHUB_ACTOR` en `GITHUB_TOKEN`.
+
+### Gradle-wrapper
+
 De Gradle-wrapper-jar (`gradle/wrapper/gradle-wrapper.jar`) staat **nog
 niet** in de repo — genereer 'm eenmalig via een van deze paden:
 

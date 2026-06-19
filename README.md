@@ -20,6 +20,27 @@ Versions are pinned in [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
 
 ## First-time setup
 
+### GitHub Packages credentials (required)
+
+The cycling routing engine, BRouter (`org.btools:brouter-core`), is
+published to **GitHub Packages only** — Maven Central does not have it.
+Gradle needs a GitHub personal access token to download the artifact.
+
+1. Open <https://github.com/settings/tokens?type=beta> and create a
+   fine-grained PAT (or a classic one) with the `read:packages` scope.
+2. Add the credentials to `~/.gradle/gradle.properties` (NOT this
+   project's gradle.properties — keep secrets out of the repo):
+   ```properties
+   gpr.user=<your-github-username>
+   gpr.key=<the-token-from-step-1>
+   ```
+3. Re-sync Gradle.
+
+CI alternative: set the `GITHUB_ACTOR` and `GITHUB_TOKEN` environment
+variables instead.
+
+### Gradle wrapper
+
 The Gradle wrapper jar (`gradle/wrapper/gradle-wrapper.jar`) is **not**
 checked in yet — generate it once with either path:
 

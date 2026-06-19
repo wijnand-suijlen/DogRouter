@@ -1,14 +1,18 @@
 package app.dogrouter.di
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import app.dogrouter.data.db.ALL_MIGRATIONS
 import app.dogrouter.data.db.AppDatabase
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.BanApi
+import app.dogrouter.data.routing.BRouterRoutingProvider
+import app.dogrouter.data.routing.RoutingDataInstaller
+import app.dogrouter.data.routing.RoutingDataPaths
+import app.dogrouter.domain.routing.RoutingProvider
 import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
@@ -55,9 +59,28 @@ val appModule = module {
     }
     single { BanApi(get(), get()) }
 
+    // Routing data + engine. The downloader uses its own OkHttp client
+    // with a longer read timeout for the ~125 MB segment download.
+    single { RoutingDataPaths(androidContext()) }
+    single(qualifier = org.koin.core.qualifier.named("routingDownloader")) {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(2, TimeUnit.MINUTES)
+            .callTimeout(0, TimeUnit.MILLISECONDS) // disable overall call timeout
+            .build()
+    }
+    single {
+        RoutingDataInstaller(
+            context = androidContext(),
+            paths = get(),
+            httpClient = get(qualifier = org.koin.core.qualifier.named("routingDownloader")),
+        )
+    }
+    single<RoutingProvider> { BRouterRoutingProvider(get()) }
+
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
-    viewModel { SettingsViewModel(get()) }
+    viewModel { SettingsViewModel(get(), get(), get()) }
     viewModel { TodayViewModel(get(), get(), get()) }
 }

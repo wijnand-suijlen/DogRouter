@@ -79,4 +79,10 @@ dependencies {
     implementation(libs.osmdroid.android)
 
     implementation(libs.androidx.datastore.preferences)
+
+    implementation(libs.brouter.core)
+    implementation(libs.brouter.mapaccess)
+    implementation(libs.brouter.codec)
+    implementation(libs.brouter.expressions)
+    implementation(libs.brouter.util)
 }

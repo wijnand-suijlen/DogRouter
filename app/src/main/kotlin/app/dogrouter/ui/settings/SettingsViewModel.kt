@@ -4,10 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
+import app.dogrouter.data.routing.RoutingDataInstaller
+import app.dogrouter.data.routing.SegmentDownloadState
+import app.dogrouter.domain.routing.RouteEstimate
+import app.dogrouter.domain.routing.RoutingProvider
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -37,17 +44,33 @@ data class SettingsFormState(
     }
 }
 
+sealed interface RoutingTestEvent {
+    data class Result(val estimate: RouteEstimate) : RoutingTestEvent
+    data class Failed(val message: String) : RoutingTestEvent
+}
+
 class SettingsViewModel(
     private val repo: SettingsRepository,
+    private val routingInstaller: RoutingDataInstaller,
+    private val routingProvider: RoutingProvider,
 ) : ViewModel() {
 
     private val _form = MutableStateFlow<SettingsFormState?>(null)
     val form: StateFlow<SettingsFormState?> = _form.asStateFlow()
 
+    val downloadState: StateFlow<SegmentDownloadState> = routingInstaller.downloadState
+
+    private val _routingTestEvents = Channel<RoutingTestEvent>(Channel.BUFFERED)
+    val routingTestEvents: Flow<RoutingTestEvent> = _routingTestEvents.receiveAsFlow()
+
+    private val _testInProgress = MutableStateFlow(false)
+    val testInProgress: StateFlow<Boolean> = _testInProgress.asStateFlow()
+
     init {
         viewModelScope.launch {
             _form.value = SettingsFormState.from(repo.settings.first())
         }
+        viewModelScope.launch { routingInstaller.installProfileIfMissing() }
     }
 
     fun onCyclingSpeedTextChange(text: String) {
@@ -66,6 +89,43 @@ class SettingsViewModel(
         val parsed = text.toIntOrNull()?.takeIf { it >= 0 }
         _form.update { it?.copy(stopBufferText = text, stopBufferValid = parsed != null) }
         parsed?.let { minutes -> viewModelScope.launch { repo.setStopBufferMinutes(minutes) } }
+    }
+
+    fun downloadRoutingData() {
+        viewModelScope.launch { routingInstaller.downloadSegment() }
+    }
+
+    fun deleteRoutingData() {
+        viewModelScope.launch { routingInstaller.deleteSegment() }
+    }
+
+    /**
+     * Hard-coded sanity check: a short route in Meudon. Pure diagnostic so
+     * the walker can confirm the engine is wired up before any planner
+     * integration shows distances.
+     */
+    fun runRoutingSelfTest() {
+        if (_testInProgress.value) return
+        viewModelScope.launch {
+            _testInProgress.value = true
+            try {
+                val estimate = routingProvider.route(
+                    fromLatitude = 48.8137,
+                    fromLongitude = 2.2390,
+                    toLatitude = 48.8154,
+                    toLongitude = 2.2270,
+                )
+                if (estimate != null) {
+                    _routingTestEvents.send(RoutingTestEvent.Result(estimate))
+                } else {
+                    _routingTestEvents.send(
+                        RoutingTestEvent.Failed(routingProvider.lastError ?: "No route returned"),
+                    )
+                }
+            } finally {
+                _testInProgress.value = false
+            }
+        }
     }
 
     private fun parsePositiveFloat(text: String): Float? =

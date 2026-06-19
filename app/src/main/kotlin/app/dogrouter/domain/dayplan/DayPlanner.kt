@@ -161,10 +161,11 @@ class DayPlanner(
             }
         }
 
-        val totalCycling = events.zipWithNext { a, b ->
-            if (b is RouteEvent.Walk) 0 else matrix.cyclingOnlySeconds(a.location, b.location)
-        }.sum()
-        val totalWalking = events.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds }
+        // Cycling = the travel of bike legs; walking = dwell-walk durations
+        // plus the travel of on-foot legs (which doubles as walk time).
+        val totalCycling = events.filter { !it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
+        val totalWalking = events.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds } +
+            events.filter { it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
 
         return DayRoute(
             date = date,
@@ -348,23 +349,57 @@ class DayPlanner(
      */
     private fun retimeAndCost(events: MutableList<RouteEvent>, matrix: DistanceMatrix): Pair<List<RouteEvent>, Int>? {
         var t = dayStartSeconds
+        val homeLocation = events.first().location
+        // The walker's current position, and where the bike is parked. They
+        // diverge while the group walks on foot (the bike stays put); a bike
+        // leg first walks the group back to the parked bike.
+        var walkerPos = homeLocation
+        var bikePos = homeLocation
         val retimed = mutableListOf<RouteEvent>()
         for ((i, event) in events.withIndex()) {
+            var legByFoot = false
+            var legTravel = 0
+            var walkLocation = event.location
             if (i > 0) {
-                val prev = retimed.last()
-                val travel = if (event is RouteEvent.Walk) 0 else matrix.bikeSeconds(prev.location, event.location)
-                t += travel
+                if (event is RouteEvent.Walk) {
+                    // In-place dwell where the walker stands (bike parked nearby).
+                    walkLocation = walkerPos
+                } else {
+                    val footTime = matrix.footSeconds(walkerPos, event.location)
+                    val returnToBike = matrix.footSeconds(walkerPos, bikePos)
+                    val bikeTotal = returnToBike + matrix.bikeSeconds(bikePos, event.location)
+                    // The day must end with the bike back home, so the final
+                    // leg always fetches the parked bike rather than walking.
+                    if (event !is RouteEvent.HomeEnd && footTime <= bikeTotal) {
+                        // Walk the group there; the bike stays parked.
+                        legByFoot = true
+                        legTravel = footTime
+                        walkerPos = event.location
+                    } else {
+                        // Walk back to the bike (if away) and ride on.
+                        legByFoot = false
+                        legTravel = bikeTotal
+                        walkerPos = event.location
+                        bikePos = event.location
+                    }
+                }
+                t += legTravel
             }
             if (event is RouteEvent.Pickup) {
                 val earliest = event.rule.earliestStart?.toSecondOfDay()
                 if (earliest != null && earliest > t) t = earliest
             }
             val placed: RouteEvent = when (event) {
-                is RouteEvent.HomeStart -> event.copy(timeSeconds = t)
-                is RouteEvent.HomeEnd -> event.copy(timeSeconds = t)
-                is RouteEvent.Pickup -> event.copy(timeSeconds = t)
-                is RouteEvent.Dropoff -> event.copy(timeSeconds = t)
-                is RouteEvent.Walk -> event.copy(timeSeconds = t)
+                is RouteEvent.HomeStart ->
+                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                is RouteEvent.HomeEnd ->
+                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                is RouteEvent.Pickup ->
+                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                is RouteEvent.Dropoff ->
+                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                is RouteEvent.Walk ->
+                    event.copy(timeSeconds = t, location = walkLocation, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
             }
             t += placed.durationAtSeconds(stopBufferSeconds)
             if (t > dayEndSeconds) return null
@@ -372,13 +407,12 @@ class DayPlanner(
         }
 
         // Push HomeStart forward to "leave home just in time": no point
-        // standing at the first pickup waiting for its window to open.
+        // standing at the first stop waiting for its window to open.
         // Adjusting also shrinks the day's elapsed cost, which steers the
         // algorithm toward schedules with less idle time.
         val firstNonHome = retimed.getOrNull(1)
         if (firstNonHome != null && retimed[0] is RouteEvent.HomeStart) {
-            val travelHomeToFirst = matrix.bikeSeconds(retimed[0].location, firstNonHome.location)
-            val effectiveLeave = maxOf(dayStartSeconds, firstNonHome.timeSeconds - travelHomeToFirst)
+            val effectiveLeave = maxOf(dayStartSeconds, firstNonHome.timeSeconds - firstNonHome.incomingTravelSeconds)
             retimed[0] = (retimed[0] as RouteEvent.HomeStart).copy(timeSeconds = effectiveLeave)
         }
 
@@ -410,10 +444,6 @@ class DayPlanner(
         if (meters == 0) return 0
         return (meters / cyclingMetersPerSecond).toInt() + bikeOverheadSeconds
     }
-
-    /** Cycling time only (no overhead), for the displayed cycling total. */
-    private fun DistanceMatrix.cyclingOnlySeconds(from: GeoPoint, to: GeoPoint): Int =
-        (metersBetween(from, to) / cyclingMetersPerSecond).toInt()
 
     /** On-foot time between two points (no overhead). */
     private fun DistanceMatrix.footSeconds(from: GeoPoint, to: GeoPoint): Int =

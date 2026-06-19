@@ -217,10 +217,15 @@ private fun ConflictPanel(conflicts: List<PlanConflict>) {
     }
 }
 
-/** UI-only view-model rows: each is either an event row or a cycling-leg row. */
+/** UI-only view-model rows: each is either an event row or a travel-leg row. */
 private sealed interface TimelineRow {
     data class Event(val event: RouteEvent) : TimelineRow
-    data class Leg(val seconds: Int, val from: GeoPoint, val to: GeoPoint) : TimelineRow
+    data class Leg(
+        val seconds: Int,
+        val from: GeoPoint,
+        val to: GeoPoint,
+        val byFoot: Boolean,
+    ) : TimelineRow
 }
 
 private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
@@ -229,17 +234,17 @@ private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
     for (i in 1 until events.size) {
         val prev = events[i - 1]
         val current = events[i]
-        // Walks happen in place: zero leg when entering a walk, and when
-        // leaving a walk we subtract the walk's own duration from the
-        // gap so the remaining number really is just cycling time.
-        val gap = current.timeSeconds - prev.timeSeconds
-        val cyclingSeconds = when {
-            current is RouteEvent.Walk -> 0
-            prev is RouteEvent.Walk -> gap - prev.durationSeconds
-            else -> gap
-        }
-        if (cyclingSeconds > 0) {
-            rows.add(TimelineRow.Leg(cyclingSeconds, prev.location, current.location))
+        // The retimer already classified each leg (bike vs on foot) and its
+        // travel time; just use it.
+        if (current.incomingTravelSeconds > 0) {
+            rows.add(
+                TimelineRow.Leg(
+                    seconds = current.incomingTravelSeconds,
+                    from = prev.location,
+                    to = current.location,
+                    byFoot = current.arrivedByFoot,
+                ),
+            )
         }
         rows.add(TimelineRow.Event(current))
     }
@@ -270,7 +275,7 @@ private fun LegRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "↓ ${formatDuration(leg.seconds)} cycling",
+            text = "↓ ${formatDuration(leg.seconds)} ${if (leg.byFoot) "on foot" else "cycling"}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),

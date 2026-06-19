@@ -26,9 +26,15 @@ class WalkDurationConstraint : PlanningConstraint {
             val dogId = pickup.dog.id
             val range = pickup.timeSeconds..dropoff.timeSeconds
 
-            val totalWalked = walks
+            // Dwell-walk events the dog takes part in, plus on-foot travel
+            // legs in its span (while aboard the dog walks with the group).
+            val dwellWalked = walks
                 .filter { walk -> walk.timeSeconds in range && walk.dogs.any { it.id == dogId } }
                 .sumOf { it.durationSeconds }
+            val footTravelWalked = events
+                .filter { it.arrivedByFoot && it.timeSeconds in range }
+                .sumOf { it.incomingTravelSeconds }
+            val totalWalked = dwellWalked + footTravelWalked
 
             val required = pickup.rule.durationMinutes * 60
             if (totalWalked < required) {

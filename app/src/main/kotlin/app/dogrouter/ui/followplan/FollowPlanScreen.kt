@@ -188,9 +188,11 @@ private fun CurrentStop(
     modifier: Modifier = Modifier,
 ) {
     val step = event.toStepView()
-    // Show the leg the walker rides to reach this stop, unless it happens
+    // Show the leg the walker travels to reach this stop, unless it happens
     // in place (day start, walk, or a stop sharing the previous address).
-    val legFrom = arrivedFrom?.location?.takeIf { it != event.location }
+    val legFrom = arrivedFrom?.location?.takeIf {
+        it != event.location && event.incomingTravelSeconds > 0
+    }
     Card(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -234,7 +236,7 @@ private fun CurrentStop(
             if (legFrom != null) {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "Cycling route here · tap to open map",
+                    text = "${if (event.arrivedByFoot) "On foot" else "Cycling"} route here · tap to open map",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

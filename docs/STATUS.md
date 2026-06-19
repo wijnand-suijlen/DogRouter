@@ -62,7 +62,20 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   modes (new pickup-walk-dropoff triplet; join an existing walk and
   extend it; ride along several existing walks without extending them,
   which splits one required duration across shorter sessions); the best
-  of `restarts` builds is kept. A `seed` makes a build reproducible (for
+  of `restarts` builds is kept.
+- **Two travel modes** (`DistanceMatrix` stores metres; `retimeAndCost`):
+  each leg is bike (distance/cyclingSpeed + a fixed per-ride
+  `bikeOverhead`) or on foot (distance/walkingSpeed). `retimeAndCost`
+  tracks the walker and the parked bike: while walking, the bike stays put
+  and a later bike leg first walks back to it; the day always ends with the
+  bike home. A leg is walked when that is faster than biking it — short
+  hops, where the mount/dismount overhead dominates. On-foot legs count
+  toward the dogs' walk duration (`WalkDurationConstraint` credits them).
+  Set `bikeOverheadMinutes`/`walkingSpeedKmh` in Settings; overhead 0 means
+  everything bikes (the old behaviour). Known limitation: foot legs add to
+  the walk credit but do not yet shorten the in-place dwell walk, so dogs
+  on a foot leg are walked a little longer than asked; capacity still
+  counts on-foot dogs as if in the box. A `seed` makes a build reproducible (for
   caching) while different seeds explore alternatives (the refresh
   button). Pluggable `PlanningConstraint` interface with six concrete
   checks today: capacity; time windows (start-from / start-by / home-by,

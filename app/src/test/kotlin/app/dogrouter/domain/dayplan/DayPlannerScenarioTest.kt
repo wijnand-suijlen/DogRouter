@@ -404,6 +404,41 @@ class DayPlannerScenarioTest {
     private fun elapsed(route: app.dogrouter.domain.dayplan.DayRoute): Int =
         if (route.events.size >= 2) route.events.last().timeSeconds - route.events.first().timeSeconds else 0
 
+    /**
+     * Two dogs at nearby but different addresses, with a large bike
+     * overhead: the planner should walk the group between them on foot
+     * (a foot leg) rather than pay the overhead to bike the short hop.
+     */
+    @Test
+    fun nearbyDogsAreWalkedBetweenOnFoot() = runBlocking {
+        val a = dog("a", "A", 8f, 48.8145, 2.2360)
+        val b = dog("b", "B", 9f, 48.8150, 2.2362) // ~60 m from A
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            walkingSpeedKmh = 3f, bikeOverheadSeconds = 600,
+        )
+        val walks = listOf(
+            PlannedWalk(a, rule("a1", "a", "09:00", "17:00", 60)),
+            PlannedWalk(b, rule("b1", "b", "09:00", "17:00", 60)),
+        )
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
+        val summary = buildString {
+            appendLine()
+            route.events.forEach { e ->
+                val mode = if (e.arrivedByFoot) "foot" else "bike"
+                appendLine("  ${fmt(e.timeSeconds)}  [$mode ${e.incomingTravelSeconds}s]  ${describe(e)}")
+            }
+            appendLine("CONFLICTS (${route.conflicts.size})")
+        }
+        println(summary)
+        assertTrue("Expected a feasible plan:$summary", route.conflicts.isEmpty())
+        assertTrue(
+            "Expected at least one on-foot leg between the nearby dogs:$summary",
+            route.events.any { it.arrivedByFoot && it.incomingTravelSeconds > 0 },
+        )
+    }
+
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"
         is RouteEvent.HomeEnd -> "HomeEnd"

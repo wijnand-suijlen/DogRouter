@@ -44,9 +44,9 @@ navigation code, so the bottom bar now has four tabs.
   home-end) with a summary card and a conflict panel for unschedulable walks.*
 - Per stop: dog name, address, expected arrival, any quirks ("ring bell,
   wait ~3 min"), planner-estimated duration.
-- Each cycling leg between stops shows a lightweight route-shape preview
-  (no map tiles); tap it to open a full-screen street map you can zoom and
-  pan.
+- Each cycling leg between stops has a map icon; tap it to open a
+  full-screen street map of that leg you can zoom and pan. (No inline map
+  in the list — many live maps there caused performance problems.)
 - Inline actions *(planned, not built)*: reorder stops, move a dog between
   trips, override a leg's estimated duration, mark a stop skipped, add a
   temporary obstacle ("X-street closed today" — applies only to this day's
@@ -59,9 +59,9 @@ navigation code, so the bottom bar now has four tabs.
 - Current stop dominates: big ETA, title (e.g. "Pickup Rex"), address,
   owner phone, and quirks in a highlighted note. Dog photo is not shown
   yet (no image loader in the project).
-- When the stop is reached by cycling from the previous one, a lightweight
-  route-shape preview shows that leg; tap it to open a full-screen street
-  map you can zoom and pan.
+- When the stop is reached by cycling from the previous one, an inline
+  street-map overview shows that leg; tap it to open a full-screen map you
+  can zoom and pan.
 - Next 1–2 stops listed smaller below.
 - Single tap on the large "Done — next stop" button advances; "Back"
   corrects a mis-tap. A progress bar and "Stop n of N" show position; a

@@ -1,5 +1,6 @@
 package app.dogrouter.ui.today
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -55,7 +57,6 @@ import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanConflict
 import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.routing.GeoPoint
-import app.dogrouter.ui.common.CyclingLegMap
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -257,20 +258,24 @@ private fun LegRow(
     leg: TimelineRow.Leg,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
 ) {
-    Column(
-        modifier = Modifier.padding(start = 28.dp, top = 2.dp, bottom = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+    Row(
+        modifier = Modifier
+            .clickable { onOpenLegMap(leg.from, leg.to) }
+            .fillMaxWidth()
+            .padding(start = 28.dp, top = 2.dp, bottom = 2.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "↓ ${formatDuration(leg.seconds)} cycling · tap to open map",
+            text = "↓ ${formatDuration(leg.seconds)} cycling",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
         )
-        CyclingLegMap(
-            from = leg.from,
-            to = leg.to,
-            onOpenFullscreen = onOpenLegMap,
-            modifier = Modifier.padding(end = 12.dp),
+        Icon(
+            imageVector = Icons.Outlined.Map,
+            contentDescription = "Show route on map",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
         )
     }
 }

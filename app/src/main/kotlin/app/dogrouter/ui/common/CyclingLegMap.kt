@@ -22,14 +22,17 @@ import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.LegGeometryCache
 import org.koin.compose.koinInject
 
-private val DEFAULT_LEG_MAP_HEIGHT = 150.dp
+private val DEFAULT_LEG_MAP_HEIGHT = 180.dp
 
 /**
- * Inline cycling-leg preview: loads the route geometry between [from] and
- * [to] (cached) and draws a lightweight route-shape sketch — no map tiles,
- * so a list of these stays cheap. Tapping opens the full-screen
- * interactive street map via [onOpenFullscreen]. Shows a placeholder while
- * the geometry is being computed.
+ * Inline cycling-leg overview map: loads the route geometry between [from]
+ * and [to] (cached) and shows a static street map of the leg, opening the
+ * full-screen interactive map on tap.
+ *
+ * Uses a real (tiled) osmdroid MapView, so show at most one at a time —
+ * the Follow-plan current-stop card. The Today timeline, which lists many
+ * legs, shows a tap-to-open icon instead to avoid the memory/ANR pressure
+ * of many simultaneous MapViews.
  */
 @Composable
 fun CyclingLegMap(
@@ -47,16 +50,31 @@ fun CyclingLegMap(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { onOpenFullscreen(from, to) },
-        contentAlignment = Alignment.Center,
+            .clip(MaterialTheme.shapes.medium),
     ) {
         val current = track
         if (current == null) {
-            CircularProgressIndicator(strokeWidth = 2.dp)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(strokeWidth = 2.dp)
+            }
         } else {
-            RoutePreview(track = current, modifier = Modifier.fillMaxWidth().height(height))
+            RouteLegMap(
+                track = current,
+                interactive = false,
+                modifier = Modifier.matchParentSize(),
+            )
+            // Transparent layer on top so a tap opens the full-screen map
+            // instead of being swallowed by the embedded MapView.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable { onOpenFullscreen(from, to) },
+            )
         }
     }
 }

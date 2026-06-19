@@ -20,8 +20,8 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   controls. Summary card with on-the-clock + cycling + walking totals.
   Red conflict panel if any walks are unschedulable. "Start trip" FAB
   (shown when the day has events) hands off to Follow plan. Each cycling
-  leg row shows a `CyclingLegMap` route preview of that leg; tapping it
-  opens the full-screen interactive map.
+  leg row has a map icon that opens the full-screen route map (no inline
+  map in the list — see the leg-maps note below).
 - **Follow plan**: full-screen on-the-bike execution of one day's plan.
   Current stop dominates (big ETA, title, address, owner phone, quirks
   highlighted), next two stops listed below, large "Done — next stop" /
@@ -29,17 +29,19 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   "Stop n of N", and a "Trip complete" end state. Hides the bottom bar.
   The plan comes from the shared `DayPlanService`, the same pipeline
   Today uses. When a stop is reached by cycling from the previous one,
-  the card shows a `CyclingLegMap` route preview of the BRouter cycling
-  route; tapping it opens the full-screen interactive map.
-- **Leg maps**: inline previews are tile-free. `CyclingLegMap` loads the
-  leg geometry (cached via `LegGeometryCache`) and draws it with
-  `RoutePreview` — a plain Compose `Canvas` that sketches the route shape,
-  no map tiles, no MapView. Tapping opens `LegMapScreen`, a full-screen
-  osmdroid map (`RouteLegMap`) with pinch-zoom and pan — one MapView at a
-  time. Used by both Today and Follow plan; falls back to a straight line
-  if BRouter cannot trace the leg. **Why tile-free inline:** many
-  simultaneous osmdroid MapViews in the Today list caused memory/ANR
-  pressure when switching between Today and Follow plan a lot.
+  the card shows an inline street-map overview of the leg (`CyclingLegMap`,
+  tiled osmdroid); tapping it opens the full-screen interactive map.
+- **Leg maps**: geometry comes from `RoutingProvider.routeGeometry()`,
+  cached per leg via `LegGeometryCache`.
+  - **Follow plan** shows one inline overview map at a time
+    (`CyclingLegMap` → a static, tile-backed `RouteLegMap` under a tap
+    overlay). One MapView at a time is fine.
+  - **Today** lists many legs, so it shows a tap-to-open **map icon** per
+    leg instead of an inline map — many simultaneous osmdroid MapViews in
+    the list caused memory/ANR pressure.
+  - **Full screen**: `LegMapScreen` (`RouteLegMap` interactive) gives
+    pinch-zoom and pan, reachable from both screens.
+  - Falls back to a straight line if BRouter cannot trace the leg.
 - **BRouter** running embedded on-device via `org.btools:brouter-core`
   from GitHub Packages. Profile `bakfiets.brf` shipped in assets,
   derived from trekking.brf. Lookups.dat also shipped.
@@ -79,7 +81,7 @@ domain/
             LegGeometryCache (memoises route geometry per leg)
 ui/
   common/  AddressAutocompleteField, AddressMapPreview,
-           RoutePreview (tile-free inline sketch), CyclingLegMap,
+           CyclingLegMap (inline overview, Follow plan),
            RouteLegMap + LegMapScreen (full-screen osmdroid map)
   dogs/    DogListScreen + ViewModel, DogEditScreen + ViewModel,
            ScheduleEditor, ScheduleRuleDraft

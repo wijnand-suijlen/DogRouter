@@ -23,14 +23,15 @@ import org.osmdroid.util.GeoPoint as OsmGeoPoint
 private const val BOUNDS_PADDING_PX = 48
 
 /**
- * Full-screen, interactive osmdroid map of a single cycling leg: the
- * [track] polyline with a marker at each end, fitted to the leg's bounds,
- * with pinch-zoom and pan. The fit runs once per [track] so it never
- * fights the user's gestures.
+ * osmdroid map of a single cycling leg: the [track] polyline with a marker
+ * at each end, fitted to the leg's bounds. The fit runs once per [track]
+ * so it never fights the user's gestures.
  *
- * Only used for the full-screen view ([LegMapScreen]) — one MapView at a
- * time. Inline previews use the tile-free [RoutePreview] instead, because
- * many simultaneous MapViews caused memory/ANR pressure.
+ * When [interactive] is false it is a static overview (used inline in
+ * Follow plan, under a tap overlay); when true the user can pinch-zoom and
+ * pan (the full-screen [LegMapScreen]). Use at most a couple of these at
+ * once — the Today timeline shows a tap-to-open icon instead of inline
+ * maps, because many simultaneous MapViews caused memory/ANR pressure.
  *
  * [track] is expected to be ordered start-to-end with at least two points.
  */
@@ -38,17 +39,29 @@ private const val BOUNDS_PADDING_PX = 48
 fun RouteLegMap(
     track: List<GeoPoint>,
     modifier: Modifier = Modifier,
+    interactive: Boolean = false,
     lineColor: Int = androidx.compose.material3.MaterialTheme.colorScheme.primary.toArgb(),
 ) {
     if (track.size < 2) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val mapView = remember(context) {
+    val mapView = remember(context, interactive) {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
-            setMultiTouchControls(true)
-            zoomController.setVisibility(CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT)
+            setMultiTouchControls(interactive)
+            zoomController.setVisibility(
+                if (interactive) {
+                    CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT
+                } else {
+                    CustomZoomButtonsController.Visibility.NEVER
+                },
+            )
+            if (!interactive) {
+                // Swallow touches so a static overview never pans under the
+                // finger; the caller's tap overlay opens the full map.
+                setOnTouchListener { _, _ -> true }
+            }
         }
     }
 

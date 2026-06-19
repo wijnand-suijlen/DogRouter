@@ -45,6 +45,7 @@ fun LegMapScreen(
         } else {
             RouteLegMap(
                 track = current,
+                interactive = true,
                 modifier = Modifier.fillMaxSize(),
             )
         }

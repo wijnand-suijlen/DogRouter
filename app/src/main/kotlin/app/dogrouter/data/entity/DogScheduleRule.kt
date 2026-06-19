@@ -38,6 +38,11 @@ data class DogScheduleRule(
     val earliestStart: LocalTime?,
     val latestEnd: LocalTime?,
     val durationMinutes: Int,
+    // When true this rule is one of a dog's mutually-exclusive
+    // alternatives: the planner walks exactly one of the dog's alternative
+    // rules per day (e.g. "end of morning OR end of afternoon"), not all of
+    // them. Non-alternative rules are each walked as usual.
+    val isAlternative: Boolean = false,
 )
 
 fun maskFromWeekdays(days: Set<DayOfWeek>): Int =

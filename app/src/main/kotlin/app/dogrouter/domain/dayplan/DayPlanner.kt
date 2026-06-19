@@ -48,15 +48,15 @@ class DayPlanner(
      * cached), while a different seed explores other orderings — the hook
      * the Today "refresh" button uses to offer alternative plans.
      */
-    suspend fun plan(date: LocalDate, walks: List<PlannedWalk>, seed: Long = 0L): DayRoute {
+    suspend fun plan(date: LocalDate, options: List<WalkOption>, seed: Long = 0L): DayRoute {
         if (home == null) {
-            return DayRoute(date, emptyList(), 0, 0, walks.map { PlanConflict(it.dog, "Home address not set") })
+            return DayRoute(date, emptyList(), 0, 0, options.map { PlanConflict(it.dog, "Home address not set") })
         }
-        if (walks.isEmpty()) {
+        if (options.isEmpty()) {
             return DayRoute(date, listOf(homeStart(), homeEnd(dayStartSeconds)), 0, 0, emptyList())
         }
-        val routable = walks.filter { it.dog.latitude != null && it.dog.longitude != null }
-        val unroutable = walks.filter { it.dog.latitude == null || it.dog.longitude == null }
+        val routable = options.filter { it.dog.latitude != null && it.dog.longitude != null }
+        val unroutable = options.filter { it.dog.latitude == null || it.dog.longitude == null }
             .map { PlanConflict(it.dog, "No coordinates for this address") }
 
         if (!routingProvider.isReady()) {
@@ -69,7 +69,7 @@ class DayPlanner(
             )
         }
 
-        val points = (routable.map { it.geoPoint() } + home).toSet()
+        val points = (routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } + home).toSet()
         val matrix = DistanceMatrix.build(points, routingProvider, cyclingSpeedKmh)
         val constraints = listOf(
             CapacityConstraint(capacityKg),
@@ -102,10 +102,10 @@ class DayPlanner(
     private fun DayRoute.elapsedSeconds(): Int =
         if (events.size >= 2) events.last().timeSeconds - events.first().timeSeconds else 0
 
-    /** One greedy build over a fixed insertion [order]. */
+    /** One greedy build over a fixed insertion [order] of options. */
     private fun buildOnce(
         date: LocalDate,
-        order: List<PlannedWalk>,
+        order: List<WalkOption>,
         unroutable: List<PlanConflict>,
         matrix: DistanceMatrix,
         constraints: List<PlanningConstraint>,
@@ -114,12 +114,17 @@ class DayPlanner(
         val conflicts = mutableListOf<PlanConflict>()
         conflicts.addAll(unroutable)
 
-        for (walk in order) {
-            val placed = tryInsert(events, walk, matrix, constraints)
+        for (option in order) {
+            val placed = tryInsertOption(events, option, matrix, constraints)
             if (placed != null) {
                 events = placed
             } else {
-                conflicts.add(PlanConflict(walk.dog, "No feasible slot in the day"))
+                val reason = if (option.isChoice) {
+                    "No feasible slot for any of its time windows"
+                } else {
+                    "No feasible slot in the day"
+                }
+                conflicts.add(PlanConflict(option.dog, reason))
             }
         }
 
@@ -135,6 +140,30 @@ class DayPlanner(
             totalWalkingSeconds = totalWalking,
             conflicts = conflicts,
         )
+    }
+
+    /**
+     * Place a [WalkOption]: try each alternative and keep the cheapest
+     * feasible result, so an exclusive choice schedules exactly one walk.
+     * Returns null when no alternative fits.
+     */
+    private fun tryInsertOption(
+        events: List<RouteEvent>,
+        option: WalkOption,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): List<RouteEvent>? {
+        var best: List<RouteEvent>? = null
+        var bestCost = Int.MAX_VALUE
+        for (alternative in option.alternatives) {
+            val placed = tryInsert(events, alternative, matrix, constraints) ?: continue
+            val cost = if (placed.size >= 2) placed.last().timeSeconds - placed.first().timeSeconds else 0
+            if (cost < bestCost) {
+                best = placed
+                bestCost = cost
+            }
+        }
+        return best
     }
 
     private fun tryInsert(
@@ -339,4 +368,8 @@ class DayPlanner(
 
     private fun PlannedWalk.deadlineSeconds(): Int =
         rule.latestEnd?.toSecondOfDay() ?: Int.MAX_VALUE
+
+    /** Tightest deadline among the option's alternatives drives its priority. */
+    private fun WalkOption.deadlineSeconds(): Int =
+        alternatives.minOf { it.deadlineSeconds() }
 }

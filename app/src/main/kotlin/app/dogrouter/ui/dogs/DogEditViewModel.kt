@@ -204,6 +204,9 @@ class DogEditViewModel(
     fun setDurationMinutes(ruleId: String, minutes: Int) =
         updateRule(ruleId) { copy(durationMinutes = minutes) }
 
+    fun setRuleAlternative(ruleId: String, value: Boolean) =
+        updateRule(ruleId) { copy(isAlternative = value) }
+
     fun save() {
         viewModelScope.launch {
             val s = _state.value

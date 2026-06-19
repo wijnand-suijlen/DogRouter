@@ -23,6 +23,7 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -61,11 +62,25 @@ fun ScheduleEditor(
     onEarliestStartChange: (ruleId: String, time: LocalTime?) -> Unit,
     onLatestEndChange: (ruleId: String, time: LocalTime?) -> Unit,
     onDurationChange: (ruleId: String, minutes: Int) -> Unit,
+    onToggleAlternative: (ruleId: String, value: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pending: PendingTimePick? by remember { mutableStateOf(null) }
+    val alternativeCount = rules.count { it.isAlternative }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (alternativeCount >= 1) {
+            Text(
+                text = if (alternativeCount >= 2) {
+                    "Of the $alternativeCount rules marked “either/or”, the planner " +
+                        "walks exactly one each day."
+                } else {
+                    "Mark a second rule “either/or” to make the planner choose between them."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         rules.forEach { rule ->
             RuleCard(
                 rule = rule,
@@ -76,6 +91,7 @@ fun ScheduleEditor(
                 onEndTap = { pending = PendingTimePick(rule.id, PendingTimePick.Field.End, rule.latestEnd) },
                 onEndClear = { onLatestEndChange(rule.id, null) },
                 onDurationChange = { minutes -> onDurationChange(rule.id, minutes) },
+                onToggleAlternative = { value -> onToggleAlternative(rule.id, value) },
             )
         }
         OutlinedButton(onClick = onAddRule, modifier = Modifier.fillMaxWidth()) {
@@ -110,6 +126,7 @@ private fun RuleCard(
     onEndTap: () -> Unit,
     onEndClear: () -> Unit,
     onDurationChange: (Int) -> Unit,
+    onToggleAlternative: (Boolean) -> Unit,
 ) {
     Card(colors = CardDefaults.outlinedCardColors()) {
         Column(
@@ -167,6 +184,17 @@ private fun RuleCard(
                     Icon(Icons.Default.Close, contentDescription = null)
                     Text(" Delete rule")
                 }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Switch(checked = rule.isAlternative, onCheckedChange = onToggleAlternative)
+                Text(
+                    text = "Either/or (walk only one of these)",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
 
             if (rule.weekdays.isEmpty()) {

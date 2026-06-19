@@ -12,7 +12,8 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   BAN-autocomplete + tap-on-map picker + mini-map preview, stop notes
   with time adjustment, transport state (cargo bike / backpack), walk
   constraints (`allowLongerWalk` + incompatibility chips), schedule
-  rules with weekday multi-select + time window + duration.
+  rules with weekday multi-select + time window + duration + an
+  "either/or" flag (mark rules mutually exclusive — walk one per day).
 - **Settings tab**: home address picker (same widgets as dog stop),
   cycling speed (km/h, user override), bike capacity, stop buffer,
   BRouter map download (~125 MB IDF segment) + self-test, and **data
@@ -66,12 +67,16 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   concrete checks today: capacity, time windows, walk duration
   (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
   pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
-  schedule rules (two walks in a day) is handled correctly.
+  schedule rules (two walks in a day) is handled correctly. The planner
+  takes `WalkOption`s: a single alternative is a required walk, several are
+  an exclusive choice (a rule's `isAlternative` flag) where exactly one is
+  scheduled — "end of morning OR end of afternoon".
 - **Tests**: JVM unit tests under `app/src/test`. `DayPlannerScenarioTest`
-  reproduces the 19-June report (`planningsprobleem-19juni`) with a fake
-  routing provider.
-- **Schema** at v4. Migrations for 1→2, 2→3, 3→4 all in
-  `data/db/Migrations.kt`.
+  reproduces the 19-June report (`planningsprobleem-19juni`) and covers
+  two-rule dogs, splitting, determinism and exclusive choice with a fake
+  routing provider; `BackupModelsTest` covers the export/import round-trip.
+- **Schema** at v5. Migrations for 1→2 … 4→5 (4→5 adds the rule
+  `isAlternative` flag) in `data/db/Migrations.kt`.
 
 ## Architecture snapshot
 
@@ -88,7 +93,7 @@ data/
 domain/
   planner/  PlannedWalk (the only survivor of the old planner)
   dayplan/  RouteEvent (sealed: HomeStart/Pickup/Dropoff/Walk/HomeEnd),
-            DayRoute, PlanConflict, PlanningConstraint,
+            DayRoute, PlanConflict, PlanningConstraint, WalkOption,
             DistanceMatrix, DayPlanner,
             DayPlanService (shared plan pipeline: Today + Follow plan)
             constraints/  Capacity, TimeWindow, WalkDuration,

@@ -59,6 +59,7 @@ data class ScheduleRuleDto(
     val earliestStart: String? = null,
     val latestEnd: String? = null,
     val durationMinutes: Int,
+    val isAlternative: Boolean = false,
 )
 
 @Serializable
@@ -91,7 +92,7 @@ fun Dog.toDto() = DogDto(
 fun DogScheduleRule.toDto() = ScheduleRuleDto(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
     earliestStart = earliestStart?.toString(), latestEnd = latestEnd?.toString(),
-    durationMinutes = durationMinutes,
+    durationMinutes = durationMinutes, isAlternative = isAlternative,
 )
 
 fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
@@ -117,7 +118,7 @@ fun ScheduleRuleDto.toEntity() = DogScheduleRule(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
     earliestStart = earliestStart?.let { LocalTime.parse(it) },
     latestEnd = latestEnd?.let { LocalTime.parse(it) },
-    durationMinutes = durationMinutes,
+    durationMinutes = durationMinutes, isAlternative = isAlternative,
 )
 
 fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)

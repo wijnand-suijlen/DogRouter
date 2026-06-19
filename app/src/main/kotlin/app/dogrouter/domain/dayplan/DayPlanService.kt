@@ -93,9 +93,23 @@ class DayPlanService(
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
         val rulesForDay = inputs.rules.filter { (it.weekdaysMask and bit) != 0 }
         val dogById = inputs.dogs.associateBy { it.id }
-        val walks: List<PlannedWalk> = rulesForDay.mapNotNull { rule ->
-            dogById[rule.dogId]?.let { PlannedWalk(it, rule) }
-        }
+
+        // Group each dog's rules: every non-alternative rule is its own
+        // required walk; all of a dog's alternative rules become one option
+        // the planner satisfies by picking exactly one.
+        val options: List<WalkOption> = rulesForDay
+            .groupBy { it.dogId }
+            .flatMap { (dogId, rules) ->
+                val dog = dogById[dogId] ?: return@flatMap emptyList()
+                val (alternatives, mandatory) = rules.partition { it.isAlternative }
+                buildList {
+                    mandatory.forEach { add(WalkOption(listOf(PlannedWalk(dog, it)))) }
+                    if (alternatives.isNotEmpty()) {
+                        add(WalkOption(alternatives.map { PlannedWalk(dog, it) }))
+                    }
+                }
+            }
+
         val pairs = inputs.incompatibilities
             .map { canonicalPair(it.dogIdA, it.dogIdB) }
             .toSet()
@@ -107,7 +121,7 @@ class DayPlanService(
             cyclingSpeedKmh = inputs.settings.cyclingSpeedKmh,
             incompatibilities = pairs,
         )
-        return planner.plan(inputs.date, walks, seed)
+        return planner.plan(inputs.date, options, seed)
     }
 
     private fun canonicalPair(a: String, b: String): Pair<String, String> =

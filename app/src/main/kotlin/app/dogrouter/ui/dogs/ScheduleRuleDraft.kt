@@ -17,6 +17,7 @@ data class ScheduleRuleDraft(
     val earliestStart: LocalTime? = null,
     val latestEnd: LocalTime? = null,
     val durationMinutes: Int = 60,
+    val isAlternative: Boolean = false,
 )
 
 fun DogScheduleRule.toDraft(): ScheduleRuleDraft = ScheduleRuleDraft(
@@ -25,6 +26,7 @@ fun DogScheduleRule.toDraft(): ScheduleRuleDraft = ScheduleRuleDraft(
     earliestStart = earliestStart,
     latestEnd = latestEnd,
     durationMinutes = durationMinutes,
+    isAlternative = isAlternative,
 )
 
 fun ScheduleRuleDraft.toEntity(dogId: String): DogScheduleRule = DogScheduleRule(
@@ -34,4 +36,5 @@ fun ScheduleRuleDraft.toEntity(dogId: String): DogScheduleRule = DogScheduleRule
     earliestStart = earliestStart,
     latestEnd = latestEnd,
     durationMinutes = durationMinutes,
+    isAlternative = isAlternative,
 )

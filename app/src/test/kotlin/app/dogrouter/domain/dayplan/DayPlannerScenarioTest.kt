@@ -62,6 +62,9 @@ class DayPlannerScenarioTest {
             durationMinutes = minutes,
         )
 
+    /** Each planned walk as its own mandatory option. */
+    private fun List<PlannedWalk>.asOptions() = map { WalkOption(listOf(it)) }
+
     @Test
     fun mondayScenario() = runBlocking {
         val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
@@ -90,7 +93,7 @@ class DayPlannerScenarioTest {
             incompatibilities = emptySet(),
         )
 
-        val route = planner.plan(LocalDate.of(2026, 6, 22), walks)
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
 
         val summary = buildString {
             appendLine()
@@ -133,7 +136,7 @@ class DayPlannerScenarioTest {
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
         )
-        val route = planner.plan(LocalDate.of(2026, 6, 22), walks)
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
         val summary = buildString {
             appendLine()
             route.events.forEach { e -> appendLine("  ${fmt(e.timeSeconds)}  ${describe(e)}") }
@@ -164,7 +167,7 @@ class DayPlannerScenarioTest {
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
         )
-        val route = planner.plan(LocalDate.of(2026, 6, 22), walks)
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
         val summary = buildString {
             appendLine()
             route.events.forEach { e -> appendLine("  ${fmt(e.timeSeconds)}  ${describe(e)}") }
@@ -198,9 +201,39 @@ class DayPlannerScenarioTest {
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
         )
-        val a = planner().plan(LocalDate.of(2026, 6, 22), walks, seed = 7L)
-        val b = planner().plan(LocalDate.of(2026, 6, 22), walks, seed = 7L)
+        val a = planner().plan(LocalDate.of(2026, 6, 22), walks.asOptions(), seed = 7L)
+        val b = planner().plan(LocalDate.of(2026, 6, 22), walks.asOptions(), seed = 7L)
         assertEquals(a.events.map { "${it.timeSeconds}:${describe(it)}" }, b.events.map { "${it.timeSeconds}:${describe(it)}" })
+    }
+
+    /**
+     * An exclusive choice (Sierra: end of morning OR end of afternoon) must
+     * schedule exactly one of its alternatives, never both.
+     */
+    @Test
+    fun exclusiveChoicePlacesExactlyOneAlternative() = runBlocking {
+        val sierra = dog("sierra", "Sierra", 8f, 48.8178, 2.2311)
+        val option = WalkOption(
+            listOf(
+                PlannedWalk(sierra, rule("sierraAM", "sierra", "10:00", "12:00", 60)),
+                PlannedWalk(sierra, rule("sierraPM", "sierra", "15:00", "17:00", 60)),
+            ),
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+        )
+        val route = planner.plan(LocalDate.of(2026, 6, 22), listOf(option))
+        val summary = buildString {
+            appendLine()
+            route.events.forEach { e -> appendLine("  ${fmt(e.timeSeconds)}  ${describe(e)}") }
+            appendLine("CONFLICTS (${route.conflicts.size})")
+        }
+        println(summary)
+        assertTrue("conflicts:$summary", route.conflicts.isEmpty())
+        val sierraWalks = route.events.filterIsInstance<RouteEvent.Walk>()
+            .filter { w -> w.dogs.any { it.id == "sierra" } }
+        assertEquals("Sierra must be walked exactly once:$summary", 1, sierraWalks.size)
     }
 
     private fun describe(e: RouteEvent): String = when (e) {

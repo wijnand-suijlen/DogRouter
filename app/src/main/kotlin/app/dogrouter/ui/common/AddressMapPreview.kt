@@ -1,4 +1,4 @@
-package app.dogrouter.ui.dogs
+package app.dogrouter.ui.common
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height

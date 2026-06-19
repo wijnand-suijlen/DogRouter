@@ -199,7 +199,7 @@ private fun TripCard(
             }
             trip.totalTravelSeconds?.takeIf { it > 0 }?.let { seconds ->
                 Text(
-                    text = "${formatDuration(seconds)} cycling between stops",
+                    text = "${formatDuration(seconds)} cycling total",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -222,6 +222,10 @@ private fun TripCard(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
+            if (trip.fromHomeLeg != null) {
+                HomeRow()
+                LegRow(trip.fromHomeLeg)
+            }
             trip.walks.forEachIndexed { index, walk ->
                 if (index > 0) {
                     val leg = trip.legs?.getOrNull(index - 1)
@@ -229,7 +233,29 @@ private fun TripCard(
                 }
                 StopRow(walk = walk)
             }
+            if (trip.toHomeLeg != null) {
+                LegRow(trip.toHomeLeg)
+                HomeRow()
+            }
         }
+    }
+}
+
+@Composable
+private fun HomeRow() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Text(
+            text = "🏠",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = "  Home",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

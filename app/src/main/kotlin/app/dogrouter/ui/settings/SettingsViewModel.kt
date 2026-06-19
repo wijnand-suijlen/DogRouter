@@ -4,42 +4,52 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
+import app.dogrouter.data.remote.AddressSuggestion
+import app.dogrouter.data.remote.BanApi
 import app.dogrouter.data.routing.RoutingDataInstaller
 import app.dogrouter.data.routing.SegmentDownloadState
 import app.dogrouter.domain.routing.RouteEstimate
 import app.dogrouter.domain.routing.RoutingProvider
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Form-state mirror of the persisted settings. Kept as strings because the
- * text fields can be mid-edit ("1" on the way to "15"); per-field validity
- * flags drive the red-outline error state on each TextField, and the
- * repository is updated whenever a typed value parses cleanly.
+ * Form-state mirror of the persisted settings. Held as strings for
+ * mid-edit values; per-field validity flags drive the red OutlinedTextField
+ * error state.
  */
 data class SettingsFormState(
-    val cyclingSpeedText: String,
-    val cyclingSpeedValid: Boolean,
     val bikeCapacityText: String,
     val bikeCapacityValid: Boolean,
     val stopBufferText: String,
     val stopBufferValid: Boolean,
+    val homeAddress: String,
+    val homeLatitude: Double?,
+    val homeLongitude: Double?,
 ) {
     companion object {
         fun from(settings: AppSettings) = SettingsFormState(
-            cyclingSpeedText = settings.cyclingSpeedKmh.formatLight(),
-            cyclingSpeedValid = true,
             bikeCapacityText = settings.bikeCapacityKg.formatLight(),
             bikeCapacityValid = true,
             stopBufferText = settings.stopBufferMinutes.toString(),
             stopBufferValid = true,
+            homeAddress = settings.homeAddress,
+            homeLatitude = settings.homeLatitude,
+            homeLongitude = settings.homeLongitude,
         )
     }
 }
@@ -49,8 +59,10 @@ sealed interface RoutingTestEvent {
     data class Failed(val message: String) : RoutingTestEvent
 }
 
+@OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SettingsViewModel(
     private val repo: SettingsRepository,
+    private val banApi: BanApi,
     private val routingInstaller: RoutingDataInstaller,
     private val routingProvider: RoutingProvider,
 ) : ViewModel() {
@@ -66,17 +78,19 @@ class SettingsViewModel(
     private val _testInProgress = MutableStateFlow(false)
     val testInProgress: StateFlow<Boolean> = _testInProgress.asStateFlow()
 
+    private val _homeAddressQuery = MutableStateFlow("")
+    val homeAddressSuggestions: StateFlow<List<AddressSuggestion>> = _homeAddressQuery
+        .debounce(SEARCH_DEBOUNCE_MS)
+        .filter { it.length >= 3 }
+        .distinctUntilChanged()
+        .mapLatest { query -> banApi.search(query) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         viewModelScope.launch {
             _form.value = SettingsFormState.from(repo.settings.first())
         }
         viewModelScope.launch { routingInstaller.installProfileIfMissing() }
-    }
-
-    fun onCyclingSpeedTextChange(text: String) {
-        val parsed = parsePositiveFloat(text)
-        _form.update { it?.copy(cyclingSpeedText = text, cyclingSpeedValid = parsed != null) }
-        parsed?.let { kmh -> viewModelScope.launch { repo.setCyclingSpeed(kmh) } }
     }
 
     fun onBikeCapacityTextChange(text: String) {
@@ -91,6 +105,30 @@ class SettingsViewModel(
         parsed?.let { minutes -> viewModelScope.launch { repo.setStopBufferMinutes(minutes) } }
     }
 
+    fun onHomeAddressTextChange(text: String) {
+        _form.update { it?.copy(homeAddress = text, homeLatitude = null, homeLongitude = null) }
+        _homeAddressQuery.value = text
+        viewModelScope.launch { repo.setHomeAddress(text, latitude = null, longitude = null) }
+    }
+
+    fun pickHomeAddressSuggestion(suggestion: AddressSuggestion) {
+        _form.update {
+            it?.copy(
+                homeAddress = suggestion.label,
+                homeLatitude = suggestion.latitude,
+                homeLongitude = suggestion.longitude,
+            )
+        }
+        _homeAddressQuery.value = suggestion.label
+        viewModelScope.launch {
+            repo.setHomeAddress(suggestion.label, suggestion.latitude, suggestion.longitude)
+        }
+    }
+
+    /** Called from AppNavigation when the address picker returns a result. */
+    fun applyPickedHomeAddress(suggestion: AddressSuggestion) =
+        pickHomeAddressSuggestion(suggestion)
+
     fun downloadRoutingData() {
         viewModelScope.launch { routingInstaller.downloadSegment() }
     }
@@ -99,11 +137,6 @@ class SettingsViewModel(
         viewModelScope.launch { routingInstaller.deleteSegment() }
     }
 
-    /**
-     * Hard-coded sanity check: a short route in Meudon. Pure diagnostic so
-     * the walker can confirm the engine is wired up before any planner
-     * integration shows distances.
-     */
     fun runRoutingSelfTest() {
         if (_testInProgress.value) return
         viewModelScope.launch {
@@ -130,6 +163,10 @@ class SettingsViewModel(
 
     private fun parsePositiveFloat(text: String): Float? =
         text.replace(',', '.').toFloatOrNull()?.takeIf { it > 0f }
+
+    private companion object {
+        const val SEARCH_DEBOUNCE_MS = 300L
+    }
 }
 
 /** Trim trailing ".0" on whole-number floats so the field reads "70" not "70.0". */

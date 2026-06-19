@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,7 +27,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,19 +37,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.data.routing.SegmentDownloadState
+import app.dogrouter.ui.common.AddressAutocompleteField
+import app.dogrouter.ui.common.AddressMapPreview
 import org.koin.androidx.compose.koinViewModel
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onPickHomeOnMap: (lat: Double?, lon: Double?) -> Unit = { _, _ -> },
+    pickedAddress: AddressSuggestion? = null,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val form by viewModel.form.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val testInProgress by viewModel.testInProgress.collectAsStateWithLifecycle()
+    val homeSuggestions by viewModel.homeAddressSuggestions.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(pickedAddress) {
+        if (pickedAddress != null) viewModel.applyPickedHomeAddress(pickedAddress)
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.routingTestEvents.collect { event ->
@@ -80,9 +92,14 @@ fun SettingsScreen(
                 state = state,
                 downloadState = downloadState,
                 testInProgress = testInProgress,
-                onCyclingSpeedChange = viewModel::onCyclingSpeedTextChange,
+                homeSuggestions = homeSuggestions,
                 onBikeCapacityChange = viewModel::onBikeCapacityTextChange,
                 onStopBufferChange = viewModel::onStopBufferTextChange,
+                onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
+                onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
+                onOpenHomeMapPicker = {
+                    onPickHomeOnMap(state.homeLatitude, state.homeLongitude)
+                },
                 onDownloadRoutingData = viewModel::downloadRoutingData,
                 onDeleteRoutingData = viewModel::deleteRoutingData,
                 onRunRoutingSelfTest = viewModel::runRoutingSelfTest,
@@ -99,9 +116,12 @@ private fun SettingsForm(
     state: SettingsFormState,
     downloadState: SegmentDownloadState,
     testInProgress: Boolean,
-    onCyclingSpeedChange: (String) -> Unit,
+    homeSuggestions: List<AddressSuggestion>,
     onBikeCapacityChange: (String) -> Unit,
     onStopBufferChange: (String) -> Unit,
+    onHomeAddressTextChange: (String) -> Unit,
+    onHomeAddressPick: (AddressSuggestion) -> Unit,
+    onOpenHomeMapPicker: () -> Unit,
     onDownloadRoutingData: () -> Unit,
     onDeleteRoutingData: () -> Unit,
     onRunRoutingSelfTest: () -> Unit,
@@ -113,21 +133,36 @@ private fun SettingsForm(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SectionTitle("Planning parameters")
-
-        OutlinedTextField(
-            value = state.cyclingSpeedText,
-            onValueChange = onCyclingSpeedChange,
-            label = { Text("Average cycling speed") },
-            suffix = { Text("km/h") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            isError = !state.cyclingSpeedValid,
-            supportingText = if (!state.cyclingSpeedValid) {
-                { Text("Enter a positive number") }
-            } else null,
-            modifier = Modifier.fillMaxWidth(),
+        SectionTitle("Home base")
+        AddressAutocompleteField(
+            value = state.homeAddress,
+            isValidated = state.homeLatitude != null,
+            suggestions = homeSuggestions,
+            label = "Home address",
+            onValueChange = onHomeAddressTextChange,
+            onPick = onHomeAddressPick,
         )
+        OutlinedButton(
+            onClick = onOpenHomeMapPicker,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.Place, contentDescription = null)
+            Text("  Pick on map")
+        }
+        val lat = state.homeLatitude
+        val lon = state.homeLongitude
+        if (lat != null && lon != null) {
+            AddressMapPreview(latitude = lat, longitude = lon)
+        }
+        Text(
+            text = "Each cargo-bike trip starts at and returns to this " +
+                "address. Pick from autocomplete or drop a pin on the map.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(16.dp))
+        SectionTitle("Planning parameters")
 
         OutlinedTextField(
             value = state.bikeCapacityText,
@@ -157,9 +192,9 @@ private fun SettingsForm(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Spacer(Modifier.height(8.dp))
         Text(
-            text = "Changes are saved as you type.",
+            text = "Cycling speed is computed by the on-device routing " +
+                "engine from the cargo-bike profile; not exposed here.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -284,4 +319,3 @@ internal fun formatDuration(seconds: Int): String {
         else -> "$seconds s"
     }
 }
-

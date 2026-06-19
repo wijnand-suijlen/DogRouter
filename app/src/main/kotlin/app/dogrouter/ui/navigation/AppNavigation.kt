@@ -90,7 +90,15 @@ fun AppNavigation() {
             composable(TabDestination.Today.route) { TodayScreen() }
             composable(TabDestination.Week.route) { WeekScreen() }
             composable(TabDestination.History.route) { HistoryScreen() }
-            composable(TabDestination.Settings.route) { SettingsScreen() }
+            composable(TabDestination.Settings.route) { entry ->
+                val picked = entry.consumePickedAddress(json)
+                SettingsScreen(
+                    pickedAddress = picked,
+                    onPickHomeOnMap = { lat, lon ->
+                        navController.navigate(AddressPickerRoutes.navigate(lat, lon))
+                    },
+                )
+            }
 
             navigation(startDestination = DogsRoutes.LIST, route = DogsRoutes.GRAPH) {
                 composable(DogsRoutes.LIST) {

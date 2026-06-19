@@ -57,6 +57,7 @@ data class ScheduleRuleDto(
     val dogId: String,
     val weekdaysMask: Int,
     val earliestStart: String? = null,
+    val latestStart: String? = null,
     val latestEnd: String? = null,
     val durationMinutes: Int,
     val isAlternative: Boolean = false,
@@ -91,7 +92,8 @@ fun Dog.toDto() = DogDto(
 
 fun DogScheduleRule.toDto() = ScheduleRuleDto(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
-    earliestStart = earliestStart?.toString(), latestEnd = latestEnd?.toString(),
+    earliestStart = earliestStart?.toString(), latestStart = latestStart?.toString(),
+    latestEnd = latestEnd?.toString(),
     durationMinutes = durationMinutes, isAlternative = isAlternative,
 )
 
@@ -117,6 +119,7 @@ fun DogDto.toEntity() = Dog(
 fun ScheduleRuleDto.toEntity() = DogScheduleRule(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
     earliestStart = earliestStart?.let { LocalTime.parse(it) },
+    latestStart = latestStart?.let { LocalTime.parse(it) },
     latestEnd = latestEnd?.let { LocalTime.parse(it) },
     durationMinutes = durationMinutes, isAlternative = isAlternative,
 )

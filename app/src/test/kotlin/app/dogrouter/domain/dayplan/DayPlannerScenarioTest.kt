@@ -58,8 +58,16 @@ class DayPlannerScenarioTest {
     private fun rule(id: String, dogId: String, start: String, end: String, minutes: Int) =
         DogScheduleRule(
             id = id, dogId = dogId, weekdaysMask = 0,
-            earliestStart = LocalTime.parse(start), latestEnd = LocalTime.parse(end),
-            durationMinutes = minutes,
+            earliestStart = LocalTime.parse(start), latestStart = null,
+            latestEnd = LocalTime.parse(end), durationMinutes = minutes,
+        )
+
+    /** A start-window rule (start between [earliest] and [latestStart]) with no return deadline. */
+    private fun startWindowRule(id: String, dogId: String, earliest: String, latestStart: String, minutes: Int) =
+        DogScheduleRule(
+            id = id, dogId = dogId, weekdaysMask = 0,
+            earliestStart = LocalTime.parse(earliest), latestStart = LocalTime.parse(latestStart),
+            latestEnd = null, durationMinutes = minutes,
         )
 
     /** Each planned walk as its own mandatory option. */
@@ -234,6 +242,37 @@ class DayPlannerScenarioTest {
         val sierraWalks = route.events.filterIsInstance<RouteEvent.Walk>()
             .filter { w -> w.dogs.any { it.id == "sierra" } }
         assertEquals("Sierra must be walked exactly once:$summary", 1, sierraWalks.size)
+    }
+
+    /**
+     * A latest-start bound is enforced and is independent of any return
+     * deadline: Yankee must start between 11:00 and 13:00, with no fixed end.
+     */
+    @Test
+    fun latestStartIsEnforced() = runBlocking {
+        val yankee = dog("yankee", "Yankee", 9f, 48.8159, 2.2317)
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+        )
+
+        val feasible = planner.plan(
+            LocalDate.of(2026, 6, 22),
+            listOf(WalkOption(listOf(PlannedWalk(yankee, startWindowRule("y1", "yankee", "11:00", "13:00", 60))))),
+        )
+        assertTrue(feasible.conflicts.isEmpty())
+        val pickup = feasible.events.filterIsInstance<RouteEvent.Pickup>().single { it.dog.id == "yankee" }
+        assertTrue(
+            "Walk must start in 11:00–13:00 but started ${fmt(pickup.timeSeconds)}",
+            pickup.timeSeconds in 11 * 3600..13 * 3600,
+        )
+
+        // earliest 14:00 but must start by 13:00 → impossible.
+        val impossible = planner.plan(
+            LocalDate.of(2026, 6, 22),
+            listOf(WalkOption(listOf(PlannedWalk(yankee, startWindowRule("y2", "yankee", "14:00", "13:00", 60))))),
+        )
+        assertEquals(1, impossible.conflicts.size)
     }
 
     private fun describe(e: RouteEvent): String = when (e) {

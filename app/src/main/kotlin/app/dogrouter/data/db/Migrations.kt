@@ -72,4 +72,16 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+/**
+ * Add the nullable `latestStart` column: the latest time a walk may start,
+ * independent of the return deadline (e.g. "start between 11:00 and 13:00,
+ * no fixed end").
+ */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `dog_schedule_rules` ADD COLUMN `latestStart` TEXT")
+    }
+}
+
+val ALL_MIGRATIONS: Array<Migration> =
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)

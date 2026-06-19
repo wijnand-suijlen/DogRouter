@@ -12,8 +12,9 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   BAN-autocomplete + tap-on-map picker + mini-map preview, stop notes
   with time adjustment, transport state (cargo bike / backpack), walk
   constraints (`allowLongerWalk` + incompatibility chips), schedule
-  rules with weekday multi-select + time window + duration + an
-  "either/or" flag (mark rules mutually exclusive — walk one per day).
+  rules with weekday multi-select, three independent time bounds (start
+  from / start by / home by), duration, and an "either/or" flag (mark
+  rules mutually exclusive — walk one per day).
 - **Settings tab**: home address picker (same widgets as dog stop),
   cycling speed (km/h, user override), bike capacity, stop buffer,
   BRouter map download (~125 MB IDF segment) + self-test, and **data
@@ -64,7 +65,8 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   of `restarts` builds is kept. A `seed` makes a build reproducible (for
   caching) while different seeds explore alternatives (the refresh
   button). Pluggable `PlanningConstraint` interface with four
-  concrete checks today: capacity, time windows, walk duration
+  concrete checks today: capacity, time windows (start-from / start-by /
+  home-by, each independent and optional), walk duration
   (min + max for `allowLongerWalk=false`), incompatibilities. Constraints
   pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
   schedule rules (two walks in a day) is handled correctly. The planner
@@ -75,8 +77,8 @@ Last touched: 2026-06-19. Twenty-one commits on `main`.
   reproduces the 19-June report (`planningsprobleem-19juni`) and covers
   two-rule dogs, splitting, determinism and exclusive choice with a fake
   routing provider; `BackupModelsTest` covers the export/import round-trip.
-- **Schema** at v5. Migrations for 1→2 … 4→5 (4→5 adds the rule
-  `isAlternative` flag) in `data/db/Migrations.kt`.
+- **Schema** at v6. Migrations for 1→2 … 5→6 in `data/db/Migrations.kt`
+  (4→5 adds the rule `isAlternative` flag; 5→6 adds `latestStart`).
 
 ## Architecture snapshot
 

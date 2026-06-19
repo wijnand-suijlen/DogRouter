@@ -5,10 +5,11 @@ import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.dayplan.walkSpans
 
 /**
- * For each scheduled walk the pickup must be no earlier than the rule's
- * `earliestStart`, and the dropoff no later than the rule's `latestEnd`.
- * Works per pickup→dropoff occurrence (see [walkSpans]), so a dog with two
- * rules in a day has each of its walks checked against its own window.
+ * Per pickup→dropoff occurrence (see [walkSpans]): the pickup must fall in
+ * the rule's start window — no earlier than `earliestStart`, no later than
+ * `latestStart` — and the dropoff no later than `latestEnd`. Each bound is
+ * optional and independent, so a dog can need "start between 11:00 and
+ * 13:00" with no return deadline.
  */
 class TimeWindowConstraint : PlanningConstraint {
     override fun violation(events: List<RouteEvent>): String? {
@@ -17,6 +18,10 @@ class TimeWindowConstraint : PlanningConstraint {
             val earliest = pickup.rule.earliestStart
             if (earliest != null && pickup.timeSeconds < earliest.toSecondOfDay()) {
                 return "${pickup.dog.name} pickup at ${pickup.timeSeconds.fmtTime()} is before earliest $earliest"
+            }
+            val latestStart = pickup.rule.latestStart
+            if (latestStart != null && pickup.timeSeconds > latestStart.toSecondOfDay()) {
+                return "${pickup.dog.name} pickup at ${pickup.timeSeconds.fmtTime()} is after latest start $latestStart"
             }
             val dropoff = span.dropoff ?: continue
             val latest = pickup.rule.latestEnd

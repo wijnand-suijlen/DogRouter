@@ -50,7 +50,7 @@ private data class PendingTimePick(
     val field: Field,
     val current: LocalTime?,
 ) {
-    enum class Field { Start, End }
+    enum class Field { EarliestStart, LatestStart, LatestEnd }
 }
 
 @Composable
@@ -60,6 +60,7 @@ fun ScheduleEditor(
     onRemoveRule: (ruleId: String) -> Unit,
     onToggleWeekday: (ruleId: String, day: DayOfWeek) -> Unit,
     onEarliestStartChange: (ruleId: String, time: LocalTime?) -> Unit,
+    onLatestStartChange: (ruleId: String, time: LocalTime?) -> Unit,
     onLatestEndChange: (ruleId: String, time: LocalTime?) -> Unit,
     onDurationChange: (ruleId: String, minutes: Int) -> Unit,
     onToggleAlternative: (ruleId: String, value: Boolean) -> Unit,
@@ -86,10 +87,12 @@ fun ScheduleEditor(
                 rule = rule,
                 onRemove = { onRemoveRule(rule.id) },
                 onToggleWeekday = { day -> onToggleWeekday(rule.id, day) },
-                onStartTap = { pending = PendingTimePick(rule.id, PendingTimePick.Field.Start, rule.earliestStart) },
-                onStartClear = { onEarliestStartChange(rule.id, null) },
-                onEndTap = { pending = PendingTimePick(rule.id, PendingTimePick.Field.End, rule.latestEnd) },
-                onEndClear = { onLatestEndChange(rule.id, null) },
+                onEarliestStartTap = { pending = PendingTimePick(rule.id, PendingTimePick.Field.EarliestStart, rule.earliestStart) },
+                onEarliestStartClear = { onEarliestStartChange(rule.id, null) },
+                onLatestStartTap = { pending = PendingTimePick(rule.id, PendingTimePick.Field.LatestStart, rule.latestStart) },
+                onLatestStartClear = { onLatestStartChange(rule.id, null) },
+                onLatestEndTap = { pending = PendingTimePick(rule.id, PendingTimePick.Field.LatestEnd, rule.latestEnd) },
+                onLatestEndClear = { onLatestEndChange(rule.id, null) },
                 onDurationChange = { minutes -> onDurationChange(rule.id, minutes) },
                 onToggleAlternative = { value -> onToggleAlternative(rule.id, value) },
             )
@@ -106,8 +109,9 @@ fun ScheduleEditor(
             onDismiss = { pending = null },
             onConfirm = { time ->
                 when (request.field) {
-                    PendingTimePick.Field.Start -> onEarliestStartChange(request.ruleId, time)
-                    PendingTimePick.Field.End -> onLatestEndChange(request.ruleId, time)
+                    PendingTimePick.Field.EarliestStart -> onEarliestStartChange(request.ruleId, time)
+                    PendingTimePick.Field.LatestStart -> onLatestStartChange(request.ruleId, time)
+                    PendingTimePick.Field.LatestEnd -> onLatestEndChange(request.ruleId, time)
                 }
                 pending = null
             },
@@ -121,10 +125,12 @@ private fun RuleCard(
     rule: ScheduleRuleDraft,
     onRemove: () -> Unit,
     onToggleWeekday: (DayOfWeek) -> Unit,
-    onStartTap: () -> Unit,
-    onStartClear: () -> Unit,
-    onEndTap: () -> Unit,
-    onEndClear: () -> Unit,
+    onEarliestStartTap: () -> Unit,
+    onEarliestStartClear: () -> Unit,
+    onLatestStartTap: () -> Unit,
+    onLatestStartClear: () -> Unit,
+    onLatestEndTap: () -> Unit,
+    onLatestEndClear: () -> Unit,
     onDurationChange: (Int) -> Unit,
     onToggleAlternative: (Boolean) -> Unit,
 ) {
@@ -145,22 +151,24 @@ private fun RuleCard(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TimeFieldChip(
-                    label = "From",
+                    label = "Start from",
                     time = rule.earliestStart,
-                    onClick = onStartTap,
-                    onClear = onStartClear,
+                    onClick = onEarliestStartTap,
+                    onClear = onEarliestStartClear,
                 )
-                Text("–")
                 TimeFieldChip(
-                    label = "Until",
+                    label = "Start by",
+                    time = rule.latestStart,
+                    onClick = onLatestStartTap,
+                    onClear = onLatestStartClear,
+                )
+                TimeFieldChip(
+                    label = "Home by",
                     time = rule.latestEnd,
-                    onClick = onEndTap,
-                    onClear = onEndClear,
+                    onClick = onLatestEndTap,
+                    onClear = onLatestEndClear,
                 )
             }
 

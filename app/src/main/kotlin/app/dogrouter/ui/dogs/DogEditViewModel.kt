@@ -198,6 +198,9 @@ class DogEditViewModel(
     fun setEarliestStart(ruleId: String, time: LocalTime?) =
         updateRule(ruleId) { copy(earliestStart = time) }
 
+    fun setLatestStart(ruleId: String, time: LocalTime?) =
+        updateRule(ruleId) { copy(latestStart = time) }
+
     fun setLatestEnd(ruleId: String, time: LocalTime?) =
         updateRule(ruleId) { copy(latestEnd = time) }
 

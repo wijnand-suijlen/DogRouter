@@ -25,7 +25,8 @@ class BackupModelsTest {
     )
     private val rule = DogScheduleRule(
         id = "r1", dogId = "alfa", weekdaysMask = 0b0000001,
-        earliestStart = LocalTime.of(9, 30), latestEnd = LocalTime.of(16, 0),
+        earliestStart = LocalTime.of(9, 30), latestStart = LocalTime.of(13, 0),
+        latestEnd = LocalTime.of(16, 0),
         durationMinutes = 120, isAlternative = true,
     )
     private val incompatibility = DogIncompatibility(dogIdA = "delta", dogIdB = "alfa")

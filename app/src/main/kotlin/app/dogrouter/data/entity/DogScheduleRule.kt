@@ -35,7 +35,13 @@ data class DogScheduleRule(
     @PrimaryKey val id: String,
     val dogId: String,
     val weekdaysMask: Int,
+    // Earliest the walk may start (pickup no earlier than this).
     val earliestStart: LocalTime?,
+    // Latest the walk may start (pickup no later than this). Independent of
+    // [latestEnd]: a dog can need "start between 11:00 and 13:00" with no
+    // return deadline at all.
+    val latestStart: LocalTime?,
+    // Latest the walk must end (dropoff no later than this).
     val latestEnd: LocalTime?,
     val durationMinutes: Int,
     // When true this rule is one of a dog's mutually-exclusive

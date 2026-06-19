@@ -367,7 +367,8 @@ class DayPlanner(
         GeoPoint(dog.latitude!!, dog.longitude!!)
 
     private fun PlannedWalk.deadlineSeconds(): Int =
-        rule.latestEnd?.toSecondOfDay() ?: Int.MAX_VALUE
+        listOfNotNull(rule.latestStart, rule.latestEnd)
+            .minOfOrNull { it.toSecondOfDay() } ?: Int.MAX_VALUE
 
     /** Tightest deadline among the option's alternatives drives its priority. */
     private fun WalkOption.deadlineSeconds(): Int =

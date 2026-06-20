@@ -179,12 +179,10 @@ class DayPlanner(
             reportSolver()
         }
 
-        val solution = if (breakSpec != null) {
-            insertBreak(best!!, breakSpec, matrix, constraints) ?: best!!
-        } else {
-            best!!
-        }
+        val withBreak = if (breakSpec != null) insertBreak(best!!, breakSpec, matrix, constraints) else null
+        val solution = withBreak ?: best!!
         return solution.toDayRoute(date, unroutable).withBikeFetches()
+            .copy(breakUnavailable = breakSpec != null && withBreak == null)
     }
 
     /**

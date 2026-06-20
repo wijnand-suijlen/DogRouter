@@ -157,6 +157,9 @@ private fun DayRouteContent(
                     if (route.conflicts.isNotEmpty()) {
                         item { ConflictPanel(route.conflicts) }
                     }
+                    if (route.breakUnavailable) {
+                        item { BreakUnavailablePanel() }
+                    }
                     val timeline = buildTimelineRows(route.events)
                     items(timeline) { row -> TimelineRowView(row, onOpenLegMap) }
                 }
@@ -262,6 +265,29 @@ private fun ConflictPanel(conflicts: List<PlanConflict>) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun BreakUnavailablePanel() {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "No room for a lunch break today.",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

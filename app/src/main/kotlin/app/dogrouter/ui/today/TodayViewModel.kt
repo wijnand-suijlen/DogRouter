@@ -3,7 +3,8 @@ package app.dogrouter.ui.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.domain.dayplan.DayPlanService
-import app.dogrouter.domain.dayplan.DayRoute
+import app.dogrouter.domain.dayplan.PlanPhase
+import app.dogrouter.domain.dayplan.PlanState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,12 +27,12 @@ class TodayViewModel(
      * underlying data changes. flatMapLatest cancels an in-flight plan
      * when the date changes, so we never show yesterday's events for today.
      */
-    val dayRoute: StateFlow<DayRoute?> = _selectedDate
+    val planState: StateFlow<PlanState> = _selectedDate
         .flatMapLatest { dayPlanService.observePlan(it) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = null,
+            initialValue = PlanState.Loading(0f, PlanPhase.ROUTING),
         )
 
     fun goToPreviousDay() {

@@ -16,9 +16,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import java.time.LocalDate
@@ -54,12 +55,12 @@ class DayPlanService(
     }
 
     /**
-     * Emits the plan for [date]. On a cache hit it emits the cached plan
-     * straight away; on a miss it emits null (so the UI can show a loading
-     * state) and then the freshly computed plan. Re-emits when inputs or
-     * the date's seed change.
+     * Emits the [PlanState] for [date]. On a cache hit it emits [Ready]
+     * straight away; on a miss it emits [Loading] (with a 0..1 progress
+     * fraction the solver reports) and then [Ready] with the computed plan.
+     * Re-emits when inputs or the date's seed change.
      */
-    fun observePlan(date: LocalDate): Flow<DayRoute?> = combine(
+    fun observePlan(date: LocalDate): Flow<PlanState> = combine(
         dogDao.observeAll(),
         scheduleDao.observeAll(),
         incompatibilityDao.observeAll(),
@@ -68,17 +69,19 @@ class DayPlanService(
     ) { dogs, rules, incompatibilities, settings, seed ->
         Inputs(date, dogs, rules, incompatibilities, settings) to seed
     }.flatMapLatest { (inputs, seed) ->
-        flow {
+        channelFlow {
             val key = CacheKey(inputs, seed)
             cached(key)?.let {
-                emit(it)
-                return@flow
+                send(PlanState.Ready(it))
+                return@channelFlow
             }
-            emit(null)
-            val plan = computePlan(inputs, seed)
+            send(PlanState.Loading(0f, PlanPhase.ROUTING))
+            val plan = computePlan(inputs, seed) { fraction, phase ->
+                trySend(PlanState.Loading(fraction, phase))
+            }
             store(key, plan)
-            emit(plan)
-        }
+            send(PlanState.Ready(plan))
+        }.conflate()
     }
 
     /** Ask for a different plan for [date] (advances its solver seed). */
@@ -91,7 +94,11 @@ class DayPlanService(
         synchronized(cache) { cache[key] = plan }
     }
 
-    private suspend fun computePlan(inputs: Inputs, seed: Long): DayRoute {
+    private suspend fun computePlan(
+        inputs: Inputs,
+        seed: Long,
+        onProgress: (Float, PlanPhase) -> Unit,
+    ): DayRoute {
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
         val rulesForDay = inputs.rules.filter { (it.weekdaysMask and bit) != 0 }
         val dogById = inputs.dogs.associateBy { it.id }
@@ -130,7 +137,7 @@ class DayPlanService(
         // and trip an ANR. The flow's loading/result emissions stay on the
         // collector's context.
         return withContext(Dispatchers.Default) {
-            planner.plan(inputs.date, options, seed)
+            planner.plan(inputs.date, options, seed, onProgress)
         }
     }
 

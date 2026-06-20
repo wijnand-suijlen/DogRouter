@@ -30,15 +30,21 @@ class DistanceMatrix(
         suspend fun build(
             points: Set<GeoPoint>,
             routing: RoutingProvider,
+            // Reports routing progress as (pairs done, total pairs) — building
+            // the matrix is the slow part on-device, so the UI tracks it.
+            onPair: (done: Int, total: Int) -> Unit = { _, _ -> },
         ): DistanceMatrix {
             val cache = mutableMapOf<Pair<GeoPoint, GeoPoint>, Int>()
             val list = points.toList()
+            val total = list.size * (list.size - 1) / 2
+            var done = 0
             for (i in list.indices) {
                 for (j in i + 1 until list.size) {
                     val a = list[i]
                     val b = list[j]
                     val estimate = routing.route(a.latitude, a.longitude, b.latitude, b.longitude)
                     cache[a to b] = estimate?.distanceMeters ?: FALLBACK_METERS
+                    onPair(++done, total)
                 }
             }
             return DistanceMatrix(cache)

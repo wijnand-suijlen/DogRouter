@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.dayplan.DayRoute
+import app.dogrouter.domain.dayplan.PlanState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import java.time.LocalDate
@@ -27,7 +29,10 @@ class FollowPlanViewModel(
     val date: LocalDate,
 ) : ViewModel() {
 
+    // Execution mode only needs the finished plan; collapse Loading to null
+    // (its existing spinner) and surface the route when Ready.
     val dayRoute: StateFlow<DayRoute?> = dayPlanService.observePlan(date)
+        .map { (it as? PlanState.Ready)?.route }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

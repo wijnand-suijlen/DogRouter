@@ -31,6 +31,14 @@ private const val OVERSIZE_PENALTY_SECONDS = 1_000_000L
 private const val WORST_REMOVAL_BIAS = 4.0
 
 /**
+ * Share of the progress bar given to building the distance matrix; the
+ * solver fills the rest. The matrix (BRouter, one route per point-pair) is
+ * the slow part on-device, so it gets the larger share even though it has
+ * fewer steps than the solver — better matches the perceived wait.
+ */
+private const val MATRIX_PROGRESS_FRACTION = 0.6f
+
+/**
  * Composes a day route from a list of scheduled walks using a greedy
  * insertion heuristic with explicit walk events:
  *
@@ -90,7 +98,14 @@ class DayPlanner(
      * cached), while a different seed explores other orderings — the hook
      * the Today "refresh" button uses to offer alternative plans.
      */
-    suspend fun plan(date: LocalDate, options: List<WalkOption>, seed: Long = 0L): DayRoute {
+    suspend fun plan(
+        date: LocalDate,
+        options: List<WalkOption>,
+        seed: Long = 0L,
+        // Reports computation progress as a 0..1 fraction plus the phase, for
+        // a determinate progress bar. No-op by default (tests / harness).
+        onProgress: (fraction: Float, phase: PlanPhase) -> Unit = { _, _ -> },
+    ): DayRoute {
         if (home == null) {
             return DayRoute(date, emptyList(), 0, 0, options.map { PlanConflict(it.dog, "Home address not set") })
         }
@@ -112,7 +127,9 @@ class DayPlanner(
         }
 
         val points = (routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } + home).toSet()
-        val matrix = DistanceMatrix.build(points, routingProvider)
+        val matrix = DistanceMatrix.build(points, routingProvider) { done, total ->
+            onProgress(MATRIX_PROGRESS_FRACTION * done / total, PlanPhase.ROUTING)
+        }
         val constraints = listOf(
             CapacityConstraint(capacityKg),
             TimeWindowConstraint(),
@@ -128,11 +145,24 @@ class DayPlanner(
         // is built once above; each restart is pure in-memory work.
         val rng = Random(seed)
         val deadlineOrder = routable.sortedBy { it.deadlineSeconds() }
+        // The solver phase fills the bar from MATRIX_PROGRESS_FRACTION to 1
+        // across every multi-start build and every LNS iteration.
+        val solverSteps = restarts.coerceAtLeast(1) + lnsIterations.coerceAtLeast(0)
+        var solverDone = 0
+        fun reportSolver() {
+            solverDone++
+            onProgress(
+                MATRIX_PROGRESS_FRACTION + (1f - MATRIX_PROGRESS_FRACTION) * solverDone / solverSteps,
+                PlanPhase.OPTIMISING,
+            )
+        }
+
         var best: Solution? = null
         repeat(restarts.coerceAtLeast(1)) { iteration ->
             val order = if (iteration == 0) deadlineOrder else routable.shuffled(rng)
             val candidate = buildOnce(order, matrix, constraints)
             if (best == null || candidate.isBetterThan(best!!)) best = candidate
+            reportSolver()
         }
 
         // LNS: ruin-and-recreate around the incumbent, hill-climbing on score.
@@ -141,6 +171,7 @@ class DayPlanner(
             val candidate = ruinAndRecreate(current, matrix, constraints, rng)
             if (candidate.isBetterThan(current)) current = candidate
             if (current.isBetterThan(best!!)) best = current
+            reportSolver()
         }
         return best!!.toDayRoute(date, unroutable).withBikeFetches()
     }

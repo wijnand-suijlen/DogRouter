@@ -29,7 +29,7 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanConflict
+import app.dogrouter.domain.dayplan.PlanPhase
+import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.routing.GeoPoint
 import org.koin.androidx.compose.koinViewModel
@@ -73,9 +75,10 @@ fun TodayScreen(
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     viewModel: TodayViewModel = koinViewModel(),
 ) {
-    val dayRoute by viewModel.dayRoute.collectAsStateWithLifecycle()
+    val planState by viewModel.planState.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
+    val readyRoute = (planState as? PlanState.Ready)?.route
 
     Scaffold(
         topBar = {
@@ -92,7 +95,7 @@ fun TodayScreen(
             )
         },
         floatingActionButton = {
-            if (dayRoute?.events?.isNotEmpty() == true) {
+            if (readyRoute?.events?.isNotEmpty() == true) {
                 ExtendedFloatingActionButton(
                     onClick = { onStartTrip(selectedDate) },
                     icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
@@ -113,7 +116,7 @@ fun TodayScreen(
                 onPickDate = { showDatePicker = true },
             )
             HorizontalDivider()
-            DayRouteContent(dayRoute, onOpenLegMap)
+            DayRouteContent(planState, onOpenLegMap)
         }
     }
 
@@ -128,31 +131,55 @@ fun TodayScreen(
 
 @Composable
 private fun DayRouteContent(
-    route: DayRoute?,
+    state: PlanState,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
 ) {
-    when {
-        route == null -> LoadingBox()
-        route.events.isEmpty() && route.conflicts.isEmpty() -> EmptyState()
-        else -> LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            item { Summary(route) }
-            if (route.conflicts.isNotEmpty()) {
-                item { ConflictPanel(route.conflicts) }
+    when (state) {
+        is PlanState.Loading -> LoadingBox(state.fraction, state.phase)
+        is PlanState.Ready -> {
+            val route = state.route
+            if (route.events.isEmpty() && route.conflicts.isEmpty()) {
+                EmptyState()
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    item { Summary(route) }
+                    if (route.conflicts.isNotEmpty()) {
+                        item { ConflictPanel(route.conflicts) }
+                    }
+                    val timeline = buildTimelineRows(route.events)
+                    items(timeline) { row -> TimelineRowView(row, onOpenLegMap) }
+                }
             }
-            val timeline = buildTimelineRows(route.events)
-            items(timeline) { row -> TimelineRowView(row, onOpenLegMap) }
         }
     }
 }
 
 @Composable
-private fun LoadingBox() {
+private fun LoadingBox(fraction: Float, phase: PlanPhase) {
+    val label = when (phase) {
+        PlanPhase.ROUTING -> "Building routes…"
+        PlanPhase.OPTIMISING -> "Optimising plan…"
+    }
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 48.dp),
+        ) {
+            Text(
+                text = "$label  ${(fraction * 100).toInt()}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

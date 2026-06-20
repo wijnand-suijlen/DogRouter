@@ -56,6 +56,12 @@ class DayPlanner(
     private val dayStartSeconds: Int = 8 * 3600,
     private val dayEndSeconds: Int = 20 * 3600,
     private val restarts: Int = 60,
+    // Large-neighbourhood search after the multi-start: each iteration ruins
+    // a few placed walks and greedily re-inserts them, keeping the result if
+    // it scores better. 0 disables LNS (pure multi-start, the old behaviour).
+    private val lnsIterations: Int = 0,
+    private val lnsRemoveMin: Int = 1,
+    private val lnsRemoveMax: Int = 3,
     // Walk-group size: never more than [maxGroupSize] dogs at once (hard),
     // and a strong preference for at most [preferredGroupSize] (soft, via a
     // planning-cost penalty so bigger groups are used only when needed).
@@ -112,7 +118,61 @@ class DayPlanner(
             val candidate = buildOnce(order, matrix, constraints)
             if (best == null || candidate.isBetterThan(best!!)) best = candidate
         }
+
+        // LNS: ruin-and-recreate around the incumbent, hill-climbing on score.
+        var current = best!!
+        repeat(lnsIterations.coerceAtLeast(0)) {
+            val candidate = ruinAndRecreate(current, matrix, constraints, rng)
+            if (candidate.isBetterThan(current)) current = candidate
+            if (current.isBetterThan(best!!)) best = current
+        }
         return best!!.toDayRoute(date, unroutable).withBikeFetches()
+    }
+
+    /**
+     * One LNS iteration: remove a few placed options (random ruin), then
+     * greedily re-insert them — plus any already-unplaced options, so a
+     * freed slot can also rescue a conflict — with [tryInsertOption]. The
+     * insertion order is shuffled so repeated iterations explore differently.
+     * On the rare retime failure mid-ruin, abort and keep [current] unchanged.
+     */
+    private fun ruinAndRecreate(
+        current: Solution,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+        rng: Random,
+    ): Solution {
+        if (current.placed.isEmpty()) return current
+        val k = rng.nextInt(lnsRemoveMin, lnsRemoveMax + 1).coerceIn(1, current.placed.size)
+        val toRemove = current.placed.shuffled(rng).take(k)
+        var partial = current
+        for (option in toRemove) {
+            partial = remove(partial, option, matrix) ?: return current
+        }
+        return repair(partial, toRemove + partial.unplaced, matrix, constraints, rng)
+    }
+
+    /** Greedily insert [toReinsert] into [partial] (shuffled order). */
+    private fun repair(
+        partial: Solution,
+        toReinsert: List<WalkOption>,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+        rng: Random,
+    ): Solution {
+        var events = partial.events
+        val placed = partial.placed.toMutableList()
+        val unplaced = mutableListOf<WalkOption>()
+        for (option in toReinsert.shuffled(rng)) {
+            val inserted = tryInsertOption(events, option, matrix, constraints)
+            if (inserted != null) {
+                events = inserted
+                placed.add(option)
+            } else {
+                unplaced.add(option)
+            }
+        }
+        return Solution(events, placed, unplaced)
     }
 
     /**
@@ -250,15 +310,17 @@ class DayPlanner(
      * twice in a day has two spans, and removing one must not touch the other.
      * Removing only relaxes constraints, so the result stays feasible. Used by
      * the LNS destroy step; the caller hands the removed option to the repair
-     * step. A no-op if the option is not currently placed.
+     * step. Returns null when the option is not currently placed, or in the
+     * rare case the shortened plan fails to retime (a removed stop can shift
+     * the foot/bike mode choices) — the caller then leaves the solution as is.
      */
-    internal fun remove(solution: Solution, option: WalkOption, matrix: DistanceMatrix): Solution {
+    internal fun remove(solution: Solution, option: WalkOption, matrix: DistanceMatrix): Solution? {
         val ruleIds = option.alternatives.mapTo(HashSet()) { it.rule.id }
         val span = solution.events.walkSpans().firstOrNull {
             it.pickup.dog.id == option.dog.id && it.pickup.rule.id in ruleIds
-        } ?: return solution
+        } ?: return null
         val pickup = span.pickup
-        val dropoff = span.dropoff ?: return solution
+        val dropoff = span.dropoff ?: return null
         val dogId = option.dog.id
         val pIdx = solution.events.indexOfFirst { it === pickup }
         val dIdx = solution.events.indexOfFirst { it === dropoff }
@@ -276,8 +338,7 @@ class DayPlanner(
             }
         }
 
-        val retimed = retimeAndCost(reduced, matrix)?.first
-            ?: error("remove: retiming a shortened plan should never exceed the day end")
+        val retimed = retimeAndCost(reduced, matrix)?.first ?: return null
         return Solution(
             events = retimed,
             placed = solution.placed.filter { it !== option },

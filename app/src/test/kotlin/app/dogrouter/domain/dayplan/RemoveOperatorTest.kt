@@ -114,6 +114,7 @@ class RemoveOperatorTest {
 
         for (target in solution.placed) {
             val reduced = planner.remove(solution, target, matrix)
+                ?: throw AssertionError("remove returned null for placed ${target.dog.name}")
 
             // One fewer option placed, and it is the target that left.
             assertEquals(solution.placed.size - 1, reduced.placed.size)

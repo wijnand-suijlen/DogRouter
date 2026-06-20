@@ -226,6 +226,8 @@ class SolverHarness {
         walkingSpeedKmh = settings.walkingSpeedKmh,
         bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
         restarts = restarts,
+        // -Dsolver.lns=N to experiment with the LNS pass (0 = pure multi-start).
+        lnsIterations = System.getProperty("solver.lns")?.toIntOrNull() ?: 0,
     )
 
     private fun daysWithRules(rules: List<DogScheduleRule>): List<DayOfWeek> =

@@ -44,6 +44,7 @@ val appModule = module {
     single { get<AppDatabase>().dogDao() }
     single { get<AppDatabase>().dogScheduleDao() }
     single { get<AppDatabase>().dogIncompatibilityDao() }
+    single { get<AppDatabase>().appointmentDao() }
 
     single<DataStore<Preferences>> {
         PreferenceDataStoreFactory.create(
@@ -86,7 +87,7 @@ val appModule = module {
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
     single { LegGeometryCache(get()) }
 
-    single { BackupRepository(get(), get(), get(), get(), get(), get()) }
+    single { BackupRepository(get(), get(), get(), get(), get(), get(), get()) }
 
     single { DayPlanService(get(), get(), get(), get(), get()) }
 

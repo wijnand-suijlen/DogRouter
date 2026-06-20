@@ -1,5 +1,6 @@
 package app.dogrouter.data.backup
 
+import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
@@ -7,6 +8,7 @@ import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.BreakLocation
 import kotlinx.serialization.Serializable
+import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
@@ -29,6 +31,19 @@ data class BackupFile(
     val dogs: List<DogDto>,
     val scheduleRules: List<ScheduleRuleDto>,
     val incompatibilities: List<IncompatibilityDto>,
+    val appointments: List<AppointmentDto> = emptyList(),
+)
+
+@Serializable
+data class AppointmentDto(
+    val id: String,
+    val date: String,
+    val startTime: String,
+    val endTime: String,
+    val label: String,
+    val address: String,
+    val latitude: Double,
+    val longitude: Double,
 )
 
 @Serializable
@@ -109,6 +124,11 @@ fun DogScheduleRule.toDto() = ScheduleRuleDto(
 
 fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
 
+fun Appointment.toDto() = AppointmentDto(
+    id = id, date = date.toString(), startTime = startTime.toString(), endTime = endTime.toString(),
+    label = label, address = address, latitude = latitude, longitude = longitude,
+)
+
 fun AppSettings.toDto() = SettingsDto(
     bikeCapacityKg = bikeCapacityKg, stopBufferMinutes = stopBufferMinutes,
     cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
@@ -140,6 +160,12 @@ fun ScheduleRuleDto.toEntity() = DogScheduleRule(
 )
 
 fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)
+
+fun AppointmentDto.toEntity() = Appointment(
+    id = id, date = LocalDate.parse(date),
+    startTime = LocalTime.parse(startTime), endTime = LocalTime.parse(endTime),
+    label = label, address = address, latitude = latitude, longitude = longitude,
+)
 
 fun SettingsDto.toAppSettings() = AppSettings(
     bikeCapacityKg = bikeCapacityKg, stopBufferMinutes = stopBufferMinutes,

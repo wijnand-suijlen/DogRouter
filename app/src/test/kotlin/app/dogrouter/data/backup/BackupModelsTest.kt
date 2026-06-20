@@ -1,5 +1,6 @@
 package app.dogrouter.data.backup
 
+import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
@@ -9,6 +10,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.time.LocalDate
 import java.time.LocalTime
 
 class BackupModelsTest {
@@ -30,6 +32,11 @@ class BackupModelsTest {
         durationMinutes = 120, isAlternative = true,
     )
     private val incompatibility = DogIncompatibility(dogIdA = "delta", dogIdB = "alfa")
+    private val appointment = Appointment(
+        id = "appt1", date = LocalDate.of(2026, 6, 23),
+        startTime = LocalTime.of(14, 0), endTime = LocalTime.of(15, 0),
+        label = "Doctor", address = "Clinic", latitude = 48.82, longitude = 2.25,
+    )
     private val settings = AppSettings(
         bikeCapacityKg = 65f, stopBufferMinutes = 5, cyclingSpeedKmh = 14f,
         walkingSpeedKmh = 3.5f, bikeOverheadMinutes = 4, cyclingWeight = 1.5f,
@@ -48,12 +55,14 @@ class BackupModelsTest {
             dogs = listOf(dog.toDto()),
             scheduleRules = listOf(rule.toDto()),
             incompatibilities = listOf(incompatibility.toDto()),
+            appointments = listOf(appointment.toDto()),
         )
         val decoded = json.decodeFromString<BackupFile>(json.encodeToString(original))
 
         assertEquals(dog, decoded.dogs.single().toEntity())
         assertEquals(rule, decoded.scheduleRules.single().toEntity())
         assertEquals(incompatibility, decoded.incompatibilities.single().toEntity())
+        assertEquals(appointment, decoded.appointments.single().toEntity())
         assertEquals(settings, decoded.settings.toAppSettings())
         assertEquals(BACKUP_VERSION, decoded.version)
     }

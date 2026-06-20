@@ -94,5 +94,25 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+/**
+ * Add the `appointments` table: one-off, dog-free commitments on a date in an
+ * exact time window at a fixed address, which the planner schedules around.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `appointments` (" +
+                "`id` TEXT NOT NULL, `date` TEXT NOT NULL, " +
+                "`startTime` TEXT NOT NULL, `endTime` TEXT NOT NULL, " +
+                "`label` TEXT NOT NULL, `address` TEXT NOT NULL, " +
+                "`latitude` REAL NOT NULL, `longitude` REAL NOT NULL, " +
+                "PRIMARY KEY(`id`))",
+        )
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+    arrayOf(
+        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+    )

@@ -2,6 +2,10 @@ package app.dogrouter.domain.dayplan
 
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Precomputed road-distance matrix (metres) between a finite set of points.
@@ -20,12 +24,17 @@ class DistanceMatrix(
 ) {
     fun metersBetween(from: GeoPoint, to: GeoPoint): Int {
         if (from == to) return 0
-        return meters[from to to] ?: meters[to to from] ?: FALLBACK_METERS
+        return meters[from to to] ?: meters[to to from] ?: fallbackMeters(from, to)
     }
 
     companion object {
-        /** Used when routing fails for a pair; large enough to deter the planner. */
-        private const val FALLBACK_METERS = 30_000
+        /**
+         * Road detour over straight-line distance. When BRouter cannot route a
+         * pair, a flat large constant (the old behaviour) made nearby dogs look
+         * unreachable and badly distorted the plan; a straight-line estimate
+         * with this factor keeps the plan sensible instead.
+         */
+        private const val ROAD_DETOUR_FACTOR = 1.3
 
         suspend fun build(
             points: Set<GeoPoint>,
@@ -43,11 +52,24 @@ class DistanceMatrix(
                     val a = list[i]
                     val b = list[j]
                     val estimate = routing.route(a.latitude, a.longitude, b.latitude, b.longitude)
-                    cache[a to b] = estimate?.distanceMeters ?: FALLBACK_METERS
+                    cache[a to b] = estimate?.distanceMeters ?: fallbackMeters(a, b)
                     onPair(++done, total)
                 }
             }
             return DistanceMatrix(cache)
+        }
+
+        /** Straight-line distance plus a road detour — the fallback when a
+         *  routing engine cannot answer for a pair. */
+        private fun fallbackMeters(from: GeoPoint, to: GeoPoint): Int {
+            val r = 6_371_000.0
+            val dLat = Math.toRadians(to.latitude - from.latitude)
+            val dLon = Math.toRadians(to.longitude - from.longitude)
+            val h = sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(from.latitude)) * cos(Math.toRadians(to.latitude)) *
+                sin(dLon / 2) * sin(dLon / 2)
+            val straight = r * 2 * atan2(sqrt(h), sqrt(1 - h))
+            return (straight * ROAD_DETOUR_FACTOR).toInt()
         }
     }
 }

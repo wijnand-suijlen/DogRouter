@@ -464,15 +464,17 @@ class SolverHarness {
         return json.decodeFromString(BackupFile.serializer(), file.readText())
     }
 
-    /** Walk up from the working dir until dogrouter-backup.json is found. */
+    /** Walk up from the working dir until the backup file is found.
+     *  Override the name with -Dsolver.backup=dogrouter-backup-2.json. */
     private fun findBackupFile(): File {
+        val name = System.getProperty("solver.backup") ?: "dogrouter-backup.json"
         var dir: File? = File("").absoluteFile
         while (dir != null) {
-            val candidate = File(dir, "dogrouter-backup.json")
+            val candidate = File(dir, name)
             if (candidate.isFile) return candidate
             dir = dir.parentFile
         }
-        error("dogrouter-backup.json not found (looked up from ${File("").absolutePath})")
+        error("$name not found (looked up from ${File("").absolutePath})")
     }
 
     /** Repo root = the directory holding the backup file. */

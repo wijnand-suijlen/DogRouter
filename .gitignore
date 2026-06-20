@@ -36,5 +36,5 @@ out/
 .claude/settings.local.json
 
 # Private real-world data and solver output (never push)
-dogrouter-backup.json
+dogrouter-backup*.json
 solver-report.txt

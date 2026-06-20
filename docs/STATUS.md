@@ -3,7 +3,7 @@
 Internal hand-off document so a fresh Claude session can pick up where we
 left off. English only (internal design doc, not user-facing).
 
-Last touched: 2026-06-20. 41 commits on `main`.
+Last touched: 2026-06-20. 47 commits on `main`.
 
 ---
 
@@ -17,45 +17,49 @@ flag). Import/export of all this works. **The weak link now is plan
 QUALITY**: the solver finds *a* feasible plan but rarely a *good* one. This
 is the next big push, and it is what STATUS should be organised around.
 
-## The enabler: run the solver on the laptop, in the terminal
+## The enabler: run the solver on the laptop (BUILT)
 
 Everything under `domain/dayplan/` is **pure JVM Kotlin** — it only touches
 Room entity *data classes* (no Android runtime, no Compose). So the solver
-can run off-device, on the user's fast multi-core laptop, where we can
-iterate on plan quality in seconds instead of rebuilding the APK and
-eyeballing the phone. **Build this first.** A standalone runner that:
+runs off-device, on the user's fast multi-core laptop, iterating on plan
+quality in seconds instead of rebuilding the APK. The harness is a JUnit
+"scenario" (cheapest path, like `DayPlannerScenarioTest`), in
+`app/src/test/.../SolverHarness.kt`:
 
-- Loads **`dogrouter-backup.json`** (committed in the repo root — the
-  user's real 10-dog data; owner names/addresses, treat as private, do not
-  push anywhere). It is the same JSON the app exports
-  (`data/backup/BackupModels.kt`), so reuse `BackupFile` / the DTO mappers.
-- Builds a `DistanceMatrix` from a **pluggable distance source**. Start
-  with straight-line haversine (instant, good enough to iterate on solver
-  *logic* and structure). Later feed *real* BRouter distances — either
-  export the matrix once from the app, or try running `brouter-core` on
-  the plain JVM against the downloaded segment dir (it is a Java lib; may
-  work headless). Keep the source behind an interface so quality work is
-  not blocked on routing accuracy.
-- Runs `DayPlanner.plan(date, options, seed)` for a chosen weekday +
-  `AppSettings`, and prints the plan timeline **plus quality metrics**
-  (below). Parallelise restarts/seeds across cores (the laptop has them).
+- `runSolverOnRealData` loads **`dogrouter-backup.json`** (repo root — the
+  user's real 10-dog data; owner names/addresses, **private, now
+  gitignored, do not push**) via `BackupFile` / the DTO mappers, runs
+  `DayPlanner.plan` for each weekday, and prints the full plan timeline
+  **plus the quality metrics below**. Run: `./run_solver.sh` (wraps the
+  gradle `--tests "*SolverHarness"` invocation with `-PsolverOutput`; full
+  report also written to `app/build/solver-report.txt`, gitignored).
+  Knobs: `-Dsolver.day=MONDAY`, `-Dsolver.restarts=N`, `-Dsolver.seed=N`.
+- `baselineAcrossSeeds` (gated by `-Dsolver.baseline`, run via
+  `./run_baseline.sh`) runs every weekday across 10 seeds and writes
+  **`docs/solver-baseline.md`** — min/median/mean/max per metric.
+  Deterministic (fixed seeds + haversine) so it diffs cleanly: regenerate
+  after a change and `git diff` shows the quality delta / any regression.
+- Distances come from a **pluggable `RoutingProvider`**: currently
+  straight-line haversine (instant, good for solver *logic*). Still TODO:
+  feed *real* BRouter distances (export the matrix from the app once, or
+  run `brouter-core` headless against the segment dir).
 
-Shape options: a Gradle JVM/`application` module (e.g. `:solver-cli`) with
-a `main()`, runnable via `./gradlew :solver-cli:run --args="..."`; or a
-runnable JUnit "scenario" that prints (cheapest to start, already how
-`DayPlannerScenarioTest` works). Use the Android Studio JBR for
-`JAVA_HOME` (see Build conventions).
+Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 
-## Quality metrics the harness must print (and we should optimise)
+## Quality metrics the harness prints (and we optimise against the baseline)
 
 - **Conflicts** (unplaced walks) — must be 0.
-- **Total day length** (HomeStart→HomeEnd elapsed) — the current sole cost.
+- **Total day length** (HomeStart→HomeEnd elapsed) — **the current sole
+  cost** (`score()`); still the user's primary criterion.
 - **Per-dog walked vs required**, and **total over-walk** (minutes walked
-  beyond what each rule asked).
+  beyond what each rule asked). High over-walk flags a likely-suboptimal
+  plan even though it is not (yet) in the objective.
 - **On-foot vs cycling split**, and **number of bike mounts** (overhead
   paid).
 - **Idle/waiting time** (waiting for `earliestStart` windows).
-- **Wall-clock solve time** (so we can spend more restarts where it pays).
+- **Walk-backs to bike** (how many, and how many carried a dog).
+- **Wall-clock solve time** (stdout only; non-deterministic, kept out of
+  the tracked baseline).
 
 ## Where plan quality is lost today (the weaknesses to attack)
 
@@ -72,13 +76,32 @@ runnable JUnit "scenario" that prints (cheapest to start, already how
    It does NOT penalise over-walking, idle/waiting, or the number of bike
    trips. "Shortest day" is therefore reachable by over-walking
    `allowLongerWalk` dogs or other shapes the user would not choose.
-   Re-design the objective with explicit, harness-tunable terms.
-3. **On-foot model is half-done** (`retimeAndCost`). Foot legs credit a
-   dog's duration but do NOT shorten the in-place dwell `Walk.durationSeconds`
-   (still set to the full required at insertion), so dogs are over-walked
-   and the foot time is not truly double-duty — only the bike-overhead
-   saving is realised. The auto-foot choice is **greedy per leg** with no
-   lookahead at the resulting return-to-bike cost.
+   **This is now the dominant remaining over-walk source**: with the
+   on-foot model finished (#3), foot legs are "free" walk time, so the
+   day-length-only objective will over-use them (foot overshoot) and
+   group a short-requirement dog into a longer dog's walk without penalty.
+   Re-design the objective with explicit, harness-tunable terms. **The
+   user has deferred this; day length stays primary for now.** A light,
+   tunable over-walk term alongside day length is the agreed next step.
+3. ~~**On-foot model is half-done.**~~ **DONE (2026-06-20).** `retimeAndCost`
+   is now three phases — **legs** (foot vs bike, position-only, dwell-
+   independent), **dwell** (`effectiveDwells`), **times**. The in-place
+   dwell `Walk.durationSeconds` now shrinks by the on-foot time a dog
+   accrues while aboard, so foot legs are **true double-duty** (a dog
+   walked enough on foot can get a 0-min dwell). A dog's deficit
+   (`required − footCredit`) is shared across a split span's walks in
+   proportion to their inserted lengths (never under-walks; a shared walk
+   stays as long as its most-demanding member needs). The walk back to a
+   parked bike is credited as walk time **during the search** too
+   (`returnToBikeSeconds` on the leg; `RouteEvent.onFootSeconds`), and the
+   foot-credit definition was fixed to exclude the leg that *fetches* a dog
+   (it is not aboard yet) — shared by `footCreditSeconds`, the
+   `WalkDuration` constraint and the harness alike. Result on the seed
+   sweep: day length down every weekday, dwell ~halved, conflicts still 0,
+   every placed dog walks ≥ its required (exact for single walks). The
+   over-walk that remains is structural → #2 / #5, not the dwell logic.
+   Still open: the foot-vs-bike choice itself is **greedy per leg** with no
+   lookahead at the return-to-bike cost.
 4. **Capacity counts on-foot dogs as box weight.** `CapacityConstraint`
    sums every aboard dog continuously; on a foot phase the dogs are on
    leashes, not in the cargo box, so capacity should be **bike-leg-only**.
@@ -98,15 +121,18 @@ runnable JUnit "scenario" that prints (cheapest to start, already how
 
 ## Candidate directions (decide with the user next session)
 
+- **Objective redesign** with weighted terms (over-walk, idle, bike-mount
+  count) alongside day length, weights tuned against the baseline in the
+  harness. **Agreed next step, currently deferred by the user** (#2). Keep
+  day length primary; add a light over-walk term to stop foot overshoot and
+  mismatched-duration grouping.
 - **Local-search improvement pass** on top of multi-start: remove-and-
   reinsert each option against the finished plan; or-opt/2-opt the tour;
-  swap dogs between groups; iterate to a local optimum. Cheapest big win.
+  swap dogs between groups; iterate to a local optimum (#1, #5).
 - **Metaheuristic**: simulated annealing or **LNS** (destroy a few stops,
   greedily repair) — natural fit; the harness makes tuning feasible.
-- **Finish the on-foot model**: make dwell `Walk.durationSeconds` adapt so
-  foot legs shorten it (true double-duty); make capacity bike-leg-only.
-- **Objective redesign** with weighted terms (over-walk, idle, bike-mount
-  count), weights tuned against real days in the harness.
+- **Capacity bike-leg-only** (#4): on a foot phase dogs are on leashes, not
+  in the box — adjacent to the now-finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
 
 ---
@@ -127,31 +153,45 @@ runnable JUnit "scenario" that prints (cheapest to start, already how
   extending (splits one duration across sessions). `tryInsertOption` tries
   each alternative of a `WalkOption` and keeps the cheapest (exclusive
   choice → exactly one scheduled).
-- **`retimeAndCost`** (inside DayPlanner): walks the event list forward
-  assigning `timeSeconds`, choosing per leg **bike** (metres/cyclingSpeed +
-  fixed `bikeOverheadSeconds`) vs **on foot** (metres/walkingSpeed),
-  whichever is faster. Tracks the walker AND the parked bike: a foot leg
-  leaves the bike put; a bike leg first walks back to the parked bike; the
-  final HomeEnd leg is forced to bike so the bike ends home. Sets each
-  event's `arrivedByFoot` + `incomingTravelSeconds`. Waits at a pickup for
-  `earliestStart`. **Safety invariant**: `bikeOverheadSeconds == 0` ⇒
-  walking is never faster ⇒ every leg bikes ⇒ identical to the old
-  bike-only behaviour (this keeps all legacy tests valid).
+- **`retimeAndCost`** (inside DayPlanner): three phases. **(1) legs** —
+  per leg choose **bike** (metres/cyclingSpeed + fixed `bikeOverheadSeconds`)
+  vs **on foot** (metres/walkingSpeed), whichever is faster; position-only,
+  so it does not depend on dwell durations. Tracks the walker AND the parked
+  bike: a foot leg leaves the bike put; a bike leg first walks back to it
+  (recorded as `returnToBikeSeconds`); the final HomeEnd leg is forced to
+  bike so the bike ends home. **(2) dwell** (`effectiveDwells`) — set each
+  walk's in-place duration to what its dogs still need after their on-foot
+  credit (see #3 above). **(3) times** — assign `timeSeconds`, wait at a
+  pickup for `earliestStart`, bail past `dayEndSeconds`. Sets each event's
+  `arrivedByFoot` / `incomingTravelSeconds` / `returnToBikeSeconds`.
+  **Safety invariant**: `bikeOverheadSeconds == 0` ⇒ walking never faster ⇒
+  every leg bikes ⇒ no walk-backs ⇒ full dwells ⇒ identical to the old
+  bike-only behaviour (keeps all legacy tests valid). After the multi-start
+  picks a winner, **`withBikeFetches`** (presentation pass) splits each ride
+  that started away from the bike into a `FetchBike` foot leg + the ride, so
+  the plan and the app's per-leg maps show the walk to the bike. The solver
+  search never sees `FetchBike` events (keeps insertion index math intact).
 - **`DistanceMatrix.kt`**: stores **metres** per point-pair (symmetric);
   built from `RoutingProvider.route().distanceMeters`. The planner turns
   metres into bike or foot time. FALLBACK 30 km when routing fails.
 - **`RouteEvent.kt`**: sealed HomeStart / Pickup(dog, rule) / Walk(dogs,
-  durationSeconds) / Dropoff(dog) / HomeEnd. Each carries `timeSeconds`,
-  `location`, and (filled by the retimer) `arrivedByFoot` +
-  `incomingTravelSeconds`.
+  durationSeconds) / Dropoff(dog) / HomeEnd / **FetchBike** (walk back to the
+  parked bike; display-only, added by `withBikeFetches`). Each carries
+  `timeSeconds`, `location`, and (filled by the retimer) `arrivedByFoot` +
+  `incomingTravelSeconds` + **`returnToBikeSeconds`** (on-foot part of a bike
+  leg). **`onFootSeconds`** = the walked part of any leg (whole leg if on
+  foot, else the walk-back).
 - **`WalkOption.kt`**: one thing to schedule — one required walk, or an
   exclusive choice of alternatives (same dog, pick one). Built in
   `DayPlanService` by grouping a dog's rules (alternatives → one option).
 - **`WalkSpans.kt`**: pairs pickups↔dropoffs per occurrence (FIFO per dog),
-  so a dog walked twice in a day is handled.
+  so a dog walked twice in a day is handled. **`footCreditSeconds`** =
+  on-foot walk time a span's dog accrues while aboard (full foot legs + bike
+  legs' walk-back), excluding the leg that fetches it. Shared by the
+  retimer's dwell phase, the `WalkDuration` constraint and the harness.
 - **`constraints/`** (6, `PlanningConstraint`): `Capacity`,
   `TimeWindow` (earliest pickup / latest **walk-start** / latest dropoff,
-  each optional), `WalkDuration` (sum of dwell walks + on-foot legs in the
+  each optional), `WalkDuration` (dwell walks + `footCreditSeconds` in the
   span vs required; max enforced for `allowLongerWalk=false`),
   `Incompatibility`, `NoDogLeftBehind` (every aboard dog must be in each
   walk), `GroupSize` (hard `maxGroupSize`=4; soft preference for
@@ -168,8 +208,11 @@ Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
 Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
 router; covers the 19-June report, two-rule dogs, splitting, determinism,
 exclusive choice, latest-start-bounds-the-walk, no-one-left-behind, group
-cap, same-address no-overhead, nearby-dogs-walked-on-foot) and
-`BackupModelsTest.kt` (export/import round-trip).
+cap, same-address no-overhead, nearby-dogs-walked-on-foot),
+`BackupModelsTest.kt` (export/import round-trip), and the off-device
+`SolverHarness.kt` (the laptop harness above — not an assertion test;
+`runSolverOnRealData` prints, `baselineAcrossSeeds` regenerates the
+baseline).
 
 ---
 
@@ -279,3 +322,5 @@ ui/
 4. `docs/SCREENS.md` — screen inventory and rationale.
 5. `docs/ROUTING_ENGINES.md` — why BRouter.
 6. `dogrouter-backup.json` (repo root) — the real test data for the harness.
+7. `docs/solver-baseline.md` — current quality metrics per weekday; the
+   reference to beat. Regenerate with `./run_baseline.sh`.

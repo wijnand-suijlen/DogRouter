@@ -89,3 +89,17 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+// Off-device solver harness (see SolverHarness / docs/STATUS.md). Run with
+// -PsolverOutput to stream the solver report to the terminal and force the
+// harness to re-run every time; any -Dsolver.* flags are forwarded to the
+// test JVM. Normal test runs are unaffected.
+tasks.withType<Test>().configureEach {
+    System.getProperties().forEach { (k, v) ->
+        if (k.toString().startsWith("solver.")) systemProperty(k.toString(), v.toString())
+    }
+    if (project.hasProperty("solverOutput")) {
+        testLogging.showStandardStreams = true
+        outputs.upToDateWhen { false }
+    }
+}

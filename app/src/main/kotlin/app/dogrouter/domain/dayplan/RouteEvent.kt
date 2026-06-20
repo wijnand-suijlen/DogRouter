@@ -61,6 +61,22 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
     ) : RouteEvent
+
+    /**
+     * Walk back to the parked cargo bike before riding on. Inserted purely
+     * for presentation, AFTER planning, whenever a bike leg starts away from
+     * where the bike was left during an on-foot stretch (see
+     * `DayPlanner.withBikeFetches`): the walker first walks here —
+     * [location] is where the bike stands — and only then rides on. The
+     * leg into it is always on foot, so the walker (and the app's map) can
+     * find the bike again. The solver itself never produces these.
+     */
+    data class FetchBike(
+        override val timeSeconds: Int,
+        override val location: GeoPoint,
+        override val arrivedByFoot: Boolean = true,
+        override val incomingTravelSeconds: Int = 0,
+    ) : RouteEvent
 }
 
 /** Time spent at this event itself (excluding travel to reach it). */
@@ -68,4 +84,15 @@ fun RouteEvent.durationAtSeconds(stopBufferSeconds: Int): Int = when (this) {
     is RouteEvent.HomeStart, is RouteEvent.HomeEnd -> 0
     is RouteEvent.Pickup, is RouteEvent.Dropoff -> stopBufferSeconds
     is RouteEvent.Walk -> durationSeconds
+    is RouteEvent.FetchBike -> 0
+}
+
+/** Copy of this event with its incoming-leg travel time replaced. */
+fun RouteEvent.withIncomingTravel(seconds: Int): RouteEvent = when (this) {
+    is RouteEvent.HomeStart -> copy(incomingTravelSeconds = seconds)
+    is RouteEvent.HomeEnd -> copy(incomingTravelSeconds = seconds)
+    is RouteEvent.Pickup -> copy(incomingTravelSeconds = seconds)
+    is RouteEvent.Dropoff -> copy(incomingTravelSeconds = seconds)
+    is RouteEvent.Walk -> copy(incomingTravelSeconds = seconds)
+    is RouteEvent.FetchBike -> copy(incomingTravelSeconds = seconds)
 }

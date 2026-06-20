@@ -445,6 +445,7 @@ class DayPlannerScenarioTest {
         is RouteEvent.Pickup -> "Pickup ${e.dog.name}"
         is RouteEvent.Dropoff -> "Dropoff ${e.dog.name}"
         is RouteEvent.Walk -> "Walk[${e.dogs.joinToString { it.name }}] ${e.durationSeconds / 60}min"
+        is RouteEvent.FetchBike -> "FetchBike"
     }
 
     private fun fmt(sec: Int) = "%02d:%02d".format(sec / 3600, (sec % 3600) / 60)

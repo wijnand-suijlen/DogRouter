@@ -333,6 +333,7 @@ private fun RouteEvent.tint() = when (this) {
     is RouteEvent.Pickup -> MaterialTheme.colorScheme.secondary
     is RouteEvent.Dropoff -> MaterialTheme.colorScheme.tertiary
     is RouteEvent.Walk -> MaterialTheme.colorScheme.primary
+    is RouteEvent.FetchBike -> MaterialTheme.colorScheme.primary
 }
 
 private fun RouteEvent.icon(): ImageVector = when (this) {
@@ -340,6 +341,7 @@ private fun RouteEvent.icon(): ImageVector = when (this) {
     is RouteEvent.Pickup -> Icons.Default.ArrowDownward
     is RouteEvent.Dropoff -> Icons.Default.ArrowUpward
     is RouteEvent.Walk -> Icons.AutoMirrored.Filled.DirectionsWalk
+    is RouteEvent.FetchBike -> Icons.AutoMirrored.Filled.DirectionsWalk
 }
 
 private fun RouteEvent.title(): String = when (this) {
@@ -348,6 +350,7 @@ private fun RouteEvent.title(): String = when (this) {
     is RouteEvent.Pickup -> "Pickup ${dog.name}"
     is RouteEvent.Dropoff -> "Dropoff ${dog.name}"
     is RouteEvent.Walk -> "Walk ${dogs.joinToString { it.name }} · ${formatDuration(durationSeconds)}"
+    is RouteEvent.FetchBike -> "Walk back to the bike"
 }
 
 private fun RouteEvent.subtitle(): String? = when (this) {

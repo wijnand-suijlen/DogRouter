@@ -424,6 +424,15 @@ private fun RouteEvent.toStepView(): StepView = when (this) {
         quirks = null,
         phone = null,
     )
+    is RouteEvent.FetchBike -> StepView(
+        icon = Icons.AutoMirrored.Filled.DirectionsWalk,
+        title = "Walk back to your bike",
+        timeLabel = formatClock(timeSeconds),
+        address = null,
+        detail = "${formatMinutes(incomingTravelSeconds)} on foot to the parked bike",
+        quirks = null,
+        phone = null,
+    )
 }
 
 private fun dateFormatter(): DateTimeFormatter =

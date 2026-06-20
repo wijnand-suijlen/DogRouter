@@ -111,7 +111,67 @@ class DayPlanner(
             val candidate = buildOnce(date, order, unroutable, matrix, constraints)
             if (best == null || candidate.isBetterThan(best!!)) best = candidate
         }
-        return best!!
+        return best!!.withBikeFetches(matrix)
+    }
+
+    /**
+     * Presentation pass over the finished plan: split every "ride after an
+     * on-foot stretch" into the walk back to the parked bike (a
+     * [RouteEvent.FetchBike]) followed by the ride itself. So the plan — and
+     * the app's per-leg maps — shows the walk to fetch the bike instead of
+     * hiding it inside the bike leg.
+     *
+     * It replays the walker/bike positions exactly as [retimeAndCost] does
+     * (a foot leg moves the walker but leaves the bike; a bike leg first
+     * fetches the bike), using the recorded `arrivedByFoot` flags rather than
+     * re-deciding anything. Times are untouched; only the bike leg's travel
+     * is divided into the walk-back and the ride. Travel totals are
+     * recomputed so the walk-back counts as walking, not cycling.
+     *
+     * With `bikeOverheadSeconds == 0` walking is never faster, so no foot
+     * legs ever occur, walker and bike never diverge, and this pass is a
+     * no-op — keeping the legacy bike-only behaviour and tests intact.
+     */
+    private fun DayRoute.withBikeFetches(matrix: DistanceMatrix): DayRoute {
+        if (events.size < 2) return this
+        var walkerPos = events.first().location
+        var bikePos = events.first().location
+        val out = mutableListOf(events.first())
+        for (i in 1 until events.size) {
+            val event = events[i]
+            when {
+                // In-place dwell: walker stays put, bike stays parked.
+                event is RouteEvent.Walk -> out.add(event)
+                // On-foot leg: the walker moves there; the bike stays behind.
+                event.arrivedByFoot -> {
+                    walkerPos = event.location
+                    out.add(event)
+                }
+                // Bike leg: if the bike was left elsewhere, walk back to it
+                // first (its own foot leg), then ride the remainder.
+                else -> {
+                    val returnToBike = matrix.footSeconds(walkerPos, bikePos)
+                    if (returnToBike > 0) {
+                        out.add(
+                            RouteEvent.FetchBike(
+                                timeSeconds = event.timeSeconds - (event.incomingTravelSeconds - returnToBike),
+                                location = bikePos,
+                                incomingTravelSeconds = returnToBike,
+                            ),
+                        )
+                        out.add(event.withIncomingTravel(event.incomingTravelSeconds - returnToBike))
+                    } else {
+                        out.add(event)
+                    }
+                    walkerPos = event.location
+                    bikePos = event.location
+                }
+            }
+        }
+        val cycling = out.filter { !it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
+        val walking = out.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds } +
+            out.filter { it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
+        return copy(events = out, totalCyclingSeconds = cycling, totalWalkingSeconds = walking)
     }
 
     /**
@@ -400,6 +460,11 @@ class DayPlanner(
                     event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
                 is RouteEvent.Walk ->
                     event.copy(timeSeconds = t, location = walkLocation, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                // The solver never builds FetchBike events; they are added by
+                // withBikeFetches after planning. Handled here only for
+                // exhaustiveness.
+                is RouteEvent.FetchBike ->
+                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
             }
             t += placed.durationAtSeconds(stopBufferSeconds)
             if (t > dayEndSeconds) return null

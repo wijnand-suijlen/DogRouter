@@ -177,6 +177,39 @@ baseline: over-walk is mixed / slightly up.)
   are on leashes, not in the box — adjacent to the finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
 
+## Domain facts on grouping (from the walker)
+
+- **The real walk-group cap is 3, not 4.** A group of 4 is an exception that
+  "should not really happen" — it only appears when a dog cannot otherwise be
+  placed, and in practice it means the walker is over capacity that day and
+  would *drop a client* to get back to ≤3. So a planned 4-group is a signal
+  of too many dogs, not an acceptable outcome (worth surfacing as a warning).
+  The model already encodes this softly — hard cap 4, huge
+  `OVERSIZE_PENALTY_SECONDS` per dog over `preferredGroupSize` (3), so 4 is
+  used only when unavoidable — which matches the walker's intent.
+- **Incompatibility is often total:** a dog marked incompatible with one dog
+  is usually incompatible with *all*, so several dogs must always be walked
+  **alone**. Useful for bounds and for any future deliberate-grouping work.
+
+## Shelved: cheap makespan lower bound (parked — doubtful value)
+
+Idea (parked at the walker's request): a fast lower bound on day length, to
+measure the optimality gap and to early-stop LNS. `LB = max(walk-floor,
+travel-floor) + fixed costs`, each a valid floor (≤ optimum), O(P²) from the
+matrix:
+- **walk-floor** = Σ required ÷ group cap. Use **3** here (the real cap; see
+  above), and count the always-solo dogs (total incompatibility) separately
+  at their **full** duration — only the groupable dogs are divided.
+- **travel-floor** = MST({home + addresses}) ÷ cyclingSpeed.
+- **fixed** = stop buffers (2 per occurrence) + ≥1 bike overhead.
+
+Parked because it is likely **too loose to be useful**: the day is
+walk-dominated and the plans cycle back and forth a lot, so the travel-floor
+(and even a window-aware walk-floor) sits far below the real optimum. The
+convergence evidence (plateau by ~200 iters, identical across seeds) is the
+stronger near-optimality signal; a practical LNS early-stop would be
+"K iterations without improvement", not the LB.
+
 ---
 
 # Solver & model — current design (authoritative reference)

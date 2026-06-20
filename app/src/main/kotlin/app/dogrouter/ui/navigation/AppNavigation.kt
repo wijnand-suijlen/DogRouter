@@ -180,7 +180,7 @@ fun AppNavigation() {
                 PlanningScreen(
                     pickedAddress = picked,
                     onBack = { navController.popBackStack() },
-                    onAddBreakLocation = { navController.navigate(AddressPickerRoutes.navigate()) },
+                    onPickAddress = { navController.navigate(AddressPickerRoutes.navigate()) },
                 )
             }
 

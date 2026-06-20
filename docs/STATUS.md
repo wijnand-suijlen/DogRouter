@@ -119,20 +119,51 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
    on-device only — the reason iterating on the phone is painful.
 8. **dayStart/dayEnd hardcoded 08:00–20:00** in the `DayPlanner` ctor.
 
-## Candidate directions (decide with the user next session)
+## ►► ACTIVE: solver algorithm — LNS roadmap ◄◄
 
-- **Objective redesign** with weighted terms (over-walk, idle, bike-mount
-  count) alongside day length, weights tuned against the baseline in the
-  harness. **Agreed next step, currently deferred by the user** (#2). Keep
-  day length primary; add a light over-walk term to stop foot overshoot and
-  mismatched-duration grouping.
-- **Local-search improvement pass** on top of multi-start: remove-and-
-  reinsert each option against the finished plan; or-opt/2-opt the tour;
-  swap dogs between groups; iterate to a local optimum (#1, #5).
-- **Metaheuristic**: simulated annealing or **LNS** (destroy a few stops,
-  greedily repair) — natural fit; the harness makes tuning feasible.
-- **Capacity bike-leg-only** (#4): on a foot phase dogs are on leashes, not
-  in the box — adjacent to the now-finished on-foot model.
+Replacing the weak multi-start (weakness #1) with local search. Objective
+stays day length (`score()`) for now — the over-walk term (#2) is still
+deferred. **Biggest makespan headroom is structural**: walk-sharing via
+grouping, and bike-mount overhead (~70–100 min/day at 10 min each), both
+currently set by the luck of the greedy insertion order. So structure-
+reconsidering search wins most. Five proposals, ranked by expected
+makespan gain:
+
+1. **LNS — ruin-and-recreate.** Destroy K placed options (random / worst /
+   related), re-insert with the existing `tryInsertOption` (the repair half
+   already exists), accept if `score()` improves; thousands of iterations
+   (a plan solves in <1s). Reconsiders grouping + sequencing + foot/bike
+   together; optimises makespan directly. **Top pick** — best gain per
+   effort, reuses repair.
+2. **ALNS — related (Shaw) removal + regret-k repair + adaptive operator
+   weights.** The high-ceiling upgrade of #1: regret repair places tight
+   windows / hard dogs better; related removal re-clusters groups. Most
+   ultimate gain, more code. Build after #1.
+3. **Group-restructuring local search.** A targeted neighborhood on the
+   walk-grouping itself: move a dog between concurrent walks, merge two
+   groups into one shared walk, split an oversized one. Hits walk-sharing +
+   mounts directly; standalone or as an extra repair move inside #1/#2.
+4. **Simulated-annealing acceptance.** Replace keep-best with cooling-
+   probability acceptance over #1/#3 moves to escape the plateau. A small
+   multiplier layer, not a neighborhood.
+5. **Or-opt / 2-opt sequence + mode LS.** Trim travel and merge adjacent
+   rides. Lowest structural headroom here, and the shared-walk / precedence
+   semantics make segment moves fiddly. Optional polish.
+
+**Recommended build order: #1 → #4 → #3 → #2**, #5 optional. Each step
+measured against `docs/solver-baseline.md` (regenerate → diff = gain /
+regression). **#1 is being detailed/implemented next.**
+
+Caveat: LNS optimises pure day length, so it will trade more over-walk for
+a shorter day until the #2 over-walk term lands — consistent with "day
+length primary", but it makes #2 the natural follow-up.
+
+## Other directions (later)
+
+- **Objective redesign** (#2): light, tunable over-walk term alongside day
+  length; weights tuned against the baseline. Deferred by the user.
+- **Capacity bike-leg-only** (#4 in the weakness list): on a foot phase dogs
+  are on leashes, not in the box — adjacent to the finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
 
 ---

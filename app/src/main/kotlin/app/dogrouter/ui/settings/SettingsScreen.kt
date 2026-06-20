@@ -58,6 +58,7 @@ import java.util.Locale
 @Composable
 fun SettingsScreen(
     onPickHomeOnMap: (lat: Double?, lon: Double?) -> Unit = { _, _ -> },
+    onOpenPlanning: () -> Unit = {},
     pickedAddress: AddressSuggestion? = null,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
@@ -144,6 +145,7 @@ fun SettingsScreen(
                 onOpenHomeMapPicker = {
                     onPickHomeOnMap(state.homeLatitude, state.homeLongitude)
                 },
+                onOpenPlanning = onOpenPlanning,
                 onDownloadRoutingData = viewModel::downloadRoutingData,
                 onDeleteRoutingData = viewModel::deleteRoutingData,
                 onRunRoutingSelfTest = viewModel::runRoutingSelfTest,
@@ -203,6 +205,7 @@ private fun SettingsForm(
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
     onOpenHomeMapPicker: () -> Unit,
+    onOpenPlanning: () -> Unit,
     onDownloadRoutingData: () -> Unit,
     onDeleteRoutingData: () -> Unit,
     onRunRoutingSelfTest: () -> Unit,
@@ -216,6 +219,11 @@ private fun SettingsForm(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        SectionTitle("Planning")
+        OutlinedButton(onClick = onOpenPlanning, modifier = Modifier.fillMaxWidth()) {
+            Text("Breaks & appointments")
+        }
+
         SectionTitle("Home base")
         AddressAutocompleteField(
             value = state.homeAddress,

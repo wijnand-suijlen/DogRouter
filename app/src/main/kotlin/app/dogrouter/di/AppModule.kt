@@ -20,6 +20,7 @@ import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
 import app.dogrouter.ui.followplan.FollowPlanViewModel
+import app.dogrouter.ui.planning.PlanningViewModel
 import app.dogrouter.ui.settings.SettingsViewModel
 import app.dogrouter.ui.today.TodayViewModel
 import kotlinx.serialization.json.Json
@@ -93,6 +94,7 @@ val appModule = module {
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get()) }
+    viewModel { PlanningViewModel(get()) }
     viewModel { TodayViewModel(get()) }
     viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }
 }

@@ -30,6 +30,7 @@ import app.dogrouter.ui.dogs.DogEditScreen
 import app.dogrouter.ui.dogs.DogListScreen
 import app.dogrouter.ui.followplan.FollowPlanScreen
 import app.dogrouter.ui.history.HistoryScreen
+import app.dogrouter.ui.planning.PlanningScreen
 import app.dogrouter.ui.settings.SettingsScreen
 import app.dogrouter.ui.today.TodayScreen
 import kotlinx.serialization.encodeToString
@@ -65,6 +66,10 @@ object LegMapRoutes {
     fun route(from: GeoPoint, to: GeoPoint): String =
         "leg-map?$ARG_FROM_LAT=${from.latitude}&$ARG_FROM_LON=${from.longitude}" +
             "&$ARG_TO_LAT=${to.latitude}&$ARG_TO_LON=${to.longitude}"
+}
+
+object PlanningRoutes {
+    const val ROUTE = "planning"
 }
 
 object AddressPickerRoutes {
@@ -166,6 +171,16 @@ fun AppNavigation() {
                     onPickHomeOnMap = { lat, lon ->
                         navController.navigate(AddressPickerRoutes.navigate(lat, lon))
                     },
+                    onOpenPlanning = { navController.navigate(PlanningRoutes.ROUTE) },
+                )
+            }
+
+            composable(PlanningRoutes.ROUTE) { entry ->
+                val picked = entry.consumePickedAddress(json)
+                PlanningScreen(
+                    pickedAddress = picked,
+                    onBack = { navController.popBackStack() },
+                    onAddBreakLocation = { navController.navigate(AddressPickerRoutes.navigate()) },
                 )
             }
 

@@ -40,7 +40,12 @@ class SettingsRepository(
             } ?: AppSettings.DEFAULTS.breakLocations,
             homeLunchMinFreeMinutes = prefs[HOME_LUNCH_MIN_FREE_MINUTES]
                 ?: AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
+            lnsIterations = prefs[LNS_ITERATIONS] ?: AppSettings.DEFAULTS.lnsIterations,
         )
+    }
+
+    suspend fun setLnsIterations(iterations: Int) {
+        dataStore.edit { it[LNS_ITERATIONS] = iterations.coerceIn(0, 500) }
     }
 
     suspend fun setHomeLunchMinFreeMinutes(minutes: Int) {
@@ -111,6 +116,7 @@ class SettingsRepository(
             prefs[BREAK_DURATION_MINUTES] = settings.breakDurationMinutes
             prefs[BREAK_LOCATIONS] = json.encodeToString(settings.breakLocations)
             prefs[HOME_LUNCH_MIN_FREE_MINUTES] = settings.homeLunchMinFreeMinutes
+            prefs[LNS_ITERATIONS] = settings.lnsIterations
         }
     }
 
@@ -129,5 +135,6 @@ class SettingsRepository(
         val BREAK_DURATION_MINUTES = intPreferencesKey("break_duration_minutes")
         val BREAK_LOCATIONS = stringPreferencesKey("break_locations_json")
         val HOME_LUNCH_MIN_FREE_MINUTES = intPreferencesKey("home_lunch_min_free_minutes")
+        val LNS_ITERATIONS = intPreferencesKey("lns_iterations")
     }
 }

@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -53,6 +54,7 @@ import app.dogrouter.ui.common.AddressAutocompleteField
 import app.dogrouter.ui.common.AddressMapPreview
 import org.koin.androidx.compose.koinViewModel
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,6 +143,7 @@ fun SettingsScreen(
                 onWalkingSpeedChange = viewModel::onWalkingSpeedTextChange,
                 onBikeOverheadChange = viewModel::onBikeOverheadTextChange,
                 onCyclingWeightChange = viewModel::onCyclingWeightTextChange,
+                onLnsIterationsChange = viewModel::onLnsIterationsChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
                 onOpenHomeMapPicker = {
@@ -204,6 +207,7 @@ private fun SettingsForm(
     onWalkingSpeedChange: (String) -> Unit,
     onBikeOverheadChange: (String) -> Unit,
     onCyclingWeightChange: (String) -> Unit,
+    onLnsIterationsChange: (Int) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
     onOpenHomeMapPicker: () -> Unit,
@@ -350,6 +354,25 @@ private fun SettingsForm(
                 )
             },
             modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Search effort: ${state.lnsIterations} iterations",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Slider(
+            value = state.lnsIterations.toFloat(),
+            onValueChange = { onLnsIterationsChange(it.roundToInt()) },
+            valueRange = 0f..500f,
+            steps = 19,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "More iterations find better plans but take longer to compute. " +
+                "Default 200; 0 is fastest (multi-start only, no fine-tuning).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(Modifier.height(16.dp))

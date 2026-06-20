@@ -102,6 +102,7 @@ data class SettingsDto(
     val breakDurationMinutes: Int = AppSettings.DEFAULTS.breakDurationMinutes,
     val breakLocations: List<BreakLocation> = emptyList(),
     val homeLunchMinFreeMinutes: Int = AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
+    val lnsIterations: Int = AppSettings.DEFAULTS.lnsIterations,
 )
 
 // ---- mapping: entity/domain -> DTO ----
@@ -137,7 +138,7 @@ fun AppSettings.toDto() = SettingsDto(
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
     breakWindowStart = breakWindowStart.toString(), breakWindowEnd = breakWindowEnd.toString(),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
-    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes,
+    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes, lnsIterations = lnsIterations,
 )
 
 // ---- mapping: DTO -> entity/domain ----
@@ -175,7 +176,7 @@ fun SettingsDto.toAppSettings() = AppSettings(
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
     breakWindowStart = LocalTime.parse(breakWindowStart), breakWindowEnd = LocalTime.parse(breakWindowEnd),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
-    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes,
+    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes, lnsIterations = lnsIterations,
 )
 
 private fun transportStateOf(name: String): TransportState =

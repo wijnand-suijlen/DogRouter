@@ -45,6 +45,7 @@ class BackupModelsTest {
         breakDurationMinutes = 25,
         breakLocations = listOf(app.dogrouter.data.prefs.BreakLocation("Café", 48.80, 2.22)),
         homeLunchMinFreeMinutes = 100,
+        lnsIterations = 120,
     )
 
     @Test

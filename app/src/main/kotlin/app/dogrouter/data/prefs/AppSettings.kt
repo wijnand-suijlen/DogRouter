@@ -42,6 +42,10 @@ data class AppSettings(
     // When the mid-day free gap is at least this long, the planner prefers a
     // lunch at home (staying there until just in time) over a break location.
     val homeLunchMinFreeMinutes: Int,
+    // Large-neighbourhood-search iterations the solver runs after the
+    // multi-start build. More iterations find better plans but take longer;
+    // 0 disables LNS (fastest). Tunable on Settings.
+    val lnsIterations: Int,
 ) {
     val hasHome: Boolean
         get() = homeLatitude != null && homeLongitude != null
@@ -68,6 +72,7 @@ data class AppSettings(
             breakDurationMinutes = 30,
             breakLocations = emptyList(),
             homeLunchMinFreeMinutes = 120,
+            lnsIterations = 200,
         )
     }
 }

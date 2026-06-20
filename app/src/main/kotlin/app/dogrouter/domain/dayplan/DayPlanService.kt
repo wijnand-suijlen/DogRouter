@@ -150,6 +150,7 @@ class DayPlanService(
             cyclingWeight = inputs.settings.cyclingWeight,
             walkingSpeedKmh = inputs.settings.walkingSpeedKmh,
             bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
+            lnsIterations = inputs.settings.lnsIterations,
         )
         val breakSpec = inputs.settings.breakSpec().takeIf { request.breakRequested }
         val appointments = inputs.appointments

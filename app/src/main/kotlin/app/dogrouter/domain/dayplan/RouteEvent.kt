@@ -15,18 +15,26 @@ import app.dogrouter.domain.routing.GeoPoint
  * are filled in by `DayPlanner.retimeAndCost` (default false / 0 until
  * then). On a foot leg the on-foot dogs are being walked, so its time
  * counts toward their walk duration.
+ *
+ * [returnToBikeSeconds] is the on-foot part of an otherwise-bike leg: when
+ * a ride starts away from the parked bike, the walker first walks the group
+ * back to it. That stretch is walked (it counts toward the aboard dogs'
+ * walk time) even though the leg as a whole is a bike leg. It is 0 for foot
+ * legs and for rides that start where the bike already is.
  */
 sealed interface RouteEvent {
     val timeSeconds: Int
     val location: GeoPoint
     val arrivedByFoot: Boolean
     val incomingTravelSeconds: Int
+    val returnToBikeSeconds: Int
 
     data class HomeStart(
         override val timeSeconds: Int,
         override val location: GeoPoint,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
     ) : RouteEvent
 
     data class HomeEnd(
@@ -34,6 +42,7 @@ sealed interface RouteEvent {
         override val location: GeoPoint,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
     ) : RouteEvent
 
     data class Pickup(
@@ -43,6 +52,7 @@ sealed interface RouteEvent {
         val rule: DogScheduleRule,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
     ) : RouteEvent
 
     data class Dropoff(
@@ -51,6 +61,7 @@ sealed interface RouteEvent {
         val dog: Dog,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
     ) : RouteEvent
 
     data class Walk(
@@ -60,6 +71,7 @@ sealed interface RouteEvent {
         val durationSeconds: Int,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
     ) : RouteEvent
 
     /**
@@ -76,8 +88,15 @@ sealed interface RouteEvent {
         override val location: GeoPoint,
         override val arrivedByFoot: Boolean = true,
         override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
     ) : RouteEvent
 }
+
+/** On-foot seconds in this event's incoming leg: the whole leg when walked,
+ *  otherwise just the walk back to the parked bike. Doubles as walk time for
+ *  the dogs aboard during it. */
+val RouteEvent.onFootSeconds: Int
+    get() = if (arrivedByFoot) incomingTravelSeconds else returnToBikeSeconds
 
 /** Time spent at this event itself (excluding travel to reach it). */
 fun RouteEvent.durationAtSeconds(stopBufferSeconds: Int): Int = when (this) {
@@ -95,4 +114,14 @@ fun RouteEvent.withIncomingTravel(seconds: Int): RouteEvent = when (this) {
     is RouteEvent.Dropoff -> copy(incomingTravelSeconds = seconds)
     is RouteEvent.Walk -> copy(incomingTravelSeconds = seconds)
     is RouteEvent.FetchBike -> copy(incomingTravelSeconds = seconds)
+}
+
+/** Copy of this event with its walk-back-to-bike portion replaced. */
+fun RouteEvent.withReturnToBike(seconds: Int): RouteEvent = when (this) {
+    is RouteEvent.HomeStart -> copy(returnToBikeSeconds = seconds)
+    is RouteEvent.HomeEnd -> copy(returnToBikeSeconds = seconds)
+    is RouteEvent.Pickup -> copy(returnToBikeSeconds = seconds)
+    is RouteEvent.Dropoff -> copy(returnToBikeSeconds = seconds)
+    is RouteEvent.Walk -> copy(returnToBikeSeconds = seconds)
+    is RouteEvent.FetchBike -> copy(returnToBikeSeconds = seconds)
 }

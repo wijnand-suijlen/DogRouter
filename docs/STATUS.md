@@ -39,10 +39,14 @@ quality in seconds instead of rebuilding the APK. The harness is a JUnit
   **`docs/solver-baseline.md`** — min/median/mean/max per metric.
   Deterministic (fixed seeds + haversine) so it diffs cleanly: regenerate
   after a change and `git diff` shows the quality delta / any regression.
-- Distances come from a **pluggable `RoutingProvider`**: currently
-  straight-line haversine (instant, good for solver *logic*). Still TODO:
-  feed *real* BRouter distances (export the matrix from the app once, or
-  run `brouter-core` headless against the segment dir).
+- Distances come from a **pluggable `RoutingProvider`**: straight-line
+  haversine by default (instant, good for solver *logic*); **real BRouter**
+  road distances with `-Dsolver.router=brouter` (`RealBRouterRouting` runs
+  `brouter-core` headless over `brouter-data/` — profile + the `E0_N45`
+  segment, gitignored). That reproduces on-device plans on the laptop;
+  `-Dsolver.dump` prints the pairwise matrix (BRouter vs straight line). The
+  baseline still uses haversine for determinism. The harness mirrors the app:
+  it skips inactive (paused) dogs.
 
 Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 
@@ -69,18 +73,19 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
    and cut median day length materially. Still greedy *within* a repair, and
    no SA / group moves / 2-opt yet (#4/#3/#5), but the "never reconsiders"
    plateau is broken.
-2. **Cost function is only day length.** `isBetterThan` → `score()` =
-   elapsed seconds + a big per-dog-over-`preferredGroupSize` penalty.
-   It does NOT penalise over-walking, idle/waiting, or the number of bike
-   trips. "Shortest day" is therefore reachable by over-walking
-   `allowLongerWalk` dogs or other shapes the user would not choose.
-   **This is now the dominant remaining over-walk source**: with the
-   on-foot model finished (#3), foot legs are "free" walk time, so the
-   day-length-only objective will over-use them (foot overshoot) and
-   group a short-requirement dog into a longer dog's walk without penalty.
-   Re-design the objective with explicit, harness-tunable terms. **The
-   user has deferred this; day length stays primary for now.** A light,
-   tunable over-walk term alongside day length is the agreed next step.
+2. **Cost function — day length plus a cycling term (partly redesigned).**
+   `isBetterThan` → `score()` = elapsed seconds + **`cyclingWeight` ×
+   ride-seconds** + a big per-dog-over-`preferredGroupSize` penalty.
+   The cycling term (added 2026-06-20, `AppSettings.cyclingWeight`, default
+   1.0, tunable on Settings) fixed the makespan-only flatness that wasted
+   cycling hidden in idle (the "weird Tuesday" detour + needlessly early
+   start): median cycling dropped 30–53 min/day on the baseline for 0–17 min
+   more day length. **Still NOT penalised: over-walking and idle/waiting.**
+   Over-walk remains uncontrolled — with the on-foot model done (#3), foot
+   legs are "free" walk time, so the objective still over-uses them (foot
+   overshoot) and groups a short-requirement dog into a longer dog's walk.
+   A light, tunable **over-walk** term alongside day length + cycling is the
+   remaining objective work (was deferred; the cycling half is now done).
 3. ~~**On-foot model is half-done.**~~ **DONE (2026-06-20).** `retimeAndCost`
    is now three phases — **legs** (foot vs bike, position-only, dwell-
    independent), **dwell** (`effectiveDwells`), **times**. The in-place
@@ -171,8 +176,9 @@ baseline: over-walk is mixed / slightly up.)
 
 ## Other directions (later)
 
-- **Objective redesign** (#2): light, tunable over-walk term alongside day
-  length; weights tuned against the baseline. Deferred by the user.
+- **Objective redesign** (#2): cycling term DONE (`cyclingWeight`); the
+  remaining piece is a light, tunable **over-walk** term alongside day length
+  + cycling, weights tuned against the baseline.
 - **Capacity bike-leg-only** (#4 in the weakness list): on a foot phase dogs
   are on leashes, not in the box — adjacent to the finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
@@ -223,7 +229,8 @@ stronger near-optimality signal; a practical LNS early-stop would be
   then runs `lnsIterations` (default 200) of **ruin-and-recreate**
   (`ruinAndRecreate`: random / `worstOptions` removal → `remove` → `repair`),
   hill-climbing on `isBetterThan` (fewest conflicts, then lowest `score()` =
-  elapsed + group-oversize penalty). One `Random(seed)` drives multi-start,
+  elapsed + `cyclingWeight`×ride-seconds + group-oversize penalty). One
+  `Random(seed)` drives multi-start,
   ruin and repair, so plans are deterministic / cacheable. A **`Solution`**
   (events + placed/unplaced options) is the working unit; `toDayRoute` makes
   the public result. `buildOnce` / `repair` insert each option via

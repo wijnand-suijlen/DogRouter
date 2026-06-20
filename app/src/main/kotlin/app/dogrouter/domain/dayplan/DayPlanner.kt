@@ -1,5 +1,6 @@
 package app.dogrouter.domain.dayplan
 
+import app.dogrouter.domain.dayplan.constraints.AppointmentConstraint
 import app.dogrouter.domain.dayplan.constraints.CapacityConstraint
 import app.dogrouter.domain.dayplan.constraints.GroupSizeConstraint
 import app.dogrouter.domain.dayplan.constraints.IncompatibilityConstraint
@@ -110,11 +111,14 @@ class DayPlanner(
         onProgress: (fraction: Float, phase: PlanPhase) -> Unit = { _, _ -> },
         // When set, fit a dog-free break into the finished plan (see insertBreak).
         breakSpec: BreakSpec? = null,
+        // Fixed dog-free commitments pre-placed in the day; dogs schedule around
+        // them (see AppointmentConstraint). Sorted by start time here.
+        appointments: List<RouteEvent.Appointment> = emptyList(),
     ): DayRoute {
         if (home == null) {
             return DayRoute(date, emptyList(), 0, 0, options.map { PlanConflict(it.dog, "Home address not set") })
         }
-        if (options.isEmpty()) {
+        if (options.isEmpty() && appointments.isEmpty()) {
             return DayRoute(date, listOf(homeStart(), homeEnd(dayStartSeconds)), 0, 0, emptyList())
         }
         val routable = options.filter { it.dog.latitude != null && it.dog.longitude != null }
@@ -131,9 +135,16 @@ class DayPlanner(
             )
         }
 
+        // The fixed events the day is built around: home, the appointments (in
+        // time order), home.
+        val sortedAppointments = appointments.sortedBy { it.startSeconds }
+        val baseEvents: List<RouteEvent> =
+            listOf(homeStart()) + sortedAppointments + homeEnd(dayStartSeconds)
+
         val points = (
             routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } +
-                home + (breakSpec?.locations ?: emptyList())
+                home + (breakSpec?.locations ?: emptyList()) +
+                sortedAppointments.map { it.location }
             ).toSet()
         val matrix = DistanceMatrix.build(points, routingProvider) { done, total ->
             onProgress(MATRIX_PROGRESS_FRACTION * done / total, PlanPhase.ROUTING)
@@ -145,6 +156,7 @@ class DayPlanner(
             IncompatibilityConstraint(incompatibilities),
             NoDogLeftBehindConstraint(),
             GroupSizeConstraint(maxGroupSize),
+            AppointmentConstraint(),
         )
 
         // Multi-start: build several plans from different insertion orders
@@ -168,7 +180,7 @@ class DayPlanner(
         var best: Solution? = null
         repeat(restarts.coerceAtLeast(1)) { iteration ->
             val order = if (iteration == 0) deadlineOrder else routable.shuffled(rng)
-            val candidate = buildOnce(order, matrix, constraints)
+            val candidate = buildOnce(order, matrix, constraints, baseEvents)
             if (best == null || candidate.isBetterThan(best!!)) best = candidate
             reportSolver()
         }
@@ -505,8 +517,9 @@ class DayPlanner(
         order: List<WalkOption>,
         matrix: DistanceMatrix,
         constraints: List<PlanningConstraint>,
+        baseEvents: List<RouteEvent> = listOf(homeStart(), homeEnd(dayStartSeconds)),
     ): Solution {
-        var events: List<RouteEvent> = listOf(homeStart(), homeEnd(dayStartSeconds))
+        var events: List<RouteEvent> = baseEvents
         val placed = mutableListOf<WalkOption>()
         val unplaced = mutableListOf<WalkOption>()
         for (option in order) {
@@ -796,6 +809,9 @@ class DayPlanner(
             if (event is RouteEvent.Break && event.earliestStartSeconds > t) {
                 t = event.earliestStartSeconds
             }
+            if (event is RouteEvent.Appointment && event.startSeconds > t) {
+                t = event.startSeconds
+            }
             val placed: RouteEvent = when (event) {
                 is RouteEvent.HomeStart ->
                     event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i], returnToBikeSeconds = returnToBike[i])
@@ -814,6 +830,8 @@ class DayPlanner(
                         incomingTravelSeconds = travel[i],
                     )
                 is RouteEvent.Break ->
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i], returnToBikeSeconds = returnToBike[i])
+                is RouteEvent.Appointment ->
                     event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i], returnToBikeSeconds = returnToBike[i])
                 // The solver never builds FetchBike events; they are added by
                 // withBikeFetches after planning. Handled here for exhaustiveness.

@@ -89,7 +89,7 @@ val appModule = module {
 
     single { BackupRepository(get(), get(), get(), get(), get(), get(), get()) }
 
-    single { DayPlanService(get(), get(), get(), get(), get()) }
+    single { DayPlanService(get(), get(), get(), get(), get(), get()) }
 
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }

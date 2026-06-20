@@ -409,6 +409,7 @@ private fun RouteEvent.tint() = when (this) {
     is RouteEvent.Dropoff -> MaterialTheme.colorScheme.tertiary
     is RouteEvent.Walk -> MaterialTheme.colorScheme.primary
     is RouteEvent.Break -> MaterialTheme.colorScheme.secondary
+    is RouteEvent.Appointment -> MaterialTheme.colorScheme.tertiary
     is RouteEvent.FetchBike -> MaterialTheme.colorScheme.primary
 }
 
@@ -418,6 +419,7 @@ private fun RouteEvent.icon(): ImageVector = when (this) {
     is RouteEvent.Dropoff -> Icons.Default.ArrowUpward
     is RouteEvent.Walk -> Icons.AutoMirrored.Filled.DirectionsWalk
     is RouteEvent.Break -> Icons.Default.Place
+    is RouteEvent.Appointment -> Icons.Default.Today
     is RouteEvent.FetchBike -> Icons.AutoMirrored.Filled.DirectionsWalk
 }
 
@@ -429,6 +431,7 @@ private fun RouteEvent.title(): String = when (this) {
     is RouteEvent.Walk -> "Walk ${dogs.joinToString { it.name }} · ${formatDuration(durationSeconds)}"
     is RouteEvent.Break ->
         (if (atHome) "Lunch at home" else "Lunch break") + " · ${formatDuration(durationSeconds)}"
+    is RouteEvent.Appointment -> "$label · ${formatDuration(durationSeconds)}"
     is RouteEvent.FetchBike -> "Walk back to the bike"
 }
 

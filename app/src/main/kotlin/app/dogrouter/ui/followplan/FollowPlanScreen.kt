@@ -434,6 +434,15 @@ private fun RouteEvent.toStepView(): StepView = when (this) {
         quirks = null,
         phone = null,
     )
+    is RouteEvent.Appointment -> StepView(
+        icon = Icons.Default.Place,
+        title = label,
+        timeLabel = formatClock(timeSeconds),
+        address = null,
+        detail = "${formatMinutes(durationSeconds)} appointment",
+        quirks = null,
+        phone = null,
+    )
     is RouteEvent.FetchBike -> StepView(
         icon = Icons.AutoMirrored.Filled.DirectionsWalk,
         title = "Walk back to your bike",

@@ -1,8 +1,10 @@
 package app.dogrouter.domain.dayplan
 
+import app.dogrouter.data.db.AppointmentDao
 import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
+import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
@@ -43,6 +45,7 @@ class DayPlanService(
     private val dogDao: DogDao,
     private val scheduleDao: DogScheduleDao,
     private val incompatibilityDao: DogIncompatibilityDao,
+    private val appointmentDao: AppointmentDao,
     private val settingsRepo: SettingsRepository,
     private val routingProvider: RoutingProvider,
 ) {
@@ -65,14 +68,15 @@ class DayPlanService(
         val requests = combine(seeds, breaks) { s, b ->
             PlanRequest(s[date] ?: 0L, b[date] ?: false)
         }
+        val settingsAndAppointments = combine(settingsRepo.settings, appointmentDao.observeAll()) { s, a -> s to a }
         return combine(
             dogDao.observeAll(),
             scheduleDao.observeAll(),
             incompatibilityDao.observeAll(),
-            settingsRepo.settings,
+            settingsAndAppointments,
             requests,
-        ) { dogs, rules, incompatibilities, settings, request ->
-            Inputs(date, dogs, rules, incompatibilities, settings) to request
+        ) { dogs, rules, incompatibilities, (settings, appointments), request ->
+            Inputs(date, dogs, rules, incompatibilities, settings, appointments) to request
         }.flatMapLatest { (inputs, request) ->
             channelFlow {
                 val key = CacheKey(inputs, request)
@@ -148,12 +152,24 @@ class DayPlanService(
             bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
         )
         val breakSpec = inputs.settings.breakSpec().takeIf { request.breakRequested }
+        val appointments = inputs.appointments
+            .filter { it.date == inputs.date }
+            .map { appt ->
+                RouteEvent.Appointment(
+                    timeSeconds = 0,
+                    location = GeoPoint(appt.latitude, appt.longitude),
+                    durationSeconds = (appt.endTime.toSecondOfDay() - appt.startTime.toSecondOfDay())
+                        .coerceAtLeast(0),
+                    startSeconds = appt.startTime.toSecondOfDay(),
+                    label = appt.label,
+                )
+            }
         // Off the main thread: the matrix build (BRouter) and the solver
         // (multi-start + LNS) are CPU-bound and would otherwise freeze the UI
         // and trip an ANR. The flow's loading/result emissions stay on the
         // collector's context.
         return withContext(Dispatchers.Default) {
-            planner.plan(inputs.date, options, request.seed, onProgress, breakSpec)
+            planner.plan(inputs.date, options, request.seed, onProgress, breakSpec, appointments)
         }
     }
 
@@ -182,6 +198,7 @@ class DayPlanService(
         val rules: List<DogScheduleRule>,
         val incompatibilities: List<DogIncompatibility>,
         val settings: AppSettings,
+        val appointments: List<Appointment>,
     )
 
     private data class PlanRequest(val seed: Long, val breakRequested: Boolean)

@@ -94,6 +94,23 @@ sealed interface RouteEvent {
     ) : RouteEvent
 
     /**
+     * A fixed, dog-free commitment (a doctor's visit, a client intro). Unlike
+     * a [Break] it is mandatory and pinned: pre-placed in the day at its
+     * [startSeconds], and the planner schedules the dogs around it. The walker
+     * must arrive by [startSeconds] with no dog aboard and stay [durationSeconds].
+     */
+    data class Appointment(
+        override val timeSeconds: Int,
+        override val location: GeoPoint,
+        val durationSeconds: Int,
+        val startSeconds: Int,
+        val label: String,
+        override val arrivedByFoot: Boolean = false,
+        override val incomingTravelSeconds: Int = 0,
+        override val returnToBikeSeconds: Int = 0,
+    ) : RouteEvent
+
+    /**
      * Walk back to the parked cargo bike before riding on. Inserted purely
      * for presentation, AFTER planning, whenever a bike leg starts away from
      * where the bike was left during an on-foot stretch (see
@@ -123,6 +140,7 @@ fun RouteEvent.durationAtSeconds(stopBufferSeconds: Int): Int = when (this) {
     is RouteEvent.Pickup, is RouteEvent.Dropoff -> stopBufferSeconds
     is RouteEvent.Walk -> durationSeconds
     is RouteEvent.Break -> durationSeconds
+    is RouteEvent.Appointment -> durationSeconds
     is RouteEvent.FetchBike -> 0
 }
 
@@ -134,6 +152,7 @@ fun RouteEvent.withIncomingTravel(seconds: Int): RouteEvent = when (this) {
     is RouteEvent.Dropoff -> copy(incomingTravelSeconds = seconds)
     is RouteEvent.Walk -> copy(incomingTravelSeconds = seconds)
     is RouteEvent.Break -> copy(incomingTravelSeconds = seconds)
+    is RouteEvent.Appointment -> copy(incomingTravelSeconds = seconds)
     is RouteEvent.FetchBike -> copy(incomingTravelSeconds = seconds)
 }
 
@@ -145,5 +164,6 @@ fun RouteEvent.withReturnToBike(seconds: Int): RouteEvent = when (this) {
     is RouteEvent.Dropoff -> copy(returnToBikeSeconds = seconds)
     is RouteEvent.Walk -> copy(returnToBikeSeconds = seconds)
     is RouteEvent.Break -> copy(returnToBikeSeconds = seconds)
+    is RouteEvent.Appointment -> copy(returnToBikeSeconds = seconds)
     is RouteEvent.FetchBike -> copy(returnToBikeSeconds = seconds)
 }

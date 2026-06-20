@@ -522,6 +522,43 @@ class DayPlannerScenarioTest {
         assertTrue(route.conflicts.isEmpty())
     }
 
+    @Test
+    fun schedulesDogsAroundAFixedAppointment() = runBlocking {
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
+        val walks = listOf(
+            PlannedWalk(alfa, startWindowRule("alfa1", "alfa", "09:30", "11:00", 60)),
+            PlannedWalk(bravo, startWindowRule("bravo1", "bravo", "13:00", "15:00", 60)),
+        )
+        val appointment = RouteEvent.Appointment(
+            timeSeconds = 0, location = GeoPoint(48.8130, 2.2350),
+            durationSeconds = 60 * 60, startSeconds = 12 * 3600, label = "Doctor",
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0,
+        )
+
+        val route = planner.plan(
+            LocalDate.of(2026, 6, 22), walks.asOptions(), appointments = listOf(appointment),
+        )
+        val appts = route.events.filterIsInstance<RouteEvent.Appointment>()
+        assertEquals("appointment is in the plan", 1, appts.size)
+        assertEquals("appointment at its fixed start", 12 * 3600, appts.first().timeSeconds)
+        // No dog aboard during the appointment, and everything still placed.
+        var aboard = 0
+        for (e in route.events) {
+            when (e) {
+                is RouteEvent.Pickup -> aboard++
+                is RouteEvent.Dropoff -> aboard--
+                is RouteEvent.Appointment -> assertEquals("no dog aboard during appointment", 0, aboard)
+                else -> Unit
+            }
+        }
+        assertTrue("plan stays feasible", route.conflicts.isEmpty())
+    }
+
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"
         is RouteEvent.HomeEnd -> "HomeEnd"
@@ -529,6 +566,7 @@ class DayPlannerScenarioTest {
         is RouteEvent.Dropoff -> "Dropoff ${e.dog.name}"
         is RouteEvent.Walk -> "Walk[${e.dogs.joinToString { it.name }}] ${e.durationSeconds / 60}min"
         is RouteEvent.Break -> "Break ${e.durationSeconds / 60}min"
+        is RouteEvent.Appointment -> "Appointment[${e.label}] ${e.durationSeconds / 60}min"
         is RouteEvent.FetchBike -> "FetchBike"
     }
 

@@ -13,15 +13,18 @@ import app.dogrouter.domain.routing.RouteEstimate
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import org.junit.Assume
 import org.junit.Test
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.system.measureNanoTime
+import java.util.Locale
 
 /**
  * Off-device solver harness — the laptop runner described in docs/STATUS.md.
@@ -68,37 +71,23 @@ class SolverHarness {
 
         // A reference week: 2026-06-22 is a Monday, so day N is +N days.
         val monday = LocalDate.of(2026, 6, 22)
-        val days = (onlyDay?.let { listOf(it) } ?: DayOfWeek.entries.toList())
-            .filter { dow -> rules.any { (it.weekdaysMask and (1 shl (dow.value - 1))) != 0 } }
+        val pairs = incompatibilities.map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
+        val days = onlyDay?.let { listOf(it) } ?: daysWithRules(rules)
 
         for (dow in days) {
             val date = monday.plusDays((dow.value - 1).toLong())
             val options = buildOptions(date, dogs, rules)
-            val pairs = incompatibilities
-                .map { canonicalPair(it.dogIdA, it.dogIdB) }
-                .toSet()
-            val planner = DayPlanner(
-                routingProvider = HaversineRouting(),
-                home = settings.homeGeoPoint(),
-                capacityKg = settings.bikeCapacityKg,
-                stopBufferSeconds = settings.stopBufferMinutes * 60,
-                cyclingSpeedKmh = settings.cyclingSpeedKmh,
-                incompatibilities = pairs,
-                walkingSpeedKmh = settings.walkingSpeedKmh,
-                bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
-                restarts = restarts,
-            )
+            val planner = plannerFor(settings, pairs, restarts)
 
             lateinit var route: DayRoute
             val nanos = measureNanoTime { route = planner.plan(date, options, seed) }
 
             report.appendLine("=".repeat(72))
-            report.appendLine("${dow.name.lowercase().replaceFirstChar { it.uppercase() }}  ($date)" +
-                "  —  ${options.size} walk option(s)")
+            report.appendLine("${dayName(dow)}  ($date)  —  ${options.size} walk option(s)")
             report.appendLine("=".repeat(72))
             appendTimeline(report, route, settings)
             report.appendLine()
-            appendMetrics(report, route, options, settings, nanos)
+            appendMetrics(report, route, settings, nanos)
             report.appendLine()
         }
 
@@ -110,6 +99,142 @@ class SolverHarness {
         out.writeText(text)
         println("Full report written to ${out.absolutePath}")
     }
+
+    /**
+     * Step 0 baseline: run every weekday across several seeds and record
+     * min/median/mean/max per quality metric, so model/solver changes can be
+     * tracked and regressions spotted. Deterministic (fixed seeds + haversine)
+     * so the written file diffs cleanly; wall-clock solve time goes to stdout
+     * only. Gated behind -Dsolver.baseline so a normal test run never rewrites
+     * the tracked baseline file. Regenerate with:
+     *
+     *   ./run_baseline.sh   (or add -Dsolver.baseline to the gradle command)
+     */
+    @Test
+    fun baselineAcrossSeeds() = runBlocking {
+        Assume.assumeTrue(
+            "Set -Dsolver.baseline to (re)generate docs/solver-baseline.md",
+            System.getProperty("solver.baseline") != null,
+        )
+        val backup = loadBackup()
+        val settings = backup.settings.toAppSettings()
+        val dogs = backup.dogs.map { it.toEntity() }
+        val rules = backup.scheduleRules.map { it.toEntity() }
+        val pairs = backup.incompatibilities.map { it.toEntity() }
+            .map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
+
+        val seedCount = System.getProperty("solver.baselineSeeds")?.toIntOrNull() ?: 10
+        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: 60
+        val monday = LocalDate.of(2026, 6, 22)
+        val days = daysWithRules(rules)
+
+        val md = StringBuilder()
+        md.appendLine("# Solver baseline")
+        md.appendLine()
+        md.appendLine("Quality metrics across $seedCount seeds (0..${seedCount - 1}) per weekday, " +
+            "straight-line (haversine) distances, $restarts restarts. Deterministic — " +
+            "regenerate with `run_baseline.sh`. Wall-clock solve time is reported to stdout " +
+            "only (non-deterministic).")
+        md.appendLine()
+        md.appendLine("Data: ${dogs.size} dogs, ${rules.size} schedule rules. " +
+            "Settings: cycling ${settings.cyclingSpeedKmh}km/h, walking ${settings.walkingSpeedKmh}km/h, " +
+            "bike overhead ${settings.bikeOverheadMinutes}min, stop buffer ${settings.stopBufferMinutes}min.")
+        md.appendLine()
+
+        val solveTimes = StringBuilder("Solve time per day (non-deterministic):\n")
+        for (dow in days) {
+            val date = monday.plusDays((dow.value - 1).toLong())
+            val options = buildOptions(date, dogs, rules)
+            val runs = (0 until seedCount).map { seed ->
+                val planner = plannerFor(settings, pairs, restarts)
+                lateinit var route: DayRoute
+                val nanos = measureNanoTime { route = planner.plan(date, options, seed.toLong()) }
+                computeMetrics(route, settings, nanos)
+            }
+            appendBaselineTable(md, dow, options.size, runs)
+            val st = statsOf(runs.map { it.solveMs.roundToInt() })
+            solveTimes.appendLine("  ${dayName(dow).padEnd(10)} min ${st.min}  " +
+                "median ${fmt0(st.median)}  mean ${fmt0(st.mean)}  max ${st.max}  (ms)")
+        }
+
+        val out = File(repoRoot(), "docs/solver-baseline.md")
+        out.parentFile?.mkdirs()
+        out.writeText(md.toString())
+        println(md.toString())
+        println(solveTimes.toString())
+        println("Baseline written to ${out.absolutePath}")
+    }
+
+    private class Stat(val min: Int, val median: Double, val mean: Double, val max: Int)
+
+    private fun statsOf(values: List<Int>): Stat {
+        val s = values.sorted()
+        val n = s.size
+        val median = if (n % 2 == 1) s[n / 2].toDouble() else (s[n / 2 - 1] + s[n / 2]) / 2.0
+        return Stat(s.first(), median, values.sum().toDouble() / n, s.last())
+    }
+
+    private fun appendBaselineTable(
+        md: StringBuilder,
+        dow: DayOfWeek,
+        optionCount: Int,
+        runs: List<PlanMetrics>,
+    ) {
+        md.appendLine("## ${dayName(dow)} — $optionCount walk options")
+        md.appendLine()
+        md.appendLine("| metric | min | median | mean | max |")
+        md.appendLine("|---|---|---|---|---|")
+        md.appendLine(countRow("conflicts", runs.map { it.conflicts }))
+        md.appendLine(durationRow("day length", runs.map { it.dayLengthSec }))
+        md.appendLine(durationRow("cycling", runs.map { it.cyclingSec }))
+        md.appendLine(durationRow("on-foot", runs.map { it.footSec }))
+        md.appendLine(countRow("bike mounts", runs.map { it.bikeMounts }))
+        md.appendLine(durationRow("dwell walk", runs.map { it.dwellSec }))
+        md.appendLine(durationRow("idle", runs.map { it.idleSec }))
+        md.appendLine(durationRow("over-walk", runs.map { it.overWalkSec }))
+        md.appendLine()
+    }
+
+    private fun durationRow(label: String, values: List<Int>): String {
+        val s = statsOf(values)
+        return "| $label | ${minutesOf(s.min)} | ${minutesOf(s.median.roundToInt())} | " +
+            "${minutesOf(s.mean.roundToInt())} | ${minutesOf(s.max)} |"
+    }
+
+    private fun countRow(label: String, values: List<Int>): String {
+        val s = statsOf(values)
+        return "| $label | ${s.min} | ${fmt1(s.median)} | ${fmt1(s.mean)} | ${s.max} |"
+    }
+
+    // Locale-independent so the tracked baseline diffs cleanly on any machine.
+    private fun fmt1(v: Double) = String.format(Locale.ROOT, "%.1f", v)
+    private fun fmt0(v: Double) = String.format(Locale.ROOT, "%.0f", v)
+
+    // ---- shared solver setup ---------------------------------------------
+
+    private fun plannerFor(
+        settings: AppSettings,
+        pairs: Set<Pair<String, String>>,
+        restarts: Int,
+    ) = DayPlanner(
+        routingProvider = HaversineRouting(),
+        home = settings.homeGeoPoint(),
+        capacityKg = settings.bikeCapacityKg,
+        stopBufferSeconds = settings.stopBufferMinutes * 60,
+        cyclingSpeedKmh = settings.cyclingSpeedKmh,
+        incompatibilities = pairs,
+        walkingSpeedKmh = settings.walkingSpeedKmh,
+        bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
+        restarts = restarts,
+    )
+
+    private fun daysWithRules(rules: List<DogScheduleRule>): List<DayOfWeek> =
+        DayOfWeek.entries.filter { dow ->
+            rules.any { (it.weekdaysMask and (1 shl (dow.value - 1))) != 0 }
+        }
+
+    private fun dayName(dow: DayOfWeek): String =
+        dow.name.lowercase().replaceFirstChar { it.uppercase() }
 
     // ---- plan printout ---------------------------------------------------
 
@@ -152,43 +277,63 @@ class SolverHarness {
 
     // ---- quality metrics -------------------------------------------------
 
+    /** The numeric quality metrics for one plan; shared by the detailed
+     *  printout and the across-seeds baseline so both measure identically. */
+    private data class PlanMetrics(
+        val conflicts: Int,
+        val dayLengthSec: Int,
+        val cyclingSec: Int,
+        val footSec: Int,
+        val bikeMounts: Int,
+        val dwellSec: Int,
+        val idleSec: Int,
+        val overWalkSec: Int,
+        val solveMs: Double,
+    )
+
+    private fun computeMetrics(route: DayRoute, settings: AppSettings, solveNanos: Long): PlanMetrics {
+        val events = route.events
+        return PlanMetrics(
+            conflicts = route.conflicts.size,
+            dayLengthSec = if (events.size >= 2)
+                events.last().timeSeconds - events.first().timeSeconds else 0,
+            cyclingSec = events.filter { !it.arrivedByFoot }.sumOf { it.incomingTravelSeconds },
+            footSec = events.filter { it.arrivedByFoot }.sumOf { it.incomingTravelSeconds },
+            bikeMounts = events.count { !it.arrivedByFoot && it.incomingTravelSeconds > 0 },
+            dwellSec = events.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds },
+            idleSec = idleSeconds(events, settings.stopBufferMinutes * 60),
+            overWalkSec = walkedVsRequired(events).second,
+            solveMs = solveNanos / 1_000_000.0,
+        )
+    }
+
     private fun appendMetrics(
         sb: StringBuilder,
         route: DayRoute,
-        options: List<WalkOption>,
         settings: AppSettings,
         solveNanos: Long,
     ) {
-        val events = route.events
-        val dayLength = if (events.size >= 2)
-            events.last().timeSeconds - events.first().timeSeconds else 0
-
-        val bikeTravel = events.filter { !it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
-        val footTravel = events.filter { it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
-        val dwellWalk = events.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds }
-        val bikeMounts = events.count { !it.arrivedByFoot && it.incomingTravelSeconds > 0 }
-        val idle = idleSeconds(events, settings.stopBufferMinutes * 60)
-
+        val m = computeMetrics(route, settings, solveNanos)
         sb.appendLine("METRICS")
-        sb.appendLine("  Conflicts (unplaced) ......... ${route.conflicts.size}   (target 0)")
-        sb.appendLine("  Day length (home→home) ....... ${minutesOf(dayLength)}")
-        sb.appendLine("  Travel: cycling .............. ${minutesOf(bikeTravel)}" +
-            "   on-foot ${minutesOf(footTravel)}")
-        sb.appendLine("  Bike mounts (overhead paid) .. $bikeMounts" +
-            "   @ ${settings.bikeOverheadMinutes}min = ${bikeMounts * settings.bikeOverheadMinutes}min")
-        sb.appendLine("  Dwell walk time (in place) ... ${minutesOf(dwellWalk)}")
-        sb.appendLine("  Idle / waiting ............... ${minutesOf(idle)}")
-        sb.appendLine("  Walk-backs to bike ........... ${bikeFetchSummary(events)}")
+        sb.appendLine("  Conflicts (unplaced) ......... ${m.conflicts}   (target 0)")
+        sb.appendLine("  Day length (home→home) ....... ${minutesOf(m.dayLengthSec)}")
+        sb.appendLine("  Travel: cycling .............. ${minutesOf(m.cyclingSec)}" +
+            "   on-foot ${minutesOf(m.footSec)}")
+        sb.appendLine("  Bike mounts (overhead paid) .. ${m.bikeMounts}" +
+            "   @ ${settings.bikeOverheadMinutes}min = ${m.bikeMounts * settings.bikeOverheadMinutes}min")
+        sb.appendLine("  Dwell walk time (in place) ... ${minutesOf(m.dwellSec)}")
+        sb.appendLine("  Idle / waiting ............... ${minutesOf(m.idleSec)}")
+        sb.appendLine("  Walk-backs to bike ........... ${bikeFetchSummary(route.events)}")
 
-        val (perDog, totalOver) = walkedVsRequired(events)
+        val (perDog, _) = walkedVsRequired(route.events)
         sb.appendLine("  Per-dog walked vs required:")
         if (perDog.isEmpty()) {
             sb.appendLine("    (none placed)")
         } else {
             perDog.forEach { sb.appendLine("    $it") }
         }
-        sb.appendLine("  Total over-walk .............. ${minutesOf(totalOver)}")
-        sb.appendLine("  Solve time ................... ${"%.1f".format(solveNanos / 1_000_000.0)} ms")
+        sb.appendLine("  Total over-walk .............. ${minutesOf(m.overWalkSec)}")
+        sb.appendLine("  Solve time ................... ${"%.1f".format(m.solveMs)} ms")
     }
 
     /**
@@ -328,6 +473,9 @@ class SolverHarness {
         }
         error("dogrouter-backup.json not found (looked up from ${File("").absolutePath})")
     }
+
+    /** Repo root = the directory holding the backup file. */
+    private fun repoRoot(): File = findBackupFile().parentFile
 
     private fun settingsLine(s: AppSettings): String =
         "Settings: home=(${s.homeLatitude}, ${s.homeLongitude}), " +

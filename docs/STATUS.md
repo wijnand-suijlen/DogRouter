@@ -385,18 +385,19 @@ Walker-requested day-shaping features beyond the dogs' own schedules.
   per-date toggle on Today.
 - **Temporarily pause a dog** — `Dog.active`; paused dogs are kept but
   skipped by the planner; toggle on the Dogs list.
+- **Incidental appointments** — one-off, per-date `Appointment` (date + exact
+  window + label + address; Room v8 + backup). Pre-placed as a fixed
+  `RouteEvent.Appointment`; `AppointmentConstraint` keeps the walker on time
+  and dog-free during it while the dogs schedule around it (a dog that can
+  only be walked then becomes a conflict). Entered on the Planning screen.
 
 **Pending, in priority order:**
-1. **Incidental appointments.** One-off, per-date, at a fixed exact time
-   window (doctor, client intro), possibly at a location. The planner works
-   the day around it as a hard dog-free block. Reuses the break / non-dog
-   "Break"-style machinery and the Planning screen. *Cheapest — do next.*
-2. **No-cargo-bike day + cancellation advice.** A per-day vehicle mode
+1. **No-cargo-bike day + cancellation advice.** A per-day vehicle mode
    (cargo bike / backpack + normal bike / on foot) with reduced capacity and
    speed; the planner makes an adapted plan AND advises **which dogs are best
    to cancel** (needs a per-dog cancellation cost / priority, not just the
    conflict count). Introduces the capacity/advice model.
-3. **Sleepover (boarding) dog.** Board a client's dog at the walker's home
+2. **Sleepover (boarding) dog.** Board a client's dog at the walker's home
    for one or more days. Two modes: (a) fit dog + good weather → it **comes
    along all day** (effectively a dog living at the home address with a daily
    walk requirement and no fixed window); (b) older dog / extreme heat or

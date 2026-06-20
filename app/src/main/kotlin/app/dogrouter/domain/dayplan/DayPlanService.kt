@@ -11,7 +11,9 @@ import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -123,7 +125,13 @@ class DayPlanService(
             walkingSpeedKmh = inputs.settings.walkingSpeedKmh,
             bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
         )
-        return planner.plan(inputs.date, options, seed)
+        // Off the main thread: the matrix build (BRouter) and the solver
+        // (multi-start + LNS) are CPU-bound and would otherwise freeze the UI
+        // and trip an ANR. The flow's loading/result emissions stay on the
+        // collector's context.
+        return withContext(Dispatchers.Default) {
+            planner.plan(inputs.date, options, seed)
+        }
     }
 
     private fun canonicalPair(a: String, b: String): Pair<String, String> =

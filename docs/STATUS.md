@@ -366,6 +366,43 @@ ui/
 - **`Walk.location` stale-on-join** (old issue) is now effectively fixed:
   the retimer sets a Walk's location to the walker's current position.
 
+## Feature wishlist (from the walker)
+
+Walker-requested day-shaping features beyond the dogs' own schedules.
+
+**Done:**
+- **Lunch break** — Planning screen (window, duration, break locations);
+  the planner fits one dog-free break into an empty mid-day gap inside the
+  window, **prefers a lunch at home** when the free gap is long (default
+  ≥120 min, staying home until just in time), red panel when none fits;
+  per-date toggle on Today.
+- **Temporarily pause a dog** — `Dog.active`; paused dogs are kept but
+  skipped by the planner; toggle on the Dogs list.
+
+**Pending, in priority order:**
+1. **Incidental appointments.** One-off, per-date, at a fixed exact time
+   window (doctor, client intro), possibly at a location. The planner works
+   the day around it as a hard dog-free block. Reuses the break / non-dog
+   "Break"-style machinery and the Planning screen. *Cheapest — do next.*
+2. **No-cargo-bike day + cancellation advice.** A per-day vehicle mode
+   (cargo bike / backpack + normal bike / on foot) with reduced capacity and
+   speed; the planner makes an adapted plan AND advises **which dogs are best
+   to cancel** (needs a per-dog cancellation cost / priority, not just the
+   conflict count). Introduces the capacity/advice model.
+3. **Sleepover (boarding) dog.** Board a client's dog at the walker's home
+   for one or more days. Two modes: (a) fit dog + good weather → it **comes
+   along all day** (effectively a dog living at the home address with a daily
+   walk requirement and no fixed window); (b) older dog / extreme heat or
+   cold → **keep it home and return a few times** (often coinciding with the
+   lunch / home visit) for a few short walks starting and ending at home.
+   Only accept a sleepover **when the day is not too busy** (an "is there
+   room?" check). Most complex; reuses #2/#3's capacity & advice and the
+   home-lunch home-visits — build last, likely in stages (Mode A then B).
+
+Priority rationale: ascending complexity and dependencies — #2 reuses what
+the break already built; #3's "is there room / which to drop" advice and
+the home-lunch home-visits both feed the sleepover dog (#3, then #5).
+
 ## App-surface follow-ups (deferred while solver is the focus)
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an

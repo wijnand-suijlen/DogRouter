@@ -20,7 +20,7 @@ class BackupModelsTest {
     private val dog = Dog(
         id = "alfa", name = "Alfa", breed = "Jack Russell", weightKg = 8f, photoUri = null,
         ownerName = "Owner", ownerPhone = "0600000000", address = "1 Test Street",
-        latitude = 48.8145, longitude = 2.2360, stopNotes = "ring bell, wait ~3 min",
+        latitude = 48.8145, longitude = 102.2360, stopNotes = "ring bell, wait ~3 min",
         stopAdjustmentMinutes = 2, inCargoBike = TransportState.Yes,
         inBackpack = TransportState.NotTested, allowLongerWalk = false, notes = "puppy",
         createdAt = 1_700_000_000_000L,
@@ -35,15 +35,15 @@ class BackupModelsTest {
     private val appointment = Appointment(
         id = "appt1", date = LocalDate.of(2026, 6, 23),
         startTime = LocalTime.of(14, 0), endTime = LocalTime.of(15, 0),
-        label = "Doctor", address = "Clinic", latitude = 48.82, longitude = 2.25,
+        label = "Doctor", address = "Clinic", latitude = 48.82, longitude = 102.25,
     )
     private val settings = AppSettings(
         bikeCapacityKg = 65f, stopBufferMinutes = 5, cyclingSpeedKmh = 14f,
         walkingSpeedKmh = 3.5f, bikeOverheadMinutes = 4, cyclingWeight = 1.5f,
-        homeAddress = "Home", homeLatitude = 48.81, homeLongitude = 2.23,
+        homeAddress = "Home", homeLatitude = 48.81, homeLongitude = 102.23,
         breakWindowStart = LocalTime.of(12, 30), breakWindowEnd = LocalTime.of(15, 30),
         breakDurationMinutes = 25,
-        breakLocations = listOf(app.dogrouter.data.prefs.BreakLocation("Café", 48.80, 2.22)),
+        breakLocations = listOf(app.dogrouter.data.prefs.BreakLocation("Café", 48.80, 102.22)),
         homeLunchMinFreeMinutes = 100,
         lnsIterations = 120,
     )

@@ -22,14 +22,17 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Reproduction of the 19-June "planner says infeasible but it is feasible"
- * report (planningsprobleem-19juni). Uses a fake routing provider with
- * straight-line distances so the planner logic — not BRouter — is under
- * test.
+ * Reproduction of the "planner says infeasible but it is feasible" report.
+ * Uses a fake routing provider with straight-line distances so the planner
+ * logic — not BRouter — is under test.
+ *
+ * Coordinates are synthetic: the real cluster has been rotated in longitude
+ * (an isometry, so every distance is preserved exactly) and bears no relation
+ * to any real address. Names are fictional placeholders.
  */
 class DayPlannerScenarioTest {
 
-    private val home = GeoPoint(48.8130, 2.2350)
+    private val home = GeoPoint(48.8130, 102.2350)
 
     /** Straight-line distance; duration is unused (planner divides distance by speed). */
     private class FakeRouting : RoutingProvider {
@@ -79,12 +82,12 @@ class DayPlannerScenarioTest {
 
     @Test
     fun mondayScenario() = runBlocking {
-        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
-        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
-        val charlie = dog("charlie", "Charlie", 25f, 48.7970, 2.2600) // elsewhere
-        val yankee = dog("yankee", "Yankee", 9f, 48.8100, 2.2400)
-        val delta = dog("delta", "Delta", 12f, 48.8160, 2.2450)
-        val echo = dog("echo", "Echo", 24f, 48.8180, 2.2280)
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 102.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 102.2300)
+        val charlie = dog("charlie", "Charlie", 25f, 48.7970, 102.2600) // farther out
+        val yankee = dog("yankee", "Yankee", 9f, 48.8100, 102.2400)
+        val delta = dog("delta", "Delta", 12f, 48.8160, 102.2450)
+        val echo = dog("echo", "Echo", 24f, 48.8180, 102.2280)
 
         val walks = listOf(
             PlannedWalk(alfa, rule("alfa1", "alfa", "09:30", "16:00", 120)),
@@ -144,20 +147,20 @@ class DayPlannerScenarioTest {
         route.events.filterIsInstance<RouteEvent.Walk>().maxOfOrNull { it.dogs.size } ?: 0
 
     /**
-     * Same scenario, but Charlie's second walk is given a distinct dog id
-     * ("charlie2" at the same place). If this now places where the real
+     * Same scenario, but the second walk of the twice-walked dog is given a
+     * distinct dog id (at the same place). If this now places where the real
      * (same-id) second rule did not, the cause is the constraints keying
      * everything by dog.id — one dog cannot be walked twice in a day.
      */
     @Test
-    fun charlieSecondWalkAsSeparateDogPlaces() = runBlocking {
-        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
-        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
-        val charlie = dog("charlie", "Charlie", 25f, 48.7970, 2.2600)
-        val charlie2 = dog("charlie2", "Charlie#2", 25f, 48.7970, 2.2600)
-        val yankee = dog("yankee", "Yankee", 9f, 48.8100, 2.2400)
-        val delta = dog("delta", "Delta", 12f, 48.8160, 2.2450)
-        val echo = dog("echo", "Echo", 24f, 48.8180, 2.2280)
+    fun secondWalkAsSeparateDogPlaces() = runBlocking {
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 102.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 102.2300)
+        val charlie = dog("charlie", "Charlie", 25f, 48.7970, 102.2600)
+        val charlie2 = dog("charlie2", "Charlie#2", 25f, 48.7970, 102.2600)
+        val yankee = dog("yankee", "Yankee", 9f, 48.8100, 102.2400)
+        val delta = dog("delta", "Delta", 12f, 48.8160, 102.2450)
+        val echo = dog("echo", "Echo", 24f, 48.8180, 102.2280)
 
         val walks = listOf(
             PlannedWalk(alfa, rule("alfa1", "alfa", "09:30", "16:00", 120)),
@@ -192,9 +195,9 @@ class DayPlannerScenarioTest {
      */
     @Test
     fun longWalkSplitsAcrossTwoGroupWalks() = runBlocking {
-        val apple = dog("apple", "Apple", 5f, 48.8140, 2.2360)
-        val bo = dog("bo", "Bo", 5f, 48.8120, 2.2340)
-        val cy = dog("cy", "Cy", 5f, 48.8150, 2.2370)
+        val apple = dog("apple", "Apple", 5f, 48.8140, 102.2360)
+        val bo = dog("bo", "Bo", 5f, 48.8120, 102.2340)
+        val cy = dog("cy", "Cy", 5f, 48.8150, 102.2370)
 
         val walks = listOf(
             PlannedWalk(apple, rule("apple1", "apple", "08:00", "14:00", 120)),
@@ -228,9 +231,9 @@ class DayPlannerScenarioTest {
      */
     @Test
     fun sameSeedIsDeterministic() = runBlocking {
-        val apple = dog("apple", "Apple", 5f, 48.8140, 2.2360)
-        val bo = dog("bo", "Bo", 5f, 48.8120, 2.2340)
-        val cy = dog("cy", "Cy", 5f, 48.8150, 2.2370)
+        val apple = dog("apple", "Apple", 5f, 48.8140, 102.2360)
+        val bo = dog("bo", "Bo", 5f, 48.8120, 102.2340)
+        val cy = dog("cy", "Cy", 5f, 48.8150, 102.2370)
         val walks = listOf(
             PlannedWalk(apple, rule("apple1", "apple", "08:00", "14:00", 120)),
             PlannedWalk(bo, rule("bo1", "bo", "09:00", "13:00", 60)),
@@ -252,7 +255,7 @@ class DayPlannerScenarioTest {
      */
     @Test
     fun exclusiveChoicePlacesExactlyOneAlternative() = runBlocking {
-        val sierra = dog("sierra", "Sierra", 8f, 48.8178, 2.2311)
+        val sierra = dog("sierra", "Sierra", 8f, 48.8178, 102.2311)
         val option = WalkOption(
             listOf(
                 PlannedWalk(sierra, rule("sierraAM", "sierra", "10:00", "12:00", 60)),
@@ -283,7 +286,7 @@ class DayPlannerScenarioTest {
      */
     @Test
     fun latestStartIsEnforced() = runBlocking {
-        val yankee = dog("yankee", "Yankee", 9f, 48.8159, 2.2317)
+        val yankee = dog("yankee", "Yankee", 9f, 48.8159, 102.2317)
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
@@ -316,8 +319,8 @@ class DayPlannerScenarioTest {
      */
     @Test
     fun latestStartBoundsTheWalkNotThePickup() = runBlocking {
-        val yankee = dog("yankee", "Yankee", 9f, 48.8159, 2.2317)
-        val late = dog("late", "Late", 9f, 48.8150, 2.2360)
+        val yankee = dog("yankee", "Yankee", 9f, 48.8159, 102.2317)
+        val late = dog("late", "Late", 9f, 48.8150, 102.2360)
         val walks = listOf(
             PlannedWalk(yankee, startWindowRule("y1", "yankee", "11:00", "13:00", 60)),
             PlannedWalk(late, rule("late1", "late", "15:00", "16:00", 60)),
@@ -348,9 +351,9 @@ class DayPlannerScenarioTest {
 
     @Test
     fun noDogLeftBehindConstraintFlagsAnIdleDog() {
-        val a = dog("a", "A", 5f, 48.81, 2.23)
-        val b = dog("b", "B", 5f, 48.82, 2.24)
-        val loc = GeoPoint(48.81, 2.23)
+        val a = dog("a", "A", 5f, 48.81, 102.23)
+        val b = dog("b", "B", 5f, 48.82, 102.24)
+        val loc = GeoPoint(48.81, 102.23)
         val ra = rule("ra", "a", "10:00", "12:00", 60)
         val rb = rule("rb", "b", "10:00", "12:00", 60)
         val constraint = NoDogLeftBehindConstraint()
@@ -391,8 +394,8 @@ class DayPlannerScenarioTest {
             lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
             walkingSpeedKmh = 3f, bikeOverheadSeconds = overhead,
         )
-        val sierra = dog("sierra", "Sierra", 8f, 48.8179, 2.2311)
-        val tango = dog("tango", "Tango", 10f, 48.8179, 2.2311) // same coords
+        val sierra = dog("sierra", "Sierra", 8f, 48.8179, 102.2311)
+        val tango = dog("tango", "Tango", 10f, 48.8179, 102.2311) // same coords
 
         val solo = planner().plan(
             LocalDate.of(2026, 6, 22),
@@ -420,8 +423,8 @@ class DayPlannerScenarioTest {
      */
     @Test
     fun nearbyDogsAreWalkedBetweenOnFoot() = runBlocking {
-        val a = dog("a", "A", 8f, 48.8145, 2.2360)
-        val b = dog("b", "B", 9f, 48.8150, 2.2362) // ~60 m from A
+        val a = dog("a", "A", 8f, 48.8145, 102.2360)
+        val b = dog("b", "B", 9f, 48.8150, 102.2362) // ~60 m from A
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
@@ -452,14 +455,14 @@ class DayPlannerScenarioTest {
     @Test
     fun fitsALunchBreakInAnEmptyMidDayGap() = runBlocking {
         // Alfa in the morning, Bravo in the afternoon — an empty gap between.
-        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
-        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 102.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 102.2300)
         val walks = listOf(
             PlannedWalk(alfa, startWindowRule("alfa1", "alfa", "09:30", "10:00", 60)),
             PlannedWalk(bravo, startWindowRule("bravo1", "bravo", "15:00", "15:30", 60)),
         )
         val spec = BreakSpec(
-            locations = listOf(GeoPoint(48.8130, 2.2330)),
+            locations = listOf(GeoPoint(48.8130, 102.2330)),
             windowStartSeconds = 12 * 3600, windowEndSeconds = 16 * 3600,
             durationSeconds = 30 * 60,
             homeLunchMinFreeSeconds = 0, // home lunch off: exercise the café path
@@ -493,8 +496,8 @@ class DayPlannerScenarioTest {
     @Test
     fun lunchesAtHomeWhenTheMidDayGapIsLong() = runBlocking {
         // ~4.5 h of free time between the morning and afternoon dogs.
-        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
-        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 102.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 102.2300)
         val walks = listOf(
             PlannedWalk(alfa, startWindowRule("alfa1", "alfa", "09:30", "10:00", 60)),
             PlannedWalk(bravo, startWindowRule("bravo1", "bravo", "15:00", "15:30", 60)),
@@ -524,14 +527,14 @@ class DayPlannerScenarioTest {
 
     @Test
     fun schedulesDogsAroundAFixedAppointment() = runBlocking {
-        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
-        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 102.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 102.2300)
         val walks = listOf(
             PlannedWalk(alfa, startWindowRule("alfa1", "alfa", "09:30", "11:00", 60)),
             PlannedWalk(bravo, startWindowRule("bravo1", "bravo", "13:00", "15:00", 60)),
         )
         val appointment = RouteEvent.Appointment(
-            timeSeconds = 0, location = GeoPoint(48.8130, 2.2350),
+            timeSeconds = 0, location = GeoPoint(48.8130, 102.2350),
             durationSeconds = 60 * 60, startSeconds = 12 * 3600, label = "Doctor",
         )
         val planner = DayPlanner(

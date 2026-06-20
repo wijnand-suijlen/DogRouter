@@ -38,6 +38,9 @@ out/
 # Private real-world data and solver output (never push)
 dogrouter-backup*.json
 solver-report.txt
+# Local working notes — contain real client names and addresses
+feedback-*
+planningsprobleem-*
 
 # Local BRouter data for the off-device harness (large segment, never push)
 brouter-data/

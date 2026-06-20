@@ -32,7 +32,9 @@ import kotlin.math.sqrt
  */
 class RemoveOperatorTest {
 
-    private val home = GeoPoint(48.8130, 2.2350)
+    // Synthetic coordinates: the cluster is rotated in longitude (an isometry,
+    // so distances are preserved exactly) and is not a real location.
+    private val home = GeoPoint(48.8130, 102.2350)
 
     private class FakeRouting : RoutingProvider {
         override suspend fun isReady() = true
@@ -97,11 +99,11 @@ class RemoveOperatorTest {
         // Five clustered dogs with wide windows — easily co-walkable, so the
         // build produces shared walks and on-foot legs to exercise removal.
         val options = listOf(
-            option(dog("alfa", "Alfa", 48.8145, 2.2360), 60),
-            option(dog("bravo", "Bravo", 48.8120, 2.2300), 60),
-            option(dog("yankee", "Yankee", 48.8100, 2.2400), 45),
-            option(dog("delta", "Delta", 48.8160, 2.2450), 60),
-            option(dog("echo", "Echo", 48.8180, 2.2280), 30),
+            option(dog("alfa", "Alfa", 48.8145, 102.2360), 60),
+            option(dog("bravo", "Bravo", 48.8120, 102.2300), 60),
+            option(dog("yankee", "Yankee", 48.8100, 102.2400), 45),
+            option(dog("delta", "Delta", 48.8160, 102.2450), 60),
+            option(dog("echo", "Echo", 48.8180, 102.2280), 30),
         )
         val points = (options.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } + home).toSet()
         val matrix = DistanceMatrix.build(points, FakeRouting())

@@ -37,7 +37,13 @@ class SettingsRepository(
             breakLocations = prefs[BREAK_LOCATIONS]?.let {
                 runCatching { json.decodeFromString<List<BreakLocation>>(it) }.getOrNull()
             } ?: AppSettings.DEFAULTS.breakLocations,
+            homeLunchMinFreeMinutes = prefs[HOME_LUNCH_MIN_FREE_MINUTES]
+                ?: AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
         )
+    }
+
+    suspend fun setHomeLunchMinFreeMinutes(minutes: Int) {
+        dataStore.edit { it[HOME_LUNCH_MIN_FREE_MINUTES] = minutes.coerceAtLeast(0) }
     }
 
     suspend fun setBreakWindow(start: LocalTime, end: LocalTime) {
@@ -98,6 +104,7 @@ class SettingsRepository(
             prefs[BREAK_WINDOW_END] = settings.breakWindowEnd.toSecondOfDay() / 60
             prefs[BREAK_DURATION_MINUTES] = settings.breakDurationMinutes
             prefs[BREAK_LOCATIONS] = json.encodeToString(settings.breakLocations)
+            prefs[HOME_LUNCH_MIN_FREE_MINUTES] = settings.homeLunchMinFreeMinutes
         }
     }
 
@@ -114,5 +121,6 @@ class SettingsRepository(
         val BREAK_WINDOW_END = intPreferencesKey("break_window_end_min")
         val BREAK_DURATION_MINUTES = intPreferencesKey("break_duration_minutes")
         val BREAK_LOCATIONS = stringPreferencesKey("break_locations_json")
+        val HOME_LUNCH_MIN_FREE_MINUTES = intPreferencesKey("home_lunch_min_free_minutes")
     }
 }

@@ -186,14 +186,85 @@ class DayPlanner(
     }
 
     /**
-     * Fit one dog-free break into a finished [solution]: try every point in
-     * the day where no dog is aboard, and every break location, insert a
-     * [RouteEvent.Break] there, retime and validate. Keep the cheapest
-     * (shortest resulting day) where the break starts inside the window and no
-     * constraint breaks. Returns null when no break fits — the day is then
-     * left break-less.
+     * Fit one dog-free break into a finished [solution]. Prefers a lunch at
+     * home when there is a long mid-day free gap ([insertHomeLunch]); else a
+     * break at the nearest break location ([insertCafeBreak]). Returns null
+     * when no break fits — the day is then left break-less.
      */
     private fun insertBreak(
+        solution: Solution,
+        spec: BreakSpec,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution? =
+        insertHomeLunch(solution, spec, matrix, constraints)
+            ?: insertCafeBreak(solution, spec, matrix, constraints)
+
+    /**
+     * Lunch at home when the day has a long enough mid-day free gap: go home
+     * after the morning and stay there until just in time for the afternoon,
+     * so the would-be idle is spent at home rather than waiting at a stop.
+     * Picks the longest qualifying gap; null if none reaches the threshold.
+     */
+    private fun insertHomeLunch(
+        solution: Solution,
+        spec: BreakSpec,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution? {
+        val home = home ?: return null
+        if (spec.homeLunchMinFreeSeconds <= 0) return null
+        val events = solution.events
+
+        // Longest empty free gap (idle in the no-break plan) overlapping the
+        // window and at least the threshold.
+        var aboard = 0
+        var bestGap = -1
+        var bestIdle = -1
+        for (i in events.indices) {
+            when (events[i]) {
+                is RouteEvent.Pickup -> aboard++
+                is RouteEvent.Dropoff -> aboard--
+                else -> Unit
+            }
+            if (aboard != 0 || i >= events.size - 1) continue
+            val next = events[i + 1]
+            val gapStart = events[i].timeSeconds + events[i].durationAtSeconds(stopBufferSeconds)
+            if (next.timeSeconds <= spec.windowStartSeconds || gapStart >= spec.windowEndSeconds) continue
+            val idle = next.timeSeconds - (gapStart + next.incomingTravelSeconds)
+            if (idle >= spec.homeLunchMinFreeSeconds && idle > bestIdle) {
+                bestIdle = idle
+                bestGap = i
+            }
+        }
+        if (bestGap < 0) return null
+
+        fun place(durationSeconds: Int): List<RouteEvent>? = retimeAndCost(
+            events.toMutableList().apply {
+                add(bestGap + 1, RouteEvent.Break(0, home, durationSeconds, atHome = true))
+            },
+            matrix,
+        )?.first
+
+        // Pass 1: a minimum lunch; measure the idle still left after it.
+        val pass1 = place(spec.durationSeconds) ?: return null
+        val lunch = pass1.getOrNull(bestGap + 1) as? RouteEvent.Break ?: return null
+        val after = pass1.getOrNull(bestGap + 2) ?: return null
+        val idleAfter =
+            after.timeSeconds - (lunch.timeSeconds + lunch.durationSeconds + after.incomingTravelSeconds)
+
+        // Pass 2: extend the lunch to absorb that idle — leave home just in time.
+        val retimed = place(spec.durationSeconds + idleAfter.coerceAtLeast(0)) ?: return null
+        if (constraints.violation(retimed) != null) return null
+        return Solution(retimed, solution.placed, solution.unplaced)
+    }
+
+    /**
+     * Fit a break at a break location: try every empty-handed gap and every
+     * location, retime and validate, and keep the cheapest where the break
+     * starts inside the window with no constraint broken.
+     */
+    private fun insertCafeBreak(
         solution: Solution,
         spec: BreakSpec,
         matrix: DistanceMatrix,

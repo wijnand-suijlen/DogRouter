@@ -427,7 +427,7 @@ private fun RouteEvent.toStepView(): StepView = when (this) {
     )
     is RouteEvent.Break -> StepView(
         icon = Icons.Default.Place,
-        title = "Lunch break",
+        title = if (atHome) "Lunch at home" else "Lunch break",
         timeLabel = formatClock(timeSeconds),
         address = null,
         detail = "${formatMinutes(durationSeconds)} break",

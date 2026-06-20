@@ -427,7 +427,8 @@ private fun RouteEvent.title(): String = when (this) {
     is RouteEvent.Pickup -> "Pickup ${dog.name}"
     is RouteEvent.Dropoff -> "Dropoff ${dog.name}"
     is RouteEvent.Walk -> "Walk ${dogs.joinToString { it.name }} · ${formatDuration(durationSeconds)}"
-    is RouteEvent.Break -> "Lunch break · ${formatDuration(durationSeconds)}"
+    is RouteEvent.Break ->
+        (if (atHome) "Lunch at home" else "Lunch break") + " · ${formatDuration(durationSeconds)}"
     is RouteEvent.FetchBike -> "Walk back to the bike"
 }
 

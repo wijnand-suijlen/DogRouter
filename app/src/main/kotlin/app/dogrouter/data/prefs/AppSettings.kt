@@ -35,6 +35,9 @@ data class AppSettings(
     val breakWindowEnd: LocalTime,
     val breakDurationMinutes: Int,
     val breakLocations: List<BreakLocation>,
+    // When the mid-day free gap is at least this long, the planner prefers a
+    // lunch at home (staying there until just in time) over a break location.
+    val homeLunchMinFreeMinutes: Int,
 ) {
     val hasHome: Boolean
         get() = homeLatitude != null && homeLongitude != null
@@ -59,6 +62,7 @@ data class AppSettings(
             breakWindowEnd = LocalTime.of(16, 0),
             breakDurationMinutes = 30,
             breakLocations = emptyList(),
+            homeLunchMinFreeMinutes = 120,
         )
     }
 }

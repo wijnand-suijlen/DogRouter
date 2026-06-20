@@ -83,6 +83,7 @@ fun PlanningScreen(
                 settings = s,
                 onWindowChange = viewModel::setBreakWindow,
                 onDurationChange = viewModel::setBreakDuration,
+                onHomeLunchChange = viewModel::setHomeLunchMinFree,
                 onAddLocation = onAddBreakLocation,
                 onRemoveLocation = viewModel::removeLocation,
                 modifier = Modifier
@@ -100,6 +101,7 @@ private fun LunchBreakSection(
     settings: AppSettings,
     onWindowChange: (LocalTime, LocalTime) -> Unit,
     onDurationChange: (Int) -> Unit,
+    onHomeLunchChange: (Int) -> Unit,
     onAddLocation: () -> Unit,
     onRemoveLocation: (BreakLocation) -> Unit,
     modifier: Modifier = Modifier,
@@ -156,6 +158,28 @@ private fun LunchBreakSection(
                 Icon(Icons.Default.Add, contentDescription = "More")
             }
         }
+
+        // Prefer lunching at home when there is a long free gap.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Home from", modifier = Modifier.width(96.dp), style = MaterialTheme.typography.bodyLarge)
+            IconButton(onClick = { onHomeLunchChange(settings.homeLunchMinFreeMinutes - 15) }) {
+                Icon(Icons.Default.Remove, contentDescription = "Less")
+            }
+            Text(
+                "${settings.homeLunchMinFreeMinutes} min",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.width(64.dp),
+            )
+            IconButton(onClick = { onHomeLunchChange(settings.homeLunchMinFreeMinutes + 15) }) {
+                Icon(Icons.Default.Add, contentDescription = "More")
+            }
+        }
+        Text(
+            "With at least this much free time mid-day, lunch at home instead — " +
+                "staying there until it is time for the afternoon.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Spacer(Modifier.width(4.dp))
         Text("Break locations", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)

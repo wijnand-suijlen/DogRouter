@@ -156,17 +156,15 @@ class DayPlanService(
         }
     }
 
-    /** A [BreakSpec] from the settings, or null when no break location is set. */
-    private fun AppSettings.breakSpec(): BreakSpec? {
-        val locations = breakLocations.map { GeoPoint(it.latitude, it.longitude) }
-        if (locations.isEmpty()) return null
-        return BreakSpec(
-            locations = locations,
-            windowStartSeconds = breakWindowStart.toSecondOfDay(),
-            windowEndSeconds = breakWindowEnd.toSecondOfDay(),
-            durationSeconds = breakDurationMinutes * 60,
-        )
-    }
+    /** A [BreakSpec] from the settings. Home lunch works even with no break
+     *  locations, so the spec is built whenever a break is requested. */
+    private fun AppSettings.breakSpec(): BreakSpec = BreakSpec(
+        locations = breakLocations.map { GeoPoint(it.latitude, it.longitude) },
+        windowStartSeconds = breakWindowStart.toSecondOfDay(),
+        windowEndSeconds = breakWindowEnd.toSecondOfDay(),
+        durationSeconds = breakDurationMinutes * 60,
+        homeLunchMinFreeSeconds = homeLunchMinFreeMinutes * 60,
+    )
 
     private fun canonicalPair(a: String, b: String): Pair<String, String> =
         if (a < b) a to b else b to a

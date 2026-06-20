@@ -37,6 +37,7 @@ class BackupModelsTest {
         breakWindowStart = LocalTime.of(12, 30), breakWindowEnd = LocalTime.of(15, 30),
         breakDurationMinutes = 25,
         breakLocations = listOf(app.dogrouter.data.prefs.BreakLocation("Café", 48.80, 2.22)),
+        homeLunchMinFreeMinutes = 100,
     )
 
     @Test

@@ -13,4 +13,7 @@ data class BreakSpec(
     val windowStartSeconds: Int,
     val windowEndSeconds: Int,
     val durationSeconds: Int,
+    // When the mid-day free gap is at least this long, prefer a lunch at home
+    // (staying there until just in time) over a break location.
+    val homeLunchMinFreeSeconds: Int,
 )

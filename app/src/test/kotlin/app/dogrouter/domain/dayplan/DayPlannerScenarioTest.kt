@@ -9,6 +9,7 @@ import app.dogrouter.domain.dayplan.constraints.NoDogLeftBehindConstraint
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -461,6 +462,7 @@ class DayPlannerScenarioTest {
             locations = listOf(GeoPoint(48.8130, 2.2330)),
             windowStartSeconds = 12 * 3600, windowEndSeconds = 16 * 3600,
             durationSeconds = 30 * 60,
+            homeLunchMinFreeSeconds = 0, // home lunch off: exercise the café path
         )
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
@@ -486,6 +488,38 @@ class DayPlannerScenarioTest {
             }
         }
         assertTrue("plan stays feasible", route.conflicts.isEmpty())
+    }
+
+    @Test
+    fun lunchesAtHomeWhenTheMidDayGapIsLong() = runBlocking {
+        // ~4.5 h of free time between the morning and afternoon dogs.
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
+        val walks = listOf(
+            PlannedWalk(alfa, startWindowRule("alfa1", "alfa", "09:30", "10:00", 60)),
+            PlannedWalk(bravo, startWindowRule("bravo1", "bravo", "15:00", "15:30", 60)),
+        )
+        val spec = BreakSpec(
+            locations = emptyList(), // home-only: no café locations set
+            windowStartSeconds = 12 * 3600, windowEndSeconds = 16 * 3600,
+            durationSeconds = 30 * 60,
+            homeLunchMinFreeSeconds = 120 * 60,
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0,
+        )
+
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions(), breakSpec = spec)
+        val breaks = route.events.filterIsInstance<RouteEvent.Break>()
+        assertEquals("one break", 1, breaks.size)
+        val lunch = breaks.first()
+        assertTrue("lunch is at home", lunch.atHome)
+        assertEquals("lunch is at the home location", home, lunch.location)
+        assertTrue("home lunch absorbs the idle (longer than the minimum)", lunch.durationSeconds > 30 * 60)
+        assertFalse("not flagged unavailable", route.breakUnavailable)
+        assertTrue(route.conflicts.isEmpty())
     }
 
     private fun describe(e: RouteEvent): String = when (e) {

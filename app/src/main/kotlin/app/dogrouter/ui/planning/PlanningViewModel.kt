@@ -32,6 +32,10 @@ class PlanningViewModel(
         viewModelScope.launch { settingsRepo.setBreakDuration(minutes.coerceIn(5, 180)) }
     }
 
+    fun setHomeLunchMinFree(minutes: Int) {
+        viewModelScope.launch { settingsRepo.setHomeLunchMinFreeMinutes(minutes.coerceIn(30, 300)) }
+    }
+
     fun addLocation(label: String, latitude: Double, longitude: Double) {
         viewModelScope.launch {
             val current = settingsRepo.settings.first().breakLocations

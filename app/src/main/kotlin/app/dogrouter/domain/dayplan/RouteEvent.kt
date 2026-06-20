@@ -86,6 +86,8 @@ sealed interface RouteEvent {
         // The break may not start before this (the break window opens); the
         // retimer waits, like a pickup's earliestStart.
         val earliestStartSeconds: Int = 0,
+        // True for a lunch taken at home (vs a break location).
+        val atHome: Boolean = false,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,

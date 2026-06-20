@@ -9,10 +9,16 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.time.LocalTime
 
 class SettingsRepository(
     private val dataStore: DataStore<Preferences>,
 ) {
+    private val json = Json { ignoreUnknownKeys = true }
+
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
         AppSettings(
             bikeCapacityKg = prefs[BIKE_CAPACITY_KG] ?: AppSettings.DEFAULTS.bikeCapacityKg,
@@ -23,7 +29,30 @@ class SettingsRepository(
             homeAddress = prefs[HOME_ADDRESS] ?: AppSettings.DEFAULTS.homeAddress,
             homeLatitude = prefs[HOME_LATITUDE],
             homeLongitude = prefs[HOME_LONGITUDE],
+            breakWindowStart = prefs[BREAK_WINDOW_START]?.let { LocalTime.ofSecondOfDay(it * 60L) }
+                ?: AppSettings.DEFAULTS.breakWindowStart,
+            breakWindowEnd = prefs[BREAK_WINDOW_END]?.let { LocalTime.ofSecondOfDay(it * 60L) }
+                ?: AppSettings.DEFAULTS.breakWindowEnd,
+            breakDurationMinutes = prefs[BREAK_DURATION_MINUTES] ?: AppSettings.DEFAULTS.breakDurationMinutes,
+            breakLocations = prefs[BREAK_LOCATIONS]?.let {
+                runCatching { json.decodeFromString<List<BreakLocation>>(it) }.getOrNull()
+            } ?: AppSettings.DEFAULTS.breakLocations,
         )
+    }
+
+    suspend fun setBreakWindow(start: LocalTime, end: LocalTime) {
+        dataStore.edit {
+            it[BREAK_WINDOW_START] = start.toSecondOfDay() / 60
+            it[BREAK_WINDOW_END] = end.toSecondOfDay() / 60
+        }
+    }
+
+    suspend fun setBreakDuration(minutes: Int) {
+        dataStore.edit { it[BREAK_DURATION_MINUTES] = minutes }
+    }
+
+    suspend fun setBreakLocations(locations: List<BreakLocation>) {
+        dataStore.edit { it[BREAK_LOCATIONS] = json.encodeToString(locations) }
     }
 
     suspend fun setCyclingSpeed(kmh: Float) {
@@ -65,6 +94,10 @@ class SettingsRepository(
             prefs[HOME_ADDRESS] = settings.homeAddress
             settings.homeLatitude?.let { prefs[HOME_LATITUDE] = it } ?: prefs.remove(HOME_LATITUDE)
             settings.homeLongitude?.let { prefs[HOME_LONGITUDE] = it } ?: prefs.remove(HOME_LONGITUDE)
+            prefs[BREAK_WINDOW_START] = settings.breakWindowStart.toSecondOfDay() / 60
+            prefs[BREAK_WINDOW_END] = settings.breakWindowEnd.toSecondOfDay() / 60
+            prefs[BREAK_DURATION_MINUTES] = settings.breakDurationMinutes
+            prefs[BREAK_LOCATIONS] = json.encodeToString(settings.breakLocations)
         }
     }
 
@@ -77,5 +110,9 @@ class SettingsRepository(
         val HOME_LATITUDE = doublePreferencesKey("home_latitude")
         val HOME_LONGITUDE = doublePreferencesKey("home_longitude")
         val CYCLING_SPEED_KMH = floatPreferencesKey("cycling_speed_kmh")
+        val BREAK_WINDOW_START = intPreferencesKey("break_window_start_min")
+        val BREAK_WINDOW_END = intPreferencesKey("break_window_end_min")
+        val BREAK_DURATION_MINUTES = intPreferencesKey("break_duration_minutes")
+        val BREAK_LOCATIONS = stringPreferencesKey("break_locations_json")
     }
 }

@@ -5,6 +5,7 @@ import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.prefs.AppSettings
+import app.dogrouter.data.prefs.BreakLocation
 import kotlinx.serialization.Serializable
 import java.time.LocalTime
 
@@ -80,6 +81,10 @@ data class SettingsDto(
     val homeAddress: String,
     val homeLatitude: Double? = null,
     val homeLongitude: Double? = null,
+    val breakWindowStart: String = AppSettings.DEFAULTS.breakWindowStart.toString(),
+    val breakWindowEnd: String = AppSettings.DEFAULTS.breakWindowEnd.toString(),
+    val breakDurationMinutes: Int = AppSettings.DEFAULTS.breakDurationMinutes,
+    val breakLocations: List<BreakLocation> = emptyList(),
 )
 
 // ---- mapping: entity/domain -> DTO ----
@@ -107,6 +112,8 @@ fun AppSettings.toDto() = SettingsDto(
     cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
     bikeOverheadMinutes = bikeOverheadMinutes, homeAddress = homeAddress,
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
+    breakWindowStart = breakWindowStart.toString(), breakWindowEnd = breakWindowEnd.toString(),
+    breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
 )
 
 // ---- mapping: DTO -> entity/domain ----
@@ -135,6 +142,8 @@ fun SettingsDto.toAppSettings() = AppSettings(
     cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
     bikeOverheadMinutes = bikeOverheadMinutes, homeAddress = homeAddress,
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
+    breakWindowStart = LocalTime.parse(breakWindowStart), breakWindowEnd = LocalTime.parse(breakWindowEnd),
+    breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
 )
 
 private fun transportStateOf(name: String): TransportState =

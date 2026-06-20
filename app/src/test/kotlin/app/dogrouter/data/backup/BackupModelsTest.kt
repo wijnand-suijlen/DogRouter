@@ -34,6 +34,9 @@ class BackupModelsTest {
         bikeCapacityKg = 65f, stopBufferMinutes = 5, cyclingSpeedKmh = 14f,
         walkingSpeedKmh = 3.5f, bikeOverheadMinutes = 4,
         homeAddress = "Home", homeLatitude = 48.81, homeLongitude = 2.23,
+        breakWindowStart = LocalTime.of(12, 30), breakWindowEnd = LocalTime.of(15, 30),
+        breakDurationMinutes = 25,
+        breakLocations = listOf(app.dogrouter.data.prefs.BreakLocation("Café", 48.80, 2.22)),
     )
 
     @Test

@@ -1,5 +1,7 @@
 package app.dogrouter.data.prefs
 
+import java.time.LocalTime
+
 /**
  * Planning-time parameters used by the day planner. Values live in
  * DataStore-Preferences and reach the planner via [SettingsRepository].
@@ -25,6 +27,14 @@ data class AppSettings(
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
+    // Optional mid-day break: when the walker enables it on Today, the planner
+    // tries to fit a [breakDurationMinutes] break (dog-free) at the nearest
+    // [breakLocations] spot, somewhere between [breakWindowStart] and
+    // [breakWindowEnd].
+    val breakWindowStart: LocalTime,
+    val breakWindowEnd: LocalTime,
+    val breakDurationMinutes: Int,
+    val breakLocations: List<BreakLocation>,
 ) {
     val hasHome: Boolean
         get() = homeLatitude != null && homeLongitude != null
@@ -45,6 +55,10 @@ data class AppSettings(
             homeAddress = "",
             homeLatitude = null,
             homeLongitude = null,
+            breakWindowStart = LocalTime.of(12, 0),
+            breakWindowEnd = LocalTime.of(16, 0),
+            breakDurationMinutes = 30,
+            breakLocations = emptyList(),
         )
     }
 }

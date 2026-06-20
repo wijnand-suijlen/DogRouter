@@ -165,6 +165,48 @@ class SolverHarness {
         println("Baseline written to ${out.absolutePath}")
     }
 
+    /** Print raw routing distances (BRouter vs straight line) for a weekday's
+     *  dogs, flagging failures and big detours. -Dsolver.dump (+ -Dsolver.router). */
+    @Test
+    fun dumpDistances() = runBlocking {
+        Assume.assumeTrue("set -Dsolver.dump", System.getProperty("solver.dump") != null)
+        val backup = loadBackup()
+        val settings = backup.settings.toAppSettings()
+        val dogs = backup.dogs.map { it.toEntity() }
+        val rules = backup.scheduleRules.map { it.toEntity() }
+        val dow = DayOfWeek.valueOf((System.getProperty("solver.day") ?: "TUESDAY").uppercase())
+        val bit = 1 shl (dow.value - 1)
+        val dayDogs = dogs.filter { d -> rules.any { it.dogId == d.id && (it.weekdaysMask and bit) != 0 } }
+        val routing = harnessRouting()
+        val points = buildList {
+            add("HOME" to settings.homeGeoPoint()!!)
+            dayDogs.forEach { add(it.name to GeoPoint(it.latitude!!, it.longitude!!)) }
+        }
+        println("=== raw routing distances for $dow (router=${System.getProperty("solver.router") ?: "haversine"}) ===")
+        for (i in points.indices) for (j in i + 1 until points.size) {
+            val (na, a) = points[i]
+            val (nb, b) = points[j]
+            val d = routing.route(a.latitude, a.longitude, b.latitude, b.longitude)?.distanceMeters
+            val straight = straightMeters(a, b)
+            val ratio = if (d != null && straight > 0) d.toDouble() / straight else 0.0
+            val flag = when {
+                d == null -> "  <-- FAILED (would fall back)"
+                ratio > 2.5 -> "  <-- ${"%.1f".format(ratio)}x straight!"
+                else -> ""
+            }
+            println("  ${na.padEnd(8)}-${nb.padEnd(8)} BRouter ${d ?: "null"}m  straight ${straight}m$flag")
+        }
+    }
+
+    private fun straightMeters(a: GeoPoint, b: GeoPoint): Int {
+        val r = 6_371_000.0
+        val dLat = Math.toRadians(b.latitude - a.latitude)
+        val dLon = Math.toRadians(b.longitude - a.longitude)
+        val h = sin(dLat / 2) * sin(dLat / 2) +
+            cos(Math.toRadians(a.latitude)) * cos(Math.toRadians(b.latitude)) * sin(dLon / 2) * sin(dLon / 2)
+        return (r * 2 * atan2(sqrt(h), sqrt(1 - h))).toInt()
+    }
+
     private class Stat(val min: Int, val median: Double, val mean: Double, val max: Int)
 
     private fun statsOf(values: List<Int>): Stat {
@@ -212,12 +254,24 @@ class SolverHarness {
 
     // ---- shared solver setup ---------------------------------------------
 
+    /** Straight-line by default; -Dsolver.router=brouter uses real BRouter
+     *  road distances from brouter-data/ (reproduces the on-device plan). */
+    private fun harnessRouting(): RoutingProvider =
+        if (System.getProperty("solver.router") == "brouter") {
+            RealBRouterRouting(
+                File(repoRoot(), "brouter-data/profiles2/bakfiets.brf"),
+                File(repoRoot(), "brouter-data/segments"),
+            )
+        } else {
+            HaversineRouting()
+        }
+
     private fun plannerFor(
         settings: AppSettings,
         pairs: Set<Pair<String, String>>,
         restarts: Int,
     ) = DayPlanner(
-        routingProvider = HaversineRouting(),
+        routingProvider = harnessRouting(),
         home = settings.homeGeoPoint(),
         capacityKg = settings.bikeCapacityKg,
         stopBufferSeconds = settings.stopBufferMinutes * 60,
@@ -432,7 +486,8 @@ class SolverHarness {
     ): List<WalkOption> {
         val bit = 1 shl (date.dayOfWeek.value - 1)
         val rulesForDay = rules.filter { (it.weekdaysMask and bit) != 0 }
-        val dogById = dogs.associateBy { it.id }
+        // Mirror DayPlanService: paused (inactive) dogs are skipped.
+        val dogById = dogs.filter { it.active }.associateBy { it.id }
         return rulesForDay
             .groupBy { it.dogId }
             .flatMap { (dogId, dogRules) ->

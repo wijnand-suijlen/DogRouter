@@ -3,7 +3,7 @@
 Internal hand-off document so a fresh Claude session can pick up where we
 left off. English only (internal design doc, not user-facing).
 
-Last touched: 2026-06-20. 47 commits on `main`.
+Last touched: 2026-06-20. 54 commits on `main`.
 
 ---
 
@@ -63,14 +63,12 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 
 ## Where plan quality is lost today (the weaknesses to attack)
 
-1. **Greedy insertion, no backtracking.** `DayPlanner.buildOnce` inserts
-   each `WalkOption` once into its cheapest feasible slot and never
-   reconsiders. The ONLY escape from a bad structure is the randomised
-   **multi-start** (`restarts`, default 60): re-run the whole greedy from
-   shuffled orders, keep the best by `isBetterThan`. That is a weak
-   metaheuristic — quality plateaus. **No local search** (remove-and-
-   reinsert, or-opt/2-opt, group swaps), no simulated annealing, no LNS.
-   This is the single biggest lever.
+1. ~~**Greedy insertion, no backtracking.**~~ **LARGELY ADDRESSED.** The
+   multi-start now seeds an **LNS** pass (ruin-and-recreate, default 200
+   iterations — see the ACTIVE roadmap above) that reconsiders the structure
+   and cut median day length materially. Still greedy *within* a repair, and
+   no SA / group moves / 2-opt yet (#4/#3/#5), but the "never reconsiders"
+   plateau is broken.
 2. **Cost function is only day length.** `isBetterThan` → `score()` =
    elapsed seconds + a big per-dog-over-`preferredGroupSize` penalty.
    It does NOT penalise over-walking, idle/waiting, or the number of bike
@@ -129,12 +127,21 @@ currently set by the luck of the greedy insertion order. So structure-
 reconsidering search wins most. Five proposals, ranked by expected
 makespan gain:
 
-1. **LNS — ruin-and-recreate.** Destroy K placed options (random / worst /
-   related), re-insert with the existing `tryInsertOption` (the repair half
-   already exists), accept if `score()` improves; thousands of iterations
-   (a plan solves in <1s). Reconsiders grouping + sequencing + foot/bike
-   together; optimises makespan directly. **Top pick** — best gain per
-   effort, reuses repair.
+1. ~~**LNS — ruin-and-recreate.**~~ **DONE & ADOPTED (default).** Each
+   iteration ruins K placed options — alternating **random** and **worst**
+   removal (drop those whose presence costs the day most, randomised
+   `rand^bias` pick) — and greedily re-inserts them (plus any unplaced, so a
+   freed slot can rescue a conflict) with `tryInsertOption`, hill-climbing on
+   `score()`. One `Random(seed)` drives it all, so plans stay deterministic /
+   cacheable. `lnsIterations` defaults to `DEFAULT_LNS_ITERATIONS = 200`
+   (tuned: day length plateaus by ~200, identical at 500/1k/3k; ~2 s/plan,
+   ~5 s heaviest day, haversine). Measured gain vs the old multi-start:
+   median day length **Mon 7h16→6h30, Thu 7h25→6h35, Wed 7h49→7h28, Fri
+   7h21→7h15**, Tue ~unchanged, and the per-seed spread collapses (every
+   seed now reaches essentially the same near-optimum). `docs/solver-
+   baseline.md` is regenerated with LNS on. Key pieces in `DayPlanner`:
+   `Solution`, `buildOnce`, `remove` (surgical span extraction, tested by
+   `RemoveOperatorTest`), `ruinAndRecreate`, `worstOptions`, `repair`.
 2. **ALNS — related (Shaw) removal + regret-k repair + adaptive operator
    weights.** The high-ceiling upgrade of #1: regret repair places tight
    windows / hard dogs better; related removal re-clusters groups. Most
@@ -150,13 +157,17 @@ makespan gain:
    rides. Lowest structural headroom here, and the shared-walk / precedence
    semantics make segment moves fiddly. Optional polish.
 
-**Recommended build order: #1 → #4 → #3 → #2**, #5 optional. Each step
-measured against `docs/solver-baseline.md` (regenerate → diff = gain /
-regression). **#1 is being detailed/implemented next.**
+**Build order: ~~#1~~ → #4 → #3 → #2**, #5 optional. Each step measured
+against `docs/solver-baseline.md` (regenerate → diff = gain / regression).
+**#1 done; #4 (SA acceptance) is next** — LNS currently hill-climbs, so SA
+acceptance is the cheapest way to push past the plateau further, then group
+moves (#3), then full ALNS (#2: regret-k repair + Shaw removal + adaptive
+weights, of which worst removal is a first taste).
 
-Caveat: LNS optimises pure day length, so it will trade more over-walk for
-a shorter day until the #2 over-walk term lands — consistent with "day
-length primary", but it makes #2 the natural follow-up.
+Caveat: LNS optimises pure day length, so it trades more over-walk for a
+shorter day until the #2 over-walk term lands — consistent with "day length
+primary", but it makes that term the natural follow-up. (Seen in the new
+baseline: over-walk is mixed / slightly up.)
 
 ## Other directions (later)
 
@@ -172,18 +183,23 @@ length primary", but it makes #2 the natural follow-up.
 
 `domain/dayplan/` — all JVM-pure:
 
-- **`DayPlanner.kt`** (~460 lines): randomised **multi-start greedy**.
+- **`DayPlanner.kt`**: **multi-start greedy seeding an LNS pass.**
   `plan(date, options: List<WalkOption>, seed)` builds a `DistanceMatrix`
-  once, runs `restarts` (default 60) builds — restart 0 is deadline-sorted
-  order, the rest are `Random(seed)` shuffles — and keeps the best by
-  `isBetterThan` (fewest conflicts, then lowest `score()` = elapsed +
-  group-oversize penalty). `buildOnce` inserts each option via
-  `tryInsertOption` → `tryInsert`, which tries: **Mode A** new
-  pickup-walk-dropoff triplet; **Mode B** join an existing walk and extend
-  its duration; **Mode C** ride along several existing walks without
-  extending (splits one duration across sessions). `tryInsertOption` tries
-  each alternative of a `WalkOption` and keeps the cheapest (exclusive
-  choice → exactly one scheduled).
+  once, runs `restarts` (default 60) greedy builds — restart 0 deadline-
+  sorted, the rest `Random(seed)` shuffles — to get an incumbent `Solution`,
+  then runs `lnsIterations` (default 200) of **ruin-and-recreate**
+  (`ruinAndRecreate`: random / `worstOptions` removal → `remove` → `repair`),
+  hill-climbing on `isBetterThan` (fewest conflicts, then lowest `score()` =
+  elapsed + group-oversize penalty). One `Random(seed)` drives multi-start,
+  ruin and repair, so plans are deterministic / cacheable. A **`Solution`**
+  (events + placed/unplaced options) is the working unit; `toDayRoute` makes
+  the public result. `buildOnce` / `repair` insert each option via
+  `tryInsertOption` → `tryInsert`: **Mode A** new pickup-walk-dropoff
+  triplet; **Mode B** join an existing walk and extend its duration; **Mode
+  C** ride along several existing walks without extending (splits one
+  duration). `remove` extracts a placed option's span (drop pickup/dropoff,
+  take the dog out of that span's walks) and retimes — removal is *not*
+  monotonic on makespan, which is fine (accept only after repair).
 - **`retimeAndCost`** (inside DayPlanner): three phases. **(1) legs** —
   per leg choose **bike** (metres/cyclingSpeed + fixed `bikeOverheadSeconds`)
   vs **on foot** (metres/walkingSpeed), whichever is faster; position-only,
@@ -239,11 +255,13 @@ Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
 Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
 router; covers the 19-June report, two-rule dogs, splitting, determinism,
 exclusive choice, latest-start-bounds-the-walk, no-one-left-behind, group
-cap, same-address no-overhead, nearby-dogs-walked-on-foot),
-`BackupModelsTest.kt` (export/import round-trip), and the off-device
-`SolverHarness.kt` (the laptop harness above — not an assertion test;
-`runSolverOnRealData` prints, `baselineAcrossSeeds` regenerates the
-baseline).
+cap, same-address no-overhead, nearby-dogs-walked-on-foot — **pinned to
+`lnsIterations = 0`** so they test construction + constraints, not LNS),
+`RemoveOperatorTest.kt` (the LNS remove operator: span dropped, plan stays
+feasible), `BackupModelsTest.kt` (export/import round-trip), and the
+off-device `SolverHarness.kt` (the laptop harness above — not an assertion
+test; `runSolverOnRealData` prints, `baselineAcrossSeeds` regenerates the
+baseline; both honour `-Dsolver.lns=N`).
 
 ---
 

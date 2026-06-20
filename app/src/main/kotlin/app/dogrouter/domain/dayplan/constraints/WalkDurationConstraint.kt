@@ -2,6 +2,7 @@ package app.dogrouter.domain.dayplan.constraints
 
 import app.dogrouter.domain.dayplan.PlanningConstraint
 import app.dogrouter.domain.dayplan.RouteEvent
+import app.dogrouter.domain.dayplan.footCreditSeconds
 import app.dogrouter.domain.dayplan.walkSpans
 
 /**
@@ -31,10 +32,7 @@ class WalkDurationConstraint : PlanningConstraint {
             val dwellWalked = walks
                 .filter { walk -> walk.timeSeconds in range && walk.dogs.any { it.id == dogId } }
                 .sumOf { it.durationSeconds }
-            val footTravelWalked = events
-                .filter { it.arrivedByFoot && it.timeSeconds in range }
-                .sumOf { it.incomingTravelSeconds }
-            val totalWalked = dwellWalked + footTravelWalked
+            val totalWalked = dwellWalked + span.footCreditSeconds(events)
 
             val required = pickup.rule.durationMinutes * 60
             if (totalWalked < required) {

@@ -10,6 +10,7 @@ import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 import java.time.LocalDate
+import kotlin.math.ceil
 import kotlin.random.Random
 
 /**
@@ -445,15 +446,10 @@ class DayPlanner(
             }
         }
 
-        // Phase 2 — dwell durations. Behaviour-preserving for now: keep each
-        // Walk at its inserted duration. (Step 2 will shorten it by the
-        // on-foot time the dog already accrued in its span, so foot legs
-        // become true double-duty instead of extra walking on top.)
-        val dwell = IntArray(n)
-        for (i in 0 until n) {
-            val e = events[i]
-            if (e is RouteEvent.Walk) dwell[i] = e.durationSeconds
-        }
+        // Phase 2 — dwell durations. Shorten each in-place walk by the on-foot
+        // time the dog already accrues while aboard, so foot legs are true
+        // double-duty rather than extra walking on top.
+        val dwell = effectiveDwells(events, byFoot, travel)
 
         // Phase 3 — times. Walk forward accumulating travel, dwell, stop
         // buffers and earliestStart waits; bail if the day runs past its end.
@@ -505,6 +501,70 @@ class DayPlanner(
 
         val cost = retimed.last().timeSeconds - retimed.first().timeSeconds
         return retimed to cost
+    }
+
+    /**
+     * Effective in-place dwell per Walk. A dog needs `required` walk seconds;
+     * the on-foot legs it takes while aboard already count (true double-duty),
+     * so the in-place dwell only makes up the rest (the dog's "deficit").
+     *
+     * A walk is shared by a group, so its duration is the largest deficit any
+     * member still needs from it. A dog walked across several walks (a split
+     * span) has its deficit shared between those walks in proportion to their
+     * inserted lengths — so a split stays a split and the parts still sum to
+     * the deficit (rounded up, never under). Foot credit excludes the leg that
+     * fetches the dog (see [footCreditSeconds]); legs are classified in phase
+     * 1 and do not depend on durations, so this is well-defined here.
+     *
+     * With `bikeOverheadSeconds == 0` no leg is ever walked, so every deficit
+     * equals the full required duration and dwells are unchanged.
+     */
+    private fun effectiveDwells(events: List<RouteEvent>, byFoot: BooleanArray, travel: IntArray): IntArray {
+        val n = events.size
+        // Pair pickups with dropoffs by occurrence (FIFO), as indices, and for
+        // each span record its deficit and the walk indices the dog joins.
+        val open = HashMap<String, ArrayDeque<Int>>()
+        val deficit = ArrayList<Int>()
+        val spanWalks = ArrayList<List<Int>>()
+        for (i in 0 until n) {
+            when (val e = events[i]) {
+                is RouteEvent.Pickup -> open.getOrPut(e.dog.id) { ArrayDeque() }.addLast(i)
+                is RouteEvent.Dropoff -> {
+                    val pIdx = open[e.dog.id]?.removeFirstOrNull() ?: continue
+                    val required = (events[pIdx] as RouteEvent.Pickup).rule.durationMinutes * 60
+                    // On-foot credit: legs after the pickup through the dropoff.
+                    var foot = 0
+                    for (k in pIdx + 1..i) if (byFoot[k]) foot += travel[k]
+                    val walks = ((pIdx + 1) until i).filter { k ->
+                        val w = events[k]
+                        w is RouteEvent.Walk && w.dogs.any { it.id == e.dog.id }
+                    }
+                    deficit.add(maxOf(0, required - foot))
+                    spanWalks.add(walks)
+                }
+                else -> Unit
+            }
+        }
+
+        val dwell = IntArray(n)
+        for (i in 0 until n) {
+            val e = events[i]
+            if (e !is RouteEvent.Walk) continue
+            var dur = e.durationSeconds // fallback if no span covers this walk
+            var covered = false
+            for (s in spanWalks.indices) {
+                val walks = spanWalks[s]
+                if (i !in walks) continue
+                if (!covered) { dur = 0; covered = true }
+                val sumOrig = walks.sumOf { (events[it] as RouteEvent.Walk).durationSeconds }
+                val need = if (sumOrig > 0)
+                    ceil(deficit[s].toDouble() * e.durationSeconds / sumOrig).toInt()
+                else deficit[s]
+                if (need > dur) dur = need
+            }
+            dwell[i] = dur
+        }
+        return dwell
     }
 
     private fun List<PlanningConstraint>.violation(events: List<RouteEvent>): String? {

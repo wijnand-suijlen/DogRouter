@@ -9,63 +9,63 @@ Data: 10 dogs, 15 schedule rules. Settings: cycling 15.0km/h, walking 3.0km/h, b
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 6h56m | 7h37m | 7h33m | 8h06m |
-| cycling | 1h30m | 1h59m | 2h12m | 3h07m |
-| on-foot | 8m | 1h00m | 1h02m | 1h59m |
-| bike mounts | 5 | 7.0 | 7.7 | 11 |
-| dwell walk | 3h30m | 4h30m | 4h12m | 4h45m |
-| idle | 0m | 5m | 6m | 14m |
-| over-walk | 19m | 3h25m | 2h49m | 4h51m |
+| day length | 7h03m | 7h18m | 7h18m | 7h32m |
+| cycling | 45m | 1h30m | 1h20m | 2h02m |
+| on-foot | 1h49m | 2h32m | 3h03m | 4h27m |
+| bike mounts | 2 | 5.0 | 4.3 | 7 |
+| dwell walk | 1h45m | 2h40m | 2h41m | 3h40m |
+| idle | 0m | 7m | 13m | 41m |
+| over-walk | 1h23m | 1h52m | 2h00m | 2h50m |
 
 ## Tuesday — 8 walk options
 
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 7h39m | 7h44m | 7h44m | 7h52m |
-| cycling | 1h45m | 2h01m | 2h02m | 2h19m |
-| on-foot | 40m | 54m | 55m | 1h08m |
+| day length | 7h17m | 7h17m | 7h18m | 7h19m |
+| cycling | 1h51m | 2h06m | 2h08m | 2h23m |
+| on-foot | 54m | 1h34m | 1h25m | 1h47m |
 | bike mounts | 6 | 7.0 | 7.1 | 8 |
-| dwell walk | 4h45m | 4h45m | 4h45m | 4h45m |
-| idle | 0m | 0m | 0m | 2m |
-| over-walk | 52m | 2h19m | 2h33m | 3h55m |
+| dwell walk | 3h09m | 3h48m | 3h39m | 4h20m |
+| idle | 0m | 2m | 5m | 17m |
+| over-walk | 37m | 2h02m | 1h52m | 2h58m |
 
 ## Wednesday — 10 walk options
 
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 8h08m | 8h23m | 8h22m | 8h47m |
-| cycling | 2h24m | 2h47m | 2h55m | 3h52m |
-| on-foot | 0m | 45m | 39m | 58m |
-| bike mounts | 8 | 9.5 | 10.1 | 14 |
-| dwell walk | 4h30m | 4h45m | 4h45m | 5h00m |
-| idle | 0m | 0m | 2m | 26m |
-| over-walk | 15m | 1h32m | 1h40m | 2h39m |
+| day length | 7h36m | 7h55m | 7h52m | 8h08m |
+| cycling | 2h20m | 2h38m | 2h38m | 2h59m |
+| on-foot | 45m | 59m | 1h02m | 1h50m |
+| bike mounts | 8 | 9.0 | 9.0 | 10 |
+| dwell walk | 3h20m | 3h50m | 3h50m | 4h04m |
+| idle | 0m | 26m | 21m | 26m |
+| over-walk | 43m | 1h26m | 1h38m | 3h23m |
 
 ## Thursday — 7 walk options
 
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 7h00m | 7h43m | 7h30m | 7h47m |
-| cycling | 2h16m | 2h16m | 2h25m | 2h45m |
-| on-foot | 14m | 26m | 22m | 26m |
-| bike mounts | 8 | 8.0 | 8.6 | 10 |
-| dwell walk | 4h00m | 5h00m | 4h42m | 5h00m |
-| idle | 0m | 0m | 0m | 0m |
-| over-walk | 35m | 1h49m | 1h27m | 1h49m |
+| day length | 6h09m | 7h25m | 7h12m | 8h17m |
+| cycling | 1h20m | 2h06m | 1h54m | 2h20m |
+| on-foot | 29m | 1h17m | 1h18m | 2h19m |
+| bike mounts | 4 | 7.0 | 6.3 | 8 |
+| dwell walk | 2h44m | 3h48m | 3h50m | 5h11m |
+| idle | 0m | 0m | 9m | 1h16m |
+| over-walk | 35m | 1h59m | 1h50m | 3h56m |
 
 ## Friday — 8 walk options
 
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 7h33m | 7h33m | 7h40m | 7h51m |
-| cycling | 2h02m | 2h02m | 2h12m | 2h48m |
-| on-foot | 32m | 1h01m | 55m | 1h15m |
-| bike mounts | 7 | 7.0 | 7.6 | 10 |
-| dwell walk | 4h30m | 4h30m | 4h31m | 4h45m |
-| idle | 0m | 0m | 0m | 2m |
-| over-walk | 48m | 1h35m | 1h41m | 2h56m |
+| day length | 7h15m | 7h24m | 7h24m | 7h36m |
+| cycling | 2h02m | 2h05m | 2h13m | 2h51m |
+| on-foot | 38m | 1h15m | 1h09m | 1h18m |
+| bike mounts | 7 | 7.0 | 7.5 | 10 |
+| dwell walk | 3h43m | 3h47m | 3h53m | 4h10m |
+| idle | 0m | 4m | 7m | 22m |
+| over-walk | 21m | 42m | 49m | 1h21m |
 

@@ -402,15 +402,11 @@ class SolverHarness {
             val dwell = walks
                 .filter { w -> w.timeSeconds in range && w.dogs.any { it.id == pickup.dog.id } }
                 .sumOf { it.durationSeconds }
-            // Every on-foot leg while the dog is aboard (its leg time falls in
-            // this span) counts as walk time — that is what "aboard" means.
-            // This includes a walk back to fetch the bike when the dog is
-            // still with us: those dogs really walk that stretch. An empty
-            // walk-back falls in no dog's span, so it counts for nobody.
-            val foot = events
-                .filter { it.arrivedByFoot && it.timeSeconds in range }
-                .sumOf { it.incomingTravelSeconds }
-            val walked = dwell + foot
+            // On-foot legs the dog walks while aboard count as walk time
+            // (true double-duty), including a walk back to the bike while it
+            // is still with us. The pickup's own incoming leg is excluded —
+            // that leg fetches the dog, not yet aboard. See footCreditSeconds.
+            val walked = dwell + span.footCreditSeconds(events)
             val required = pickup.rule.durationMinutes * 60
             val over = (walked - required).coerceAtLeast(0)
             totalOver += over
@@ -475,7 +471,8 @@ class SolverHarness {
     }
 
     /** Repo root = the directory holding the backup file. */
-    private fun repoRoot(): File = findBackupFile().parentFile
+    private fun repoRoot(): File = findBackupFile().absoluteFile.parentFile
+        ?: error("backup file has no parent directory")
 
     private fun settingsLine(s: AppSettings): String =
         "Settings: home=(${s.homeLatitude}, ${s.homeLongitude}), " +

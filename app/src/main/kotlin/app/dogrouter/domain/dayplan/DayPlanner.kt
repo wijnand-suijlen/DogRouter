@@ -408,63 +408,85 @@ class DayPlanner(
      * [dayEndSeconds].
      */
     private fun retimeAndCost(events: MutableList<RouteEvent>, matrix: DistanceMatrix): Pair<List<RouteEvent>, Int>? {
-        var t = dayStartSeconds
+        val n = events.size
         val homeLocation = events.first().location
-        // The walker's current position, and where the bike is parked. They
-        // diverge while the group walks on foot (the bike stays put); a bike
-        // leg first walks the group back to the parked bike.
+
+        // Phase 1 — legs. Decide each leg's mode (foot vs bike) and travel
+        // time, and where each in-place Walk happens. This depends only on
+        // positions/distances, NOT on how long the dwell walks are, so it can
+        // run before durations are known. The walker's position and the
+        // parked bike diverge while the group walks on foot (the bike stays
+        // put); a bike leg first walks the group back to the parked bike.
+        val byFoot = BooleanArray(n)
+        val travel = IntArray(n)
+        val walkLoc = arrayOfNulls<GeoPoint>(n)
         var walkerPos = homeLocation
         var bikePos = homeLocation
-        val retimed = mutableListOf<RouteEvent>()
-        for ((i, event) in events.withIndex()) {
-            var legByFoot = false
-            var legTravel = 0
-            var walkLocation = event.location
-            if (i > 0) {
-                if (event is RouteEvent.Walk) {
-                    // In-place dwell where the walker stands (bike parked nearby).
-                    walkLocation = walkerPos
+        for (i in 1 until n) {
+            val event = events[i]
+            if (event is RouteEvent.Walk) {
+                // In-place dwell where the walker stands (bike parked nearby).
+                walkLoc[i] = walkerPos
+            } else {
+                val footTime = matrix.footSeconds(walkerPos, event.location)
+                val returnToBike = matrix.footSeconds(walkerPos, bikePos)
+                val bikeTotal = returnToBike + matrix.bikeSeconds(bikePos, event.location)
+                // The day must end with the bike back home, so the final leg
+                // always fetches the parked bike rather than walking.
+                if (event !is RouteEvent.HomeEnd && footTime <= bikeTotal) {
+                    byFoot[i] = true
+                    travel[i] = footTime
+                    walkerPos = event.location
                 } else {
-                    val footTime = matrix.footSeconds(walkerPos, event.location)
-                    val returnToBike = matrix.footSeconds(walkerPos, bikePos)
-                    val bikeTotal = returnToBike + matrix.bikeSeconds(bikePos, event.location)
-                    // The day must end with the bike back home, so the final
-                    // leg always fetches the parked bike rather than walking.
-                    if (event !is RouteEvent.HomeEnd && footTime <= bikeTotal) {
-                        // Walk the group there; the bike stays parked.
-                        legByFoot = true
-                        legTravel = footTime
-                        walkerPos = event.location
-                    } else {
-                        // Walk back to the bike (if away) and ride on.
-                        legByFoot = false
-                        legTravel = bikeTotal
-                        walkerPos = event.location
-                        bikePos = event.location
-                    }
+                    travel[i] = bikeTotal
+                    walkerPos = event.location
+                    bikePos = event.location
                 }
-                t += legTravel
             }
+        }
+
+        // Phase 2 — dwell durations. Behaviour-preserving for now: keep each
+        // Walk at its inserted duration. (Step 2 will shorten it by the
+        // on-foot time the dog already accrued in its span, so foot legs
+        // become true double-duty instead of extra walking on top.)
+        val dwell = IntArray(n)
+        for (i in 0 until n) {
+            val e = events[i]
+            if (e is RouteEvent.Walk) dwell[i] = e.durationSeconds
+        }
+
+        // Phase 3 — times. Walk forward accumulating travel, dwell, stop
+        // buffers and earliestStart waits; bail if the day runs past its end.
+        var t = dayStartSeconds
+        val retimed = ArrayList<RouteEvent>(n)
+        for (i in 0 until n) {
+            val event = events[i]
+            if (i > 0) t += travel[i]
             if (event is RouteEvent.Pickup) {
                 val earliest = event.rule.earliestStart?.toSecondOfDay()
                 if (earliest != null && earliest > t) t = earliest
             }
             val placed: RouteEvent = when (event) {
                 is RouteEvent.HomeStart ->
-                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i])
                 is RouteEvent.HomeEnd ->
-                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i])
                 is RouteEvent.Pickup ->
-                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i])
                 is RouteEvent.Dropoff ->
-                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i])
                 is RouteEvent.Walk ->
-                    event.copy(timeSeconds = t, location = walkLocation, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                    event.copy(
+                        timeSeconds = t,
+                        location = walkLoc[i] ?: event.location,
+                        durationSeconds = dwell[i],
+                        arrivedByFoot = byFoot[i],
+                        incomingTravelSeconds = travel[i],
+                    )
                 // The solver never builds FetchBike events; they are added by
-                // withBikeFetches after planning. Handled here only for
-                // exhaustiveness.
+                // withBikeFetches after planning. Handled here for exhaustiveness.
                 is RouteEvent.FetchBike ->
-                    event.copy(timeSeconds = t, arrivedByFoot = legByFoot, incomingTravelSeconds = legTravel)
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i])
             }
             t += placed.durationAtSeconds(stopBufferSeconds)
             if (t > dayEndSeconds) return null

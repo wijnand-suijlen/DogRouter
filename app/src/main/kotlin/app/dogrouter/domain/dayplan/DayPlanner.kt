@@ -106,13 +106,13 @@ class DayPlanner(
         // is built once above; each restart is pure in-memory work.
         val rng = Random(seed)
         val deadlineOrder = routable.sortedBy { it.deadlineSeconds() }
-        var best: DayRoute? = null
+        var best: Solution? = null
         repeat(restarts.coerceAtLeast(1)) { iteration ->
             val order = if (iteration == 0) deadlineOrder else routable.shuffled(rng)
-            val candidate = buildOnce(date, order, unroutable, matrix, constraints)
+            val candidate = buildOnce(order, matrix, constraints)
             if (best == null || candidate.isBetterThan(best!!)) best = candidate
         }
-        return best!!.withBikeFetches()
+        return best!!.toDayRoute(date, unroutable).withBikeFetches()
     }
 
     /**
@@ -170,65 +170,77 @@ class DayPlanner(
     }
 
     /**
+     * A candidate plan in progress: the retimed event list plus the options
+     * scheduled into it and the routable options that could not be placed.
+     * This is the unit the multi-start (and, later, the LNS destroy/repair
+     * search) works on; [toDayRoute] turns the winner into the public result.
+     */
+    private class Solution(
+        val events: List<RouteEvent>,
+        val placed: List<WalkOption>,
+        val unplaced: List<WalkOption>,
+    )
+
+    /**
      * A plan is better when it leaves fewer walks unplaced; then when its
      * [score] is lower. The score adds a big penalty per dog over the
      * preferred group size, so larger groups are used only when they place
      * a dog that otherwise could not go — never just to shorten the day.
+     * (Comparing [unplaced] alone matches comparing total conflicts: the
+     * unroutable options are constant across all candidates of one plan.)
      */
-    private fun DayRoute.isBetterThan(other: DayRoute): Boolean = when {
-        conflicts.size != other.conflicts.size -> conflicts.size < other.conflicts.size
+    private fun Solution.isBetterThan(other: Solution): Boolean = when {
+        unplaced.size != other.unplaced.size -> unplaced.size < other.unplaced.size
         else -> score() < other.score()
     }
 
-    private fun DayRoute.score(): Long =
+    private fun Solution.score(): Long =
         elapsedSeconds().toLong() + dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
 
-    private fun DayRoute.dogsOverPreferred(): Int =
+    private fun Solution.dogsOverPreferred(): Int =
         events.filterIsInstance<RouteEvent.Walk>()
             .sumOf { (it.dogs.size - preferredGroupSize).coerceAtLeast(0) }
 
-    private fun DayRoute.elapsedSeconds(): Int =
+    private fun Solution.elapsedSeconds(): Int =
         if (events.size >= 2) events.last().timeSeconds - events.first().timeSeconds else 0
 
-    /** One greedy build over a fixed insertion [order] of options. */
-    private fun buildOnce(
-        date: LocalDate,
-        order: List<WalkOption>,
-        unroutable: List<PlanConflict>,
-        matrix: DistanceMatrix,
-        constraints: List<PlanningConstraint>,
-    ): DayRoute {
-        var events: List<RouteEvent> = listOf(homeStart(), homeEnd(dayStartSeconds))
-        val conflicts = mutableListOf<PlanConflict>()
-        conflicts.addAll(unroutable)
-
-        for (option in order) {
-            val placed = tryInsertOption(events, option, matrix, constraints)
-            if (placed != null) {
-                events = placed
-            } else {
-                val reason = if (option.isChoice) {
-                    "No feasible slot for any of its time windows"
-                } else {
-                    "No feasible slot in the day"
-                }
-                conflicts.add(PlanConflict(option.dog, reason))
-            }
-        }
-
+    /** Build the public [DayRoute] from a finished solution. */
+    private fun Solution.toDayRoute(date: LocalDate, unroutable: List<PlanConflict>): DayRoute {
         // Cycling = the travel of bike legs; walking = dwell-walk durations
         // plus the travel of on-foot legs (which doubles as walk time).
         val totalCycling = events.filter { !it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
         val totalWalking = events.filterIsInstance<RouteEvent.Walk>().sumOf { it.durationSeconds } +
             events.filter { it.arrivedByFoot }.sumOf { it.incomingTravelSeconds }
+        val conflicts = unroutable + unplaced.map {
+            val reason = if (it.isChoice) {
+                "No feasible slot for any of its time windows"
+            } else {
+                "No feasible slot in the day"
+            }
+            PlanConflict(it.dog, reason)
+        }
+        return DayRoute(date, events, totalCycling, totalWalking, conflicts)
+    }
 
-        return DayRoute(
-            date = date,
-            events = events,
-            totalCyclingSeconds = totalCycling,
-            totalWalkingSeconds = totalWalking,
-            conflicts = conflicts,
-        )
+    /** One greedy build over a fixed insertion [order] of options. */
+    private fun buildOnce(
+        order: List<WalkOption>,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution {
+        var events: List<RouteEvent> = listOf(homeStart(), homeEnd(dayStartSeconds))
+        val placed = mutableListOf<WalkOption>()
+        val unplaced = mutableListOf<WalkOption>()
+        for (option in order) {
+            val inserted = tryInsertOption(events, option, matrix, constraints)
+            if (inserted != null) {
+                events = inserted
+                placed.add(option)
+            } else {
+                unplaced.add(option)
+            }
+        }
+        return Solution(events, placed, unplaced)
     }
 
     /**

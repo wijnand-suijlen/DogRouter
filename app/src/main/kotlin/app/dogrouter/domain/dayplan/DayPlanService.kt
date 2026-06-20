@@ -101,7 +101,8 @@ class DayPlanService(
     ): DayRoute {
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
         val rulesForDay = inputs.rules.filter { (it.weekdaysMask and bit) != 0 }
-        val dogById = inputs.dogs.associateBy { it.id }
+        // Paused dogs are skipped: their rules find no dog and drop out below.
+        val dogById = inputs.dogs.filter { it.active }.associateBy { it.id }
 
         // Group each dog's rules: every non-alternative rule is its own
         // required walk; all of a dog's alternative rules become one option

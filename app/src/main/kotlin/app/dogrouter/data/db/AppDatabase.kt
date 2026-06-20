@@ -13,7 +13,7 @@ import app.dogrouter.data.entity.DogScheduleRule
         DogScheduleRule::class,
         DogIncompatibility::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

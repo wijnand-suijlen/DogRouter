@@ -47,6 +47,7 @@ data class DogDto(
     val inCargoBike: String = TransportState.NotTested.name,
     val inBackpack: String = TransportState.NotTested.name,
     val allowLongerWalk: Boolean = true,
+    val active: Boolean = true,
     val notes: String? = null,
     val createdAt: Long,
 )
@@ -89,7 +90,7 @@ fun Dog.toDto() = DogDto(
     latitude = latitude, longitude = longitude, stopNotes = stopNotes,
     stopAdjustmentMinutes = stopAdjustmentMinutes,
     inCargoBike = inCargoBike.name, inBackpack = inBackpack.name,
-    allowLongerWalk = allowLongerWalk, notes = notes, createdAt = createdAt,
+    allowLongerWalk = allowLongerWalk, active = active, notes = notes, createdAt = createdAt,
 )
 
 fun DogScheduleRule.toDto() = ScheduleRuleDto(
@@ -116,7 +117,7 @@ fun DogDto.toEntity() = Dog(
     latitude = latitude, longitude = longitude, stopNotes = stopNotes,
     stopAdjustmentMinutes = stopAdjustmentMinutes,
     inCargoBike = transportStateOf(inCargoBike), inBackpack = transportStateOf(inBackpack),
-    allowLongerWalk = allowLongerWalk, notes = notes, createdAt = createdAt,
+    allowLongerWalk = allowLongerWalk, active = active, notes = notes, createdAt = createdAt,
 )
 
 fun ScheduleRuleDto.toEntity() = DogScheduleRule(

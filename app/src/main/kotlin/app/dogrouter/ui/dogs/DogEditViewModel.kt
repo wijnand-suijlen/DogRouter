@@ -49,6 +49,9 @@ data class DogFormState(
     val inCargoBike: TransportState = TransportState.NotTested,
     val inBackpack: TransportState = TransportState.NotTested,
     val allowLongerWalk: Boolean = true,
+    // Carried through edit so saving never reactivates a paused dog; the
+    // active toggle itself lives on the Dogs list, not this form.
+    val active: Boolean = true,
     val notes: String = "",
     val scheduleRules: List<ScheduleRuleDraft> = emptyList(),
     val incompatibleDogIds: Set<String> = emptySet(),
@@ -126,6 +129,7 @@ class DogEditViewModel(
                     inCargoBike = existing.inCargoBike,
                     inBackpack = existing.inBackpack,
                     allowLongerWalk = existing.allowLongerWalk,
+                    active = existing.active,
                     notes = existing.notes.orEmpty(),
                     scheduleRules = rules,
                     incompatibleDogIds = incompatibilities,
@@ -253,6 +257,7 @@ class DogEditViewModel(
                 inCargoBike = s.inCargoBike,
                 inBackpack = s.inBackpack,
                 allowLongerWalk = s.allowLongerWalk,
+                active = s.active,
                 notes = s.notes.trim().ifBlank { null },
             )
             if (isNew) dogDao.insert(dog) else dogDao.update(dog)

@@ -30,6 +30,10 @@ data class Dog(
     // injuries (e.g. a sore paw) must be set to false so they walk
     // exactly the requested duration, never more.
     val allowLongerWalk: Boolean = true,
+    // Whether the dog is currently walked. A temporarily paused dog (owner on
+    // holiday, etc.) is set inactive so the planner skips it, without losing
+    // its record. Toggled from the Dogs list; reactivated manually.
+    val active: Boolean = true,
     val notes: String?,
     val createdAt: Long = System.currentTimeMillis(),
 )

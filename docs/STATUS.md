@@ -3,7 +3,7 @@
 Internal hand-off document so a fresh Claude session can pick up where we
 left off. English only (internal design doc, not user-facing).
 
-Last touched: 2026-06-20. 54 commits on `main`.
+Last touched: 2026-06-20. 73 commits on `main`.
 
 ---
 
@@ -33,7 +33,9 @@ quality in seconds instead of rebuilding the APK. The harness is a JUnit
   **plus the quality metrics below**. Run: `./run_solver.sh` (wraps the
   gradle `--tests "*SolverHarness"` invocation with `-PsolverOutput`; full
   report also written to `app/build/solver-report.txt`, gitignored).
-  Knobs: `-Dsolver.day=MONDAY`, `-Dsolver.restarts=N`, `-Dsolver.seed=N`.
+  Knobs: `-Dsolver.day=MONDAY`, `-Dsolver.restarts=N`, `-Dsolver.seed=N`,
+  `-Dsolver.lns=N`, `-Dsolver.backup=<file>`, `-Dsolver.router=brouter`,
+  `-Dsolver.dump`.
 - `baselineAcrossSeeds` (gated by `-Dsolver.baseline`, run via
   `./run_baseline.sh`) runs every weekday across 10 seeds and writes
   **`docs/solver-baseline.md`** — min/median/mean/max per metric.
@@ -53,8 +55,9 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 ## Quality metrics the harness prints (and we optimise against the baseline)
 
 - **Conflicts** (unplaced walks) — must be 0.
-- **Total day length** (HomeStart→HomeEnd elapsed) — **the current sole
-  cost** (`score()`); still the user's primary criterion.
+- **Total day length** (HomeStart→HomeEnd elapsed) — the dominant term in
+  `score()` and the user's primary criterion, now alongside a
+  **`cyclingWeight`×ride-seconds** term (default 1.0).
 - **Per-dog walked vs required**, and **total over-walk** (minutes walked
   beyond what each rule asked). High over-walk flags a likely-suboptimal
   plan even though it is not (yet) in the objective.
@@ -140,7 +143,8 @@ makespan gain:
    `score()`. One `Random(seed)` drives it all, so plans stay deterministic /
    cacheable. `lnsIterations` defaults to `DEFAULT_LNS_ITERATIONS = 200`
    (tuned: day length plateaus by ~200, identical at 500/1k/3k; ~2 s/plan,
-   ~5 s heaviest day, haversine). Measured gain vs the old multi-start:
+   ~5 s heaviest day, haversine) and is now **user-tunable on Settings**
+   (`AppSettings.lnsIterations`, a 0–500 slider) to trade quality for speed. Measured gain vs the old multi-start:
    median day length **Mon 7h16→6h30, Thu 7h25→6h35, Wed 7h49→7h28, Fri
    7h21→7h15**, Tue ~unchanged, and the per-seed spread collapses (every
    seed now reaches essentially the same near-optimum). `docs/solver-
@@ -260,10 +264,13 @@ stronger near-optimality signal; a practical LNS early-stop would be
   search never sees `FetchBike` events (keeps insertion index math intact).
 - **`DistanceMatrix.kt`**: stores **metres** per point-pair (symmetric);
   built from `RoutingProvider.route().distanceMeters`. The planner turns
-  metres into bike or foot time. FALLBACK 30 km when routing fails.
+  metres into bike or foot time. FALLBACK when routing fails: haversine ×
+  `ROAD_DETOUR_FACTOR` (1.3), not a flat 30 km (which poisoned plans).
 - **`RouteEvent.kt`**: sealed HomeStart / Pickup(dog, rule) / Walk(dogs,
-  durationSeconds) / Dropoff(dog) / HomeEnd / **FetchBike** (walk back to the
-  parked bike; display-only, added by `withBikeFetches`). Each carries
+  durationSeconds) / Dropoff(dog) / HomeEnd / **Break** (optional dog-free
+  lunch, post-pass) / **Appointment** (fixed dog-free commitment, pre-placed,
+  see #2 wishlist) / **FetchBike** (walk back to the parked bike;
+  display-only, added by `withBikeFetches`). Each carries
   `timeSeconds`, `location`, and (filled by the retimer) `arrivedByFoot` +
   `incomingTravelSeconds` + **`returnToBikeSeconds`** (on-foot part of a bike
   leg). **`onFootSeconds`** = the walked part of any leg (whole leg if on
@@ -276,13 +283,14 @@ stronger near-optimality signal; a practical LNS early-stop would be
   on-foot walk time a span's dog accrues while aboard (full foot legs + bike
   legs' walk-back), excluding the leg that fetches it. Shared by the
   retimer's dwell phase, the `WalkDuration` constraint and the harness.
-- **`constraints/`** (6, `PlanningConstraint`): `Capacity`,
+- **`constraints/`** (7, `PlanningConstraint`): `Capacity`,
   `TimeWindow` (earliest pickup / latest **walk-start** / latest dropoff,
   each optional), `WalkDuration` (dwell walks + `footCreditSeconds` in the
   span vs required; max enforced for `allowLongerWalk=false`),
   `Incompatibility`, `NoDogLeftBehind` (every aboard dog must be in each
   walk), `GroupSize` (hard `maxGroupSize`=4; soft preference for
-  `preferredGroupSize`=3 lives in `score()`).
+  `preferredGroupSize`=3 lives in `score()`), `Appointment` (reach each
+  fixed appointment on time, no dog aboard during it).
 - **`DayPlanService.kt`**: shared pipeline (Today + Follow plan). Builds
   `WalkOption`s from the weekday's rules, constructs `DayPlanner` from
   `AppSettings`, **caches** plans by `(inputs, seed)` in an LRU; `refresh`
@@ -290,12 +298,15 @@ stronger near-optimality signal; a practical LNS early-stop would be
 
 Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
 `stopBufferMinutes`, `cyclingSpeedKmh`, **`walkingSpeedKmh`** (3),
-**`bikeOverheadMinutes`** (3), home coordinates.
+**`bikeOverheadMinutes`** (3), **`cyclingWeight`** (1.0, objective term),
+**`lnsIterations`** (200, user slider 0–500), the break window/duration/
+locations + `homeLunchMinFreeMinutes`, and home coordinates.
 
 Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
 router; covers the 19-June report, two-rule dogs, splitting, determinism,
 exclusive choice, latest-start-bounds-the-walk, no-one-left-behind, group
-cap, same-address no-overhead, nearby-dogs-walked-on-foot — **pinned to
+cap, same-address no-overhead, nearby-dogs-walked-on-foot,
+dogs-scheduled-around-a-fixed-appointment — **pinned to
 `lnsIterations = 0`** so they test construction + constraints, not LNS),
 `RemoveOperatorTest.kt` (the LNS remove operator: span dropped, plan stays
 feasible), `BackupModelsTest.kt` (export/import round-trip), and the
@@ -330,8 +341,9 @@ baseline; both honour `-Dsolver.lns=N`).
 - **BRouter** embedded on-device (`org.btools:brouter-core`), `bakfiets.brf`
   profile. Distance from BRouter, time from the user's cycling speed (we do
   NOT use BRouter's kinematic time).
-- **Schema** at v6 (migrations 1→2 … 5→6; 4→5 adds `isAlternative`, 5→6
-  adds `latestStart`).
+- **Schema** at v8 (migrations 1→2 … 7→8; 4→5 adds `isAlternative`, 5→6
+  adds `latestStart`, 6→7 adds `Dog.active`, 7→8 adds the `appointments`
+  table).
 
 ## Architecture snapshot
 
@@ -339,19 +351,20 @@ baseline; both honour `-Dsolver.lns=N`).
 data/
   entity/  Dog, DogScheduleRule (incl. latestStart, isAlternative),
            DogIncompatibility, TransportState
-  db/      AppDatabase (v6), DogDao, DogScheduleDao,
-           DogIncompatibilityDao, Migrations, Converters
-  prefs/   AppSettings (incl. walkingSpeedKmh, bikeOverheadMinutes),
-           SettingsRepository (DataStore)
+  db/      AppDatabase (v8), DogDao, DogScheduleDao,
+           DogIncompatibilityDao, AppointmentDao, Migrations, Converters
+  prefs/   AppSettings (incl. cyclingWeight, lnsIterations, break fields),
+           BreakLocation, SettingsRepository (DataStore)
   backup/  BackupModels (JSON DTOs), BackupRepository (export/import)
   remote/  AddressSuggestion, BanApi
   routing/ RoutingDataPaths, RoutingDataInstaller, BRouterRoutingProvider
 domain/
   planner/  PlannedWalk
   dayplan/  RouteEvent, DayRoute, PlanConflict, PlanningConstraint,
-            WalkOption, WalkSpans, DistanceMatrix, DayPlanner, DayPlanService
-            constraints/  Capacity, TimeWindow, WalkDuration,
-                          Incompatibility, NoDogLeftBehind, GroupSize
+            WalkOption, WalkSpans, DistanceMatrix, BreakSpec,
+            DayPlanner, DayPlanService
+            constraints/  Capacity, TimeWindow, WalkDuration, Incompatibility,
+                          NoDogLeftBehind, GroupSize, Appointment
   routing/  RouteEstimate, RoutingProvider, GeoPoint, LegGeometryCache
 ui/
   common/  AddressAutocompleteField, AddressMapPreview, CyclingLegMap,

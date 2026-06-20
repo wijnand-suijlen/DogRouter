@@ -105,6 +105,8 @@ class DayPlanner(
         // Reports computation progress as a 0..1 fraction plus the phase, for
         // a determinate progress bar. No-op by default (tests / harness).
         onProgress: (fraction: Float, phase: PlanPhase) -> Unit = { _, _ -> },
+        // When set, fit a dog-free break into the finished plan (see insertBreak).
+        breakSpec: BreakSpec? = null,
     ): DayRoute {
         if (home == null) {
             return DayRoute(date, emptyList(), 0, 0, options.map { PlanConflict(it.dog, "Home address not set") })
@@ -126,7 +128,10 @@ class DayPlanner(
             )
         }
 
-        val points = (routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } + home).toSet()
+        val points = (
+            routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } +
+                home + (breakSpec?.locations ?: emptyList())
+            ).toSet()
         val matrix = DistanceMatrix.build(points, routingProvider) { done, total ->
             onProgress(MATRIX_PROGRESS_FRACTION * done / total, PlanPhase.ROUTING)
         }
@@ -173,7 +178,61 @@ class DayPlanner(
             if (current.isBetterThan(best!!)) best = current
             reportSolver()
         }
-        return best!!.toDayRoute(date, unroutable).withBikeFetches()
+
+        val solution = if (breakSpec != null) {
+            insertBreak(best!!, breakSpec, matrix, constraints) ?: best!!
+        } else {
+            best!!
+        }
+        return solution.toDayRoute(date, unroutable).withBikeFetches()
+    }
+
+    /**
+     * Fit one dog-free break into a finished [solution]: try every point in
+     * the day where no dog is aboard, and every break location, insert a
+     * [RouteEvent.Break] there, retime and validate. Keep the cheapest
+     * (shortest resulting day) where the break starts inside the window and no
+     * constraint breaks. Returns null when no break fits — the day is then
+     * left break-less.
+     */
+    private fun insertBreak(
+        solution: Solution,
+        spec: BreakSpec,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution? {
+        if (spec.locations.isEmpty()) return null
+        val events = solution.events
+        var bestEvents: List<RouteEvent>? = null
+        var bestElapsed = Int.MAX_VALUE
+        var aboard = 0
+        for (i in events.indices) {
+            when (events[i]) {
+                is RouteEvent.Pickup -> aboard++
+                is RouteEvent.Dropoff -> aboard--
+                else -> Unit
+            }
+            // Insert into the gap after event i, only when empty-handed and
+            // not after the final HomeEnd.
+            if (aboard != 0 || i >= events.size - 1) continue
+            for (location in spec.locations) {
+                val candidate = events.toMutableList()
+                candidate.add(
+                    i + 1,
+                    RouteEvent.Break(0, location, spec.durationSeconds, spec.windowStartSeconds),
+                )
+                val retimed = retimeAndCost(candidate, matrix)?.first ?: continue
+                val placed = retimed.getOrNull(i + 1) as? RouteEvent.Break ?: continue
+                if (placed.timeSeconds !in spec.windowStartSeconds..spec.windowEndSeconds) continue
+                if (constraints.violation(retimed) != null) continue
+                val elapsed = retimed.last().timeSeconds - retimed.first().timeSeconds
+                if (elapsed < bestElapsed) {
+                    bestElapsed = elapsed
+                    bestEvents = retimed
+                }
+            }
+        }
+        return bestEvents?.let { Solution(it, solution.placed, solution.unplaced) }
     }
 
     /**
@@ -656,6 +715,9 @@ class DayPlanner(
                 val earliest = event.rule.earliestStart?.toSecondOfDay()
                 if (earliest != null && earliest > t) t = earliest
             }
+            if (event is RouteEvent.Break && event.earliestStartSeconds > t) {
+                t = event.earliestStartSeconds
+            }
             val placed: RouteEvent = when (event) {
                 is RouteEvent.HomeStart ->
                     event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i], returnToBikeSeconds = returnToBike[i])
@@ -673,6 +735,8 @@ class DayPlanner(
                         arrivedByFoot = byFoot[i],
                         incomingTravelSeconds = travel[i],
                     )
+                is RouteEvent.Break ->
+                    event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i], returnToBikeSeconds = returnToBike[i])
                 // The solver never builds FetchBike events; they are added by
                 // withBikeFetches after planning. Handled here for exhaustiveness.
                 is RouteEvent.FetchBike ->

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Button
@@ -421,6 +422,15 @@ private fun RouteEvent.toStepView(): StepView = when (this) {
         timeLabel = formatClock(timeSeconds),
         address = null,
         detail = "${formatMinutes(durationSeconds)} walk",
+        quirks = null,
+        phone = null,
+    )
+    is RouteEvent.Break -> StepView(
+        icon = Icons.Default.Place,
+        title = "Lunch break",
+        timeLabel = formatClock(timeSeconds),
+        address = null,
+        detail = "${formatMinutes(durationSeconds)} break",
         quirks = null,
         phone = null,
     )

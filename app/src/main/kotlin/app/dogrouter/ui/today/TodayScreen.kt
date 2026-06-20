@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -77,6 +79,7 @@ fun TodayScreen(
 ) {
     val planState by viewModel.planState.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
+    val breakRequested by viewModel.breakRequested.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     val readyRoute = (planState as? PlanState.Ready)?.route
 
@@ -114,6 +117,10 @@ fun TodayScreen(
                 onPrevious = viewModel::goToPreviousDay,
                 onNext = viewModel::goToNextDay,
                 onPickDate = { showDatePicker = true },
+            )
+            BreakToggleRow(
+                checked = breakRequested,
+                onCheckedChange = viewModel::setBreakRequested,
             )
             HorizontalDivider()
             DayRouteContent(planState, onOpenLegMap)
@@ -155,6 +162,21 @@ private fun DayRouteContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BreakToggleRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Spacer(Modifier.width(4.dp))
+        Text("Include a lunch break", style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -360,6 +382,7 @@ private fun RouteEvent.tint() = when (this) {
     is RouteEvent.Pickup -> MaterialTheme.colorScheme.secondary
     is RouteEvent.Dropoff -> MaterialTheme.colorScheme.tertiary
     is RouteEvent.Walk -> MaterialTheme.colorScheme.primary
+    is RouteEvent.Break -> MaterialTheme.colorScheme.secondary
     is RouteEvent.FetchBike -> MaterialTheme.colorScheme.primary
 }
 
@@ -368,6 +391,7 @@ private fun RouteEvent.icon(): ImageVector = when (this) {
     is RouteEvent.Pickup -> Icons.Default.ArrowDownward
     is RouteEvent.Dropoff -> Icons.Default.ArrowUpward
     is RouteEvent.Walk -> Icons.AutoMirrored.Filled.DirectionsWalk
+    is RouteEvent.Break -> Icons.Default.Place
     is RouteEvent.FetchBike -> Icons.AutoMirrored.Filled.DirectionsWalk
 }
 
@@ -377,6 +401,7 @@ private fun RouteEvent.title(): String = when (this) {
     is RouteEvent.Pickup -> "Pickup ${dog.name}"
     is RouteEvent.Dropoff -> "Dropoff ${dog.name}"
     is RouteEvent.Walk -> "Walk ${dogs.joinToString { it.name }} · ${formatDuration(durationSeconds)}"
+    is RouteEvent.Break -> "Lunch break · ${formatDuration(durationSeconds)}"
     is RouteEvent.FetchBike -> "Walk back to the bike"
 }
 

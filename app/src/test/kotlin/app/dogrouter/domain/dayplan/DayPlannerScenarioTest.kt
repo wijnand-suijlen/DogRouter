@@ -448,12 +448,53 @@ class DayPlannerScenarioTest {
         )
     }
 
+    @Test
+    fun fitsALunchBreakInAnEmptyMidDayGap() = runBlocking {
+        // Alfa in the morning, Bravo in the afternoon — an empty gap between.
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 2.2360)
+        val bravo = dog("bravo", "Bravo", 24f, 48.8120, 2.2300)
+        val walks = listOf(
+            PlannedWalk(alfa, startWindowRule("alfa1", "alfa", "09:30", "10:00", 60)),
+            PlannedWalk(bravo, startWindowRule("bravo1", "bravo", "15:00", "15:30", 60)),
+        )
+        val spec = BreakSpec(
+            locations = listOf(GeoPoint(48.8130, 2.2330)),
+            windowStartSeconds = 12 * 3600, windowEndSeconds = 16 * 3600,
+            durationSeconds = 30 * 60,
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0,
+        )
+
+        val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions(), breakSpec = spec)
+        val breaks = route.events.filterIsInstance<RouteEvent.Break>()
+        assertEquals("exactly one break", 1, breaks.size)
+        assertTrue(
+            "break starts within the window",
+            breaks.first().timeSeconds in spec.windowStartSeconds..spec.windowEndSeconds,
+        )
+        // No dog is aboard when the break happens.
+        var aboard = 0
+        for (e in route.events) {
+            when (e) {
+                is RouteEvent.Pickup -> aboard++
+                is RouteEvent.Dropoff -> aboard--
+                is RouteEvent.Break -> assertEquals("no dog aboard at the break", 0, aboard)
+                else -> Unit
+            }
+        }
+        assertTrue("plan stays feasible", route.conflicts.isEmpty())
+    }
+
     private fun describe(e: RouteEvent): String = when (e) {
         is RouteEvent.HomeStart -> "HomeStart"
         is RouteEvent.HomeEnd -> "HomeEnd"
         is RouteEvent.Pickup -> "Pickup ${e.dog.name}"
         is RouteEvent.Dropoff -> "Dropoff ${e.dog.name}"
         is RouteEvent.Walk -> "Walk[${e.dogs.joinToString { it.name }}] ${e.durationSeconds / 60}min"
+        is RouteEvent.Break -> "Break ${e.durationSeconds / 60}min"
         is RouteEvent.FetchBike -> "FetchBike"
     }
 

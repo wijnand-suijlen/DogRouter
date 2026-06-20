@@ -35,6 +35,15 @@ class TodayViewModel(
             initialValue = PlanState.Loading(0f, PlanPhase.ROUTING),
         )
 
+    /** Whether the day in view should include a mid-day break. */
+    val breakRequested: StateFlow<Boolean> = _selectedDate
+        .flatMapLatest { dayPlanService.observeBreakRequested(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setBreakRequested(requested: Boolean) {
+        dayPlanService.setBreakRequested(_selectedDate.value, requested)
+    }
+
     fun goToPreviousDay() {
         _selectedDate.value = _selectedDate.value.minusDays(1)
     }

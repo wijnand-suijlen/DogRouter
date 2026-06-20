@@ -276,6 +276,7 @@ class SolverHarness {
         is RouteEvent.Dropoff -> "Dropoff ${e.dog.name}"
         is RouteEvent.Walk ->
             "Walk    [${e.dogs.joinToString { it.name }}]  ${e.durationSeconds / 60}min"
+        is RouteEvent.Break -> "☕ Break  ${e.durationSeconds / 60}min"
         is RouteEvent.FetchBike -> "↩ Back to the parked bike"
     }
 

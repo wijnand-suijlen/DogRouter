@@ -47,6 +47,7 @@ class DayPlanService(
     private val routingProvider: RoutingProvider,
 ) {
     private val seeds = MutableStateFlow<Map<LocalDate, Long>>(emptyMap())
+    private val breaks = MutableStateFlow<Map<LocalDate, Boolean>>(emptyMap())
 
     // Access-ordered LRU: keeps the most recently used plans, evicts the rest.
     private val cache = object : LinkedHashMap<CacheKey, DayRoute>(16, 0.75f, true) {
@@ -60,33 +61,45 @@ class DayPlanService(
      * fraction the solver reports) and then [Ready] with the computed plan.
      * Re-emits when inputs or the date's seed change.
      */
-    fun observePlan(date: LocalDate): Flow<PlanState> = combine(
-        dogDao.observeAll(),
-        scheduleDao.observeAll(),
-        incompatibilityDao.observeAll(),
-        settingsRepo.settings,
-        seeds.map { it[date] ?: 0L },
-    ) { dogs, rules, incompatibilities, settings, seed ->
-        Inputs(date, dogs, rules, incompatibilities, settings) to seed
-    }.flatMapLatest { (inputs, seed) ->
-        channelFlow {
-            val key = CacheKey(inputs, seed)
-            cached(key)?.let {
-                send(PlanState.Ready(it))
-                return@channelFlow
-            }
-            send(PlanState.Loading(0f, PlanPhase.ROUTING))
-            val plan = computePlan(inputs, seed) { fraction, phase ->
-                trySend(PlanState.Loading(fraction, phase))
-            }
-            store(key, plan)
-            send(PlanState.Ready(plan))
-        }.conflate()
+    fun observePlan(date: LocalDate): Flow<PlanState> {
+        val requests = combine(seeds, breaks) { s, b ->
+            PlanRequest(s[date] ?: 0L, b[date] ?: false)
+        }
+        return combine(
+            dogDao.observeAll(),
+            scheduleDao.observeAll(),
+            incompatibilityDao.observeAll(),
+            settingsRepo.settings,
+            requests,
+        ) { dogs, rules, incompatibilities, settings, request ->
+            Inputs(date, dogs, rules, incompatibilities, settings) to request
+        }.flatMapLatest { (inputs, request) ->
+            channelFlow {
+                val key = CacheKey(inputs, request)
+                cached(key)?.let {
+                    send(PlanState.Ready(it))
+                    return@channelFlow
+                }
+                send(PlanState.Loading(0f, PlanPhase.ROUTING))
+                val plan = computePlan(inputs, request) { fraction, phase ->
+                    trySend(PlanState.Loading(fraction, phase))
+                }
+                store(key, plan)
+                send(PlanState.Ready(plan))
+            }.conflate()
+        }
     }
 
     /** Ask for a different plan for [date] (advances its solver seed). */
     fun refresh(date: LocalDate) {
         seeds.update { it + (date to ((it[date] ?: 0L) + 1)) }
+    }
+
+    /** Whether [date]'s plan should include a mid-day break. */
+    fun observeBreakRequested(date: LocalDate): Flow<Boolean> = breaks.map { it[date] ?: false }
+
+    fun setBreakRequested(date: LocalDate, requested: Boolean) {
+        breaks.update { it + (date to requested) }
     }
 
     private fun cached(key: CacheKey): DayRoute? = synchronized(cache) { cache[key] }
@@ -96,7 +109,7 @@ class DayPlanService(
 
     private suspend fun computePlan(
         inputs: Inputs,
-        seed: Long,
+        request: PlanRequest,
         onProgress: (Float, PlanPhase) -> Unit,
     ): DayRoute {
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
@@ -133,13 +146,26 @@ class DayPlanService(
             walkingSpeedKmh = inputs.settings.walkingSpeedKmh,
             bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
         )
+        val breakSpec = inputs.settings.breakSpec().takeIf { request.breakRequested }
         // Off the main thread: the matrix build (BRouter) and the solver
         // (multi-start + LNS) are CPU-bound and would otherwise freeze the UI
         // and trip an ANR. The flow's loading/result emissions stay on the
         // collector's context.
         return withContext(Dispatchers.Default) {
-            planner.plan(inputs.date, options, seed, onProgress)
+            planner.plan(inputs.date, options, request.seed, onProgress, breakSpec)
         }
+    }
+
+    /** A [BreakSpec] from the settings, or null when no break location is set. */
+    private fun AppSettings.breakSpec(): BreakSpec? {
+        val locations = breakLocations.map { GeoPoint(it.latitude, it.longitude) }
+        if (locations.isEmpty()) return null
+        return BreakSpec(
+            locations = locations,
+            windowStartSeconds = breakWindowStart.toSecondOfDay(),
+            windowEndSeconds = breakWindowEnd.toSecondOfDay(),
+            durationSeconds = breakDurationMinutes * 60,
+        )
     }
 
     private fun canonicalPair(a: String, b: String): Pair<String, String> =
@@ -159,5 +185,7 @@ class DayPlanService(
         val settings: AppSettings,
     )
 
-    private data class CacheKey(val inputs: Inputs, val seed: Long)
+    private data class PlanRequest(val seed: Long, val breakRequested: Boolean)
+
+    private data class CacheKey(val inputs: Inputs, val request: PlanRequest)
 }

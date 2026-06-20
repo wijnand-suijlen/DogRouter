@@ -140,6 +140,7 @@ fun SettingsScreen(
                 onCyclingSpeedChange = viewModel::onCyclingSpeedTextChange,
                 onWalkingSpeedChange = viewModel::onWalkingSpeedTextChange,
                 onBikeOverheadChange = viewModel::onBikeOverheadTextChange,
+                onCyclingWeightChange = viewModel::onCyclingWeightTextChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
                 onOpenHomeMapPicker = {
@@ -202,6 +203,7 @@ private fun SettingsForm(
     onCyclingSpeedChange: (String) -> Unit,
     onWalkingSpeedChange: (String) -> Unit,
     onBikeOverheadChange: (String) -> Unit,
+    onCyclingWeightChange: (String) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
     onOpenHomeMapPicker: () -> Unit,
@@ -328,6 +330,23 @@ private fun SettingsForm(
                     if (!state.bikeOverheadValid) "Enter zero or a positive whole number"
                     else "Added to each bike ride for loading dogs in the box, " +
                         "unlocking and helmet. Higher means short hops are walked.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = state.cyclingWeightText,
+            onValueChange = onCyclingWeightChange,
+            label = { Text("Cycling weight") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            isError = !state.cyclingWeightValid,
+            supportingText = {
+                Text(
+                    if (!state.cyclingWeightValid) "Enter zero or a positive number"
+                    else "How much a minute of cycling counts against a minute of " +
+                        "day length. 1 = equal; higher avoids cycling more; 0 = only day length.",
                 )
             },
             modifier = Modifier.fillMaxWidth(),

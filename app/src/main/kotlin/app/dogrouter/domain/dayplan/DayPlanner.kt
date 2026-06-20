@@ -66,6 +66,9 @@ class DayPlanner(
     private val stopBufferSeconds: Int,
     private val cyclingSpeedKmh: Float,
     private val incompatibilities: Set<Pair<String, String>>,
+    // Weight of cycling time in the objective, relative to day length (1.0 =
+    // a minute saved cycling is worth a minute longer day). See AppSettings.
+    private val cyclingWeight: Float = 1f,
     // On-foot group pace, and the fixed overhead added to every bike ride
     // (load dogs in the box, unlock, helmet, and the reverse on arrival).
     private val walkingSpeedKmh: Float = 3f,
@@ -464,7 +467,13 @@ class DayPlanner(
     }
 
     private fun Solution.score(): Long =
-        elapsedSeconds().toLong() + dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
+        elapsedSeconds().toLong() +
+            (cyclingWeight * cyclingSeconds()).toLong() +
+            dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
+
+    /** Pure ride time (excludes the on-foot walk-back folded into a bike leg). */
+    private fun Solution.cyclingSeconds(): Int =
+        events.sumOf { if (it.arrivedByFoot) 0 else it.incomingTravelSeconds - it.returnToBikeSeconds }
 
     private fun Solution.dogsOverPreferred(): Int =
         events.filterIsInstance<RouteEvent.Walk>()

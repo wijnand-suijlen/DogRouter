@@ -277,6 +277,7 @@ class SolverHarness {
         stopBufferSeconds = settings.stopBufferMinutes * 60,
         cyclingSpeedKmh = settings.cyclingSpeedKmh,
         incompatibilities = pairs,
+        cyclingWeight = settings.cyclingWeight,
         walkingSpeedKmh = settings.walkingSpeedKmh,
         bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
         restarts = restarts,

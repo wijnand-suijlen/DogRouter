@@ -24,6 +24,10 @@ data class AppSettings(
     // box, unlocking, helmet on — and the reverse on arrival. This is what
     // makes short hops cheaper to walk than to bike.
     val bikeOverheadMinutes: Int,
+    // How much a minute of cycling counts against a minute of day length in
+    // the planner's objective. 1.0 = equal (a minute saved cycling is worth a
+    // minute longer day); higher avoids cycling more; 0 = only day length.
+    val cyclingWeight: Float,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -55,6 +59,7 @@ data class AppSettings(
             cyclingSpeedKmh = 15f,
             walkingSpeedKmh = 3f,
             bikeOverheadMinutes = 3,
+            cyclingWeight = 1f,
             homeAddress = "",
             homeLatitude = null,
             homeLongitude = null,

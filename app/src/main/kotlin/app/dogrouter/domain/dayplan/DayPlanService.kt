@@ -143,6 +143,7 @@ class DayPlanService(
             stopBufferSeconds = inputs.settings.stopBufferMinutes * 60,
             cyclingSpeedKmh = inputs.settings.cyclingSpeedKmh,
             incompatibilities = pairs,
+            cyclingWeight = inputs.settings.cyclingWeight,
             walkingSpeedKmh = inputs.settings.walkingSpeedKmh,
             bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
         )

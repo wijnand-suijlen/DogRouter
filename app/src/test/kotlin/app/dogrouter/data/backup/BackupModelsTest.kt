@@ -32,7 +32,7 @@ class BackupModelsTest {
     private val incompatibility = DogIncompatibility(dogIdA = "delta", dogIdB = "alfa")
     private val settings = AppSettings(
         bikeCapacityKg = 65f, stopBufferMinutes = 5, cyclingSpeedKmh = 14f,
-        walkingSpeedKmh = 3.5f, bikeOverheadMinutes = 4,
+        walkingSpeedKmh = 3.5f, bikeOverheadMinutes = 4, cyclingWeight = 1.5f,
         homeAddress = "Home", homeLatitude = 48.81, homeLongitude = 2.23,
         breakWindowStart = LocalTime.of(12, 30), breakWindowEnd = LocalTime.of(15, 30),
         breakDurationMinutes = 25,

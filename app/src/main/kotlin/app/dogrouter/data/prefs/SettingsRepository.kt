@@ -26,6 +26,7 @@ class SettingsRepository(
             cyclingSpeedKmh = prefs[CYCLING_SPEED_KMH] ?: AppSettings.DEFAULTS.cyclingSpeedKmh,
             walkingSpeedKmh = prefs[WALKING_SPEED_KMH] ?: AppSettings.DEFAULTS.walkingSpeedKmh,
             bikeOverheadMinutes = prefs[BIKE_OVERHEAD_MINUTES] ?: AppSettings.DEFAULTS.bikeOverheadMinutes,
+            cyclingWeight = prefs[CYCLING_WEIGHT] ?: AppSettings.DEFAULTS.cyclingWeight,
             homeAddress = prefs[HOME_ADDRESS] ?: AppSettings.DEFAULTS.homeAddress,
             homeLatitude = prefs[HOME_LATITUDE],
             homeLongitude = prefs[HOME_LONGITUDE],
@@ -81,6 +82,10 @@ class SettingsRepository(
         dataStore.edit { it[BIKE_OVERHEAD_MINUTES] = minutes }
     }
 
+    suspend fun setCyclingWeight(weight: Float) {
+        dataStore.edit { it[CYCLING_WEIGHT] = weight.coerceAtLeast(0f) }
+    }
+
     suspend fun setHomeAddress(address: String, latitude: Double?, longitude: Double?) {
         dataStore.edit { prefs ->
             prefs[HOME_ADDRESS] = address
@@ -97,6 +102,7 @@ class SettingsRepository(
             prefs[CYCLING_SPEED_KMH] = settings.cyclingSpeedKmh
             prefs[WALKING_SPEED_KMH] = settings.walkingSpeedKmh
             prefs[BIKE_OVERHEAD_MINUTES] = settings.bikeOverheadMinutes
+            prefs[CYCLING_WEIGHT] = settings.cyclingWeight
             prefs[HOME_ADDRESS] = settings.homeAddress
             settings.homeLatitude?.let { prefs[HOME_LATITUDE] = it } ?: prefs.remove(HOME_LATITUDE)
             settings.homeLongitude?.let { prefs[HOME_LONGITUDE] = it } ?: prefs.remove(HOME_LONGITUDE)
@@ -117,6 +123,7 @@ class SettingsRepository(
         val HOME_LATITUDE = doublePreferencesKey("home_latitude")
         val HOME_LONGITUDE = doublePreferencesKey("home_longitude")
         val CYCLING_SPEED_KMH = floatPreferencesKey("cycling_speed_kmh")
+        val CYCLING_WEIGHT = floatPreferencesKey("cycling_weight")
         val BREAK_WINDOW_START = intPreferencesKey("break_window_start_min")
         val BREAK_WINDOW_END = intPreferencesKey("break_window_end_min")
         val BREAK_DURATION_MINUTES = intPreferencesKey("break_duration_minutes")

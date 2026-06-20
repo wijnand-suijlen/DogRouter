@@ -78,6 +78,7 @@ data class SettingsDto(
     val cyclingSpeedKmh: Float,
     val walkingSpeedKmh: Float = AppSettings.DEFAULTS.walkingSpeedKmh,
     val bikeOverheadMinutes: Int = AppSettings.DEFAULTS.bikeOverheadMinutes,
+    val cyclingWeight: Float = AppSettings.DEFAULTS.cyclingWeight,
     val homeAddress: String,
     val homeLatitude: Double? = null,
     val homeLongitude: Double? = null,
@@ -111,7 +112,8 @@ fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
 fun AppSettings.toDto() = SettingsDto(
     bikeCapacityKg = bikeCapacityKg, stopBufferMinutes = stopBufferMinutes,
     cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
-    bikeOverheadMinutes = bikeOverheadMinutes, homeAddress = homeAddress,
+    bikeOverheadMinutes = bikeOverheadMinutes, cyclingWeight = cyclingWeight,
+    homeAddress = homeAddress,
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
     breakWindowStart = breakWindowStart.toString(), breakWindowEnd = breakWindowEnd.toString(),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
@@ -142,7 +144,8 @@ fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)
 fun SettingsDto.toAppSettings() = AppSettings(
     bikeCapacityKg = bikeCapacityKg, stopBufferMinutes = stopBufferMinutes,
     cyclingSpeedKmh = cyclingSpeedKmh, walkingSpeedKmh = walkingSpeedKmh,
-    bikeOverheadMinutes = bikeOverheadMinutes, homeAddress = homeAddress,
+    bikeOverheadMinutes = bikeOverheadMinutes, cyclingWeight = cyclingWeight,
+    homeAddress = homeAddress,
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
     breakWindowStart = LocalTime.parse(breakWindowStart), breakWindowEnd = LocalTime.parse(breakWindowEnd),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,

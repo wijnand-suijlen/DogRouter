@@ -3,271 +3,279 @@
 Internal hand-off document so a fresh Claude session can pick up where we
 left off. English only (internal design doc, not user-facing).
 
-Last touched: 2026-06-19. Twenty-one commits on `main`.
+Last touched: 2026-06-20. 41 commits on `main`.
 
-## What works today
+---
 
-- **Dogs tab**: list, add, edit, delete. Per dog: name, breed, weight,
-  photo (URI, no Photo Picker yet), owner name + phone, address with
-  BAN-autocomplete + tap-on-map picker + mini-map preview, stop notes
-  with time adjustment, transport state (cargo bike / backpack), walk
-  constraints (`allowLongerWalk` + incompatibility chips), schedule
-  rules with weekday multi-select, three independent time bounds (start
-  from / start by / home by), duration, and an "either/or" flag (mark
-  rules mutually exclusive — walk one per day).
-- **Settings tab**: home address picker (same widgets as dog stop),
-  cycling speed (km/h, user override), bike capacity, stop buffer,
-  BRouter map download (~125 MB IDF segment) + self-test, and **data
-  export/import** (Storage Access Framework file picker; JSON backup of
-  dogs, schedules, incompatibilities, settings — for moving between
-  phones; import replaces all data, behind a confirm dialog).
-- **Today tab**: PDPTW event timeline. Date picker with prev/next/today
-  controls. Summary card with on-the-clock + cycling + walking totals.
-  Red conflict panel if any walks are unschedulable. "Start trip" FAB
-  (shown when the day has events) hands off to Follow plan. A refresh
-  action in the app bar asks the randomised solver for an alternative
-  plan for that day. Each cycling leg row has a map icon that opens the
-  full-screen route map (no inline map in the list — see the leg-maps
-  note below).
-- **Follow plan**: full-screen on-the-bike execution of one day's plan.
-  Current stop dominates (big ETA, title, address, owner phone, quirks
-  highlighted), next two stops listed below, large "Done — next stop" /
-  "Finish trip" button advances, Back corrects a mis-tap, progress bar +
-  "Stop n of N", and a "Trip complete" end state. Hides the bottom bar.
-  The plan comes from the shared `DayPlanService`, the same pipeline
-  Today uses. When a stop is reached by cycling from the previous one,
-  the card shows an inline street-map overview of the leg (`CyclingLegMap`,
-  tiled osmdroid); tapping it opens the full-screen interactive map.
-- **Leg maps**: geometry comes from `RoutingProvider.routeGeometry()`,
-  cached per leg via `LegGeometryCache`.
-  - **Follow plan** shows one inline overview map at a time
-    (`CyclingLegMap` → a static, tile-backed `RouteLegMap` under a tap
-    overlay). One MapView at a time is fine.
-  - **Today** lists many legs, so it shows a tap-to-open **map icon** per
-    leg instead of an inline map — many simultaneous osmdroid MapViews in
-    the list caused memory/ANR pressure.
-  - **Full screen**: `LegMapScreen` (`RouteLegMap` interactive) gives
-    pinch-zoom and pan, reachable from both screens.
-  - Falls back to a straight line if BRouter cannot trace the leg.
-- **BRouter** running embedded on-device via `org.btools:brouter-core`
-  from GitHub Packages. Profile `bakfiets.brf` shipped in assets,
-  derived from trekking.brf. Lookups.dat also shipped.
-- **Routing flow**: BRouter for the road network and distance,
-  user-configured cycling speed for the time. We do NOT use BRouter's
-  kinematic time estimate. `RoutingProvider.routeGeometry()` exposes the
-  BRouter track as a polyline for map drawing (Follow plan); the planner
-  still uses `route()`, which keeps no geometry per cost-matrix cell.
-- **PDPTW planner** (`domain/dayplan/DayPlanner.kt`): randomised
-  multi-start greedy. Each start inserts walks in some order using three
-  modes (new pickup-walk-dropoff triplet; join an existing walk and
-  extend it; ride along several existing walks without extending them,
-  which splits one required duration across shorter sessions); the best
-  of `restarts` builds is kept.
-- **Two travel modes** (`DistanceMatrix` stores metres; `retimeAndCost`):
-  each leg is bike (distance/cyclingSpeed + a fixed per-ride
-  `bikeOverhead`) or on foot (distance/walkingSpeed). `retimeAndCost`
-  tracks the walker and the parked bike: while walking, the bike stays put
-  and a later bike leg first walks back to it; the day always ends with the
-  bike home. A leg is walked when that is faster than biking it — short
-  hops, where the mount/dismount overhead dominates. On-foot legs count
-  toward the dogs' walk duration (`WalkDurationConstraint` credits them).
-  Set `bikeOverheadMinutes`/`walkingSpeedKmh` in Settings; overhead 0 means
-  everything bikes (the old behaviour). Known limitation: foot legs add to
-  the walk credit but do not yet shorten the in-place dwell walk, so dogs
-  on a foot leg are walked a little longer than asked; capacity still
-  counts on-foot dogs as if in the box. A `seed` makes a build reproducible (for
-  caching) while different seeds explore alternatives (the refresh
-  button). Pluggable `PlanningConstraint` interface with six concrete
-  checks today: capacity; time windows (start-from / start-by / home-by,
-  each independent and optional; start-by bounds the actual walk start, not
-  the pickup, so a dog cannot be picked up in time and then carried to a
-  much later walk); walk duration (min + max for `allowLongerWalk=false`);
-  incompatibilities; no-dog-left-behind (every dog aboard during a walk
-  must be in it — nobody waits in the bike while the others walk); and a
-  group-size cap (`maxGroupSize`, default 4). A soft preference for
-  `preferredGroupSize` (default 3) is a planning-cost penalty in the plan
-  score, so a 4th dog is added to a walk only when it lets a dog be placed
-  that otherwise could not — never just to shorten the day. Constraints
-  pair pickups↔dropoffs per occurrence (`walkSpans`), so a dog with two
-  schedule rules (two walks in a day) is handled correctly. The planner
-  takes `WalkOption`s: a single alternative is a required walk, several are
-  an exclusive choice (a rule's `isAlternative` flag) where exactly one is
-  scheduled — "end of morning OR end of afternoon".
-- **Tests**: JVM unit tests under `app/src/test`. `DayPlannerScenarioTest`
-  reproduces the 19-June report (`planningsprobleem-19juni`) and covers
-  two-rule dogs, splitting, determinism and exclusive choice with a fake
-  routing provider; `BackupModelsTest` covers the export/import round-trip.
-- **Schema** at v6. Migrations for 1→2 … 5→6 in `data/db/Migrations.kt`
-  (4→5 adds the rule `isAlternative` flag; 5→6 adds `latestStart`).
+# ►► CURRENT FOCUS: optimise the solver and the model ◄◄
+
+The **input model is now nearly complete** — dogs, owners, addresses with
+coordinates, stop quirks, transport state, incompatibilities, and rich
+schedule rules (weekday sets; independent start-from / start-by / home-by
+bounds; per-rule duration; an `isAlternative` "morning OR afternoon"
+flag). Import/export of all this works. **The weak link now is plan
+QUALITY**: the solver finds *a* feasible plan but rarely a *good* one. This
+is the next big push, and it is what STATUS should be organised around.
+
+## The enabler: run the solver on the laptop, in the terminal
+
+Everything under `domain/dayplan/` is **pure JVM Kotlin** — it only touches
+Room entity *data classes* (no Android runtime, no Compose). So the solver
+can run off-device, on the user's fast multi-core laptop, where we can
+iterate on plan quality in seconds instead of rebuilding the APK and
+eyeballing the phone. **Build this first.** A standalone runner that:
+
+- Loads **`dogrouter-backup.json`** (committed in the repo root — the
+  user's real 10-dog data; owner names/addresses, treat as private, do not
+  push anywhere). It is the same JSON the app exports
+  (`data/backup/BackupModels.kt`), so reuse `BackupFile` / the DTO mappers.
+- Builds a `DistanceMatrix` from a **pluggable distance source**. Start
+  with straight-line haversine (instant, good enough to iterate on solver
+  *logic* and structure). Later feed *real* BRouter distances — either
+  export the matrix once from the app, or try running `brouter-core` on
+  the plain JVM against the downloaded segment dir (it is a Java lib; may
+  work headless). Keep the source behind an interface so quality work is
+  not blocked on routing accuracy.
+- Runs `DayPlanner.plan(date, options, seed)` for a chosen weekday +
+  `AppSettings`, and prints the plan timeline **plus quality metrics**
+  (below). Parallelise restarts/seeds across cores (the laptop has them).
+
+Shape options: a Gradle JVM/`application` module (e.g. `:solver-cli`) with
+a `main()`, runnable via `./gradlew :solver-cli:run --args="..."`; or a
+runnable JUnit "scenario" that prints (cheapest to start, already how
+`DayPlannerScenarioTest` works). Use the Android Studio JBR for
+`JAVA_HOME` (see Build conventions).
+
+## Quality metrics the harness must print (and we should optimise)
+
+- **Conflicts** (unplaced walks) — must be 0.
+- **Total day length** (HomeStart→HomeEnd elapsed) — the current sole cost.
+- **Per-dog walked vs required**, and **total over-walk** (minutes walked
+  beyond what each rule asked).
+- **On-foot vs cycling split**, and **number of bike mounts** (overhead
+  paid).
+- **Idle/waiting time** (waiting for `earliestStart` windows).
+- **Wall-clock solve time** (so we can spend more restarts where it pays).
+
+## Where plan quality is lost today (the weaknesses to attack)
+
+1. **Greedy insertion, no backtracking.** `DayPlanner.buildOnce` inserts
+   each `WalkOption` once into its cheapest feasible slot and never
+   reconsiders. The ONLY escape from a bad structure is the randomised
+   **multi-start** (`restarts`, default 60): re-run the whole greedy from
+   shuffled orders, keep the best by `isBetterThan`. That is a weak
+   metaheuristic — quality plateaus. **No local search** (remove-and-
+   reinsert, or-opt/2-opt, group swaps), no simulated annealing, no LNS.
+   This is the single biggest lever.
+2. **Cost function is only day length.** `isBetterThan` → `score()` =
+   elapsed seconds + a big per-dog-over-`preferredGroupSize` penalty.
+   It does NOT penalise over-walking, idle/waiting, or the number of bike
+   trips. "Shortest day" is therefore reachable by over-walking
+   `allowLongerWalk` dogs or other shapes the user would not choose.
+   Re-design the objective with explicit, harness-tunable terms.
+3. **On-foot model is half-done** (`retimeAndCost`). Foot legs credit a
+   dog's duration but do NOT shorten the in-place dwell `Walk.durationSeconds`
+   (still set to the full required at insertion), so dogs are over-walked
+   and the foot time is not truly double-duty — only the bike-overhead
+   saving is realised. The auto-foot choice is **greedy per leg** with no
+   lookahead at the resulting return-to-bike cost.
+4. **Capacity counts on-foot dogs as box weight.** `CapacityConstraint`
+   sums every aboard dog continuously; on a foot phase the dogs are on
+   leashes, not in the cargo box, so capacity should be **bike-leg-only**.
+   Over-restrictive for heavy on-foot groups (group-size cap already
+   bounds the on-foot group).
+5. **Walk grouping is emergent, not deliberate.** Groups form by Mode B/C
+   joins; the planner never clusters dogs by proximity/time first, so good
+   clusters depend on the random insertion order and luck.
+6. **Single continuous tour.** One HomeStart→…→HomeEnd tour; no notion of
+   multiple home-returning trips. Interleaving pickups/dropoffs under
+   capacity is the only structure available.
+7. **Distance matrix rebuilt per plan; no cross-date cache.**
+   `DistanceMatrix.build` calls BRouter once per point-pair on every
+   uncached plan. Fine for ≤10 dogs but it is the slow part and is
+   on-device only — the reason iterating on the phone is painful.
+8. **dayStart/dayEnd hardcoded 08:00–20:00** in the `DayPlanner` ctor.
+
+## Candidate directions (decide with the user next session)
+
+- **Local-search improvement pass** on top of multi-start: remove-and-
+  reinsert each option against the finished plan; or-opt/2-opt the tour;
+  swap dogs between groups; iterate to a local optimum. Cheapest big win.
+- **Metaheuristic**: simulated annealing or **LNS** (destroy a few stops,
+  greedily repair) — natural fit; the harness makes tuning feasible.
+- **Finish the on-foot model**: make dwell `Walk.durationSeconds` adapt so
+  foot legs shorten it (true double-duty); make capacity bike-leg-only.
+- **Objective redesign** with weighted terms (over-walk, idle, bike-mount
+  count), weights tuned against real days in the harness.
+- Reconsider single-tour vs **multi-trip**.
+
+---
+
+# Solver & model — current design (authoritative reference)
+
+`domain/dayplan/` — all JVM-pure:
+
+- **`DayPlanner.kt`** (~460 lines): randomised **multi-start greedy**.
+  `plan(date, options: List<WalkOption>, seed)` builds a `DistanceMatrix`
+  once, runs `restarts` (default 60) builds — restart 0 is deadline-sorted
+  order, the rest are `Random(seed)` shuffles — and keeps the best by
+  `isBetterThan` (fewest conflicts, then lowest `score()` = elapsed +
+  group-oversize penalty). `buildOnce` inserts each option via
+  `tryInsertOption` → `tryInsert`, which tries: **Mode A** new
+  pickup-walk-dropoff triplet; **Mode B** join an existing walk and extend
+  its duration; **Mode C** ride along several existing walks without
+  extending (splits one duration across sessions). `tryInsertOption` tries
+  each alternative of a `WalkOption` and keeps the cheapest (exclusive
+  choice → exactly one scheduled).
+- **`retimeAndCost`** (inside DayPlanner): walks the event list forward
+  assigning `timeSeconds`, choosing per leg **bike** (metres/cyclingSpeed +
+  fixed `bikeOverheadSeconds`) vs **on foot** (metres/walkingSpeed),
+  whichever is faster. Tracks the walker AND the parked bike: a foot leg
+  leaves the bike put; a bike leg first walks back to the parked bike; the
+  final HomeEnd leg is forced to bike so the bike ends home. Sets each
+  event's `arrivedByFoot` + `incomingTravelSeconds`. Waits at a pickup for
+  `earliestStart`. **Safety invariant**: `bikeOverheadSeconds == 0` ⇒
+  walking is never faster ⇒ every leg bikes ⇒ identical to the old
+  bike-only behaviour (this keeps all legacy tests valid).
+- **`DistanceMatrix.kt`**: stores **metres** per point-pair (symmetric);
+  built from `RoutingProvider.route().distanceMeters`. The planner turns
+  metres into bike or foot time. FALLBACK 30 km when routing fails.
+- **`RouteEvent.kt`**: sealed HomeStart / Pickup(dog, rule) / Walk(dogs,
+  durationSeconds) / Dropoff(dog) / HomeEnd. Each carries `timeSeconds`,
+  `location`, and (filled by the retimer) `arrivedByFoot` +
+  `incomingTravelSeconds`.
+- **`WalkOption.kt`**: one thing to schedule — one required walk, or an
+  exclusive choice of alternatives (same dog, pick one). Built in
+  `DayPlanService` by grouping a dog's rules (alternatives → one option).
+- **`WalkSpans.kt`**: pairs pickups↔dropoffs per occurrence (FIFO per dog),
+  so a dog walked twice in a day is handled.
+- **`constraints/`** (6, `PlanningConstraint`): `Capacity`,
+  `TimeWindow` (earliest pickup / latest **walk-start** / latest dropoff,
+  each optional), `WalkDuration` (sum of dwell walks + on-foot legs in the
+  span vs required; max enforced for `allowLongerWalk=false`),
+  `Incompatibility`, `NoDogLeftBehind` (every aboard dog must be in each
+  walk), `GroupSize` (hard `maxGroupSize`=4; soft preference for
+  `preferredGroupSize`=3 lives in `score()`).
+- **`DayPlanService.kt`**: shared pipeline (Today + Follow plan). Builds
+  `WalkOption`s from the weekday's rules, constructs `DayPlanner` from
+  `AppSettings`, **caches** plans by `(inputs, seed)` in an LRU; `refresh`
+  bumps a date's seed to ask for an alternative plan.
+
+Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
+`stopBufferMinutes`, `cyclingSpeedKmh`, **`walkingSpeedKmh`** (3),
+**`bikeOverheadMinutes`** (3), home coordinates.
+
+Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
+router; covers the 19-June report, two-rule dogs, splitting, determinism,
+exclusive choice, latest-start-bounds-the-walk, no-one-left-behind, group
+cap, same-address no-overhead, nearby-dogs-walked-on-foot) and
+`BackupModelsTest.kt` (export/import round-trip).
+
+---
+
+# What works today (app surface — reference)
+
+- **Dogs tab**: full CRUD. Per dog: name, breed, weight, photo URI (no
+  Photo Picker), owner + phone, BAN-autocomplete/map-picker address, stop
+  notes + time adjustment, transport state, `allowLongerWalk` +
+  incompatibility chips, and schedule rules (weekdays; start-from /
+  start-by / home-by; duration; "either/or" flag).
+- **Settings**: home picker, cycling speed, **walking speed**, bike
+  capacity, stop buffer, **bike mount/dismount overhead**, BRouter map
+  download + self-test, and **data export/import** (SAF; import replaces
+  all, behind a confirm dialog).
+- **Today**: PDPTW timeline with date picker, summary (on-the-clock /
+  cycling / walking), conflict panel, **refresh** (new seed → alternative
+  plan), "Start trip" FAB, per-leg "on foot"/"cycling" label + tap-to-open
+  full-screen route map.
+- **Follow plan**: full-screen on-the-bike execution; current stop
+  dominant, next two below, Done/Back/Finish, progress, inline tiled leg
+  map.
+- **Leg maps**: `RoutingProvider.routeGeometry()` polylines, cached
+  (`LegGeometryCache`); inline tiled map in Follow plan, tap-to-open icon
+  in Today (many MapViews caused ANR), full-screen interactive
+  `LegMapScreen`.
+- **BRouter** embedded on-device (`org.btools:brouter-core`), `bakfiets.brf`
+  profile. Distance from BRouter, time from the user's cycling speed (we do
+  NOT use BRouter's kinematic time).
+- **Schema** at v6 (migrations 1→2 … 5→6; 4→5 adds `isAlternative`, 5→6
+  adds `latestStart`).
 
 ## Architecture snapshot
 
 ```
 data/
-  entity/  Dog, DogScheduleRule, DogIncompatibility, TransportState
-  db/      AppDatabase (v4), DogDao, DogScheduleDao,
+  entity/  Dog, DogScheduleRule (incl. latestStart, isAlternative),
+           DogIncompatibility, TransportState
+  db/      AppDatabase (v6), DogDao, DogScheduleDao,
            DogIncompatibilityDao, Migrations, Converters
-  prefs/   AppSettings, SettingsRepository (DataStore)
+  prefs/   AppSettings (incl. walkingSpeedKmh, bikeOverheadMinutes),
+           SettingsRepository (DataStore)
   backup/  BackupModels (JSON DTOs), BackupRepository (export/import)
-  remote/  AddressSuggestion, BanApi (autocomplete + reverse)
-  routing/ RoutingDataPaths, RoutingDataInstaller,
-           BRouterRoutingProvider
+  remote/  AddressSuggestion, BanApi
+  routing/ RoutingDataPaths, RoutingDataInstaller, BRouterRoutingProvider
 domain/
-  planner/  PlannedWalk (the only survivor of the old planner)
-  dayplan/  RouteEvent (sealed: HomeStart/Pickup/Dropoff/Walk/HomeEnd),
-            DayRoute, PlanConflict, PlanningConstraint, WalkOption,
-            DistanceMatrix, DayPlanner,
-            DayPlanService (shared plan pipeline: Today + Follow plan)
+  planner/  PlannedWalk
+  dayplan/  RouteEvent, DayRoute, PlanConflict, PlanningConstraint,
+            WalkOption, WalkSpans, DistanceMatrix, DayPlanner, DayPlanService
             constraints/  Capacity, TimeWindow, WalkDuration,
-                          Incompatibility
-  routing/  RouteEstimate, RoutingProvider, GeoPoint,
-            LegGeometryCache (memoises route geometry per leg)
+                          Incompatibility, NoDogLeftBehind, GroupSize
+  routing/  RouteEstimate, RoutingProvider, GeoPoint, LegGeometryCache
 ui/
-  common/  AddressAutocompleteField, AddressMapPreview,
-           CyclingLegMap (inline overview, Follow plan),
-           RouteLegMap + LegMapScreen (full-screen osmdroid map)
-  dogs/    DogListScreen + ViewModel, DogEditScreen + ViewModel,
-           ScheduleEditor, ScheduleRuleDraft
-  today/   TodayScreen, TodayViewModel
-  followplan/ FollowPlanScreen + FollowPlanViewModel (on-the-bike
-              execution, "Start trip" target)
-  history/  HistoryScreen (stub)
-  settings/ SettingsScreen, SettingsViewModel
-  addresspicker/ AddressPickerScreen + ViewModel
-  navigation/   AppNavigation, TabDestination
-  theme/        Color, Theme, Type
+  common/  AddressAutocompleteField, AddressMapPreview, CyclingLegMap,
+           RouteLegMap + LegMapScreen
+  dogs/ today/ followplan/ history(stub)/ settings/ addresspicker/
+  navigation/ (4 tabs: Today, Dogs, History, Settings)  theme/
 ```
 
-## Known issues / loose ends
+## Smaller known issues (not the focus, but real)
 
-1. **Walk.location goes stale on Mode B** join. When dog Y joins dog X's
-   existing walk, the walk's `location` stays at X's home. Travel time
-   from the walk to the next event is then computed from the stale
-   location, underestimating real travel. Not yet user-reported but
-   real. Fix: in `DayPlanner.retimeAndCost`, when placing a Walk, set
-   its location to `retimed.last().location`.
+- **Waiting time shows as cycling in the timeline** — a pickup waiting for
+  its window inflates the displayed leg. Cosmetic.
+- **`bakfiets.brf` is very conservative** (totalMass=180, bikerPower=80,
+  S_C_x=0.45) → pessimistic route choice on hills. Since we override
+  BRouter's time anyway, a lighter profile might pick faster routes.
+- **Plan cache key is the whole `Inputs`** — editing an irrelevant dog
+  field (e.g. photo) invalidates it. Harmless, occasional needless
+  recompute.
+- **`Walk.location` stale-on-join** (old issue) is now effectively fixed:
+  the retimer sets a Walk's location to the walker's current position.
 
-2. **Waiting time shows as cycling in the timeline**. If pickup waits
-   for its window to open, the displayed leg time between previous
-   event and the pickup includes the wait. Cosmetic; we should split
-   wait into its own row.
+## App-surface follow-ups (deferred while solver is the focus)
 
-3. **Walk-splitting exploited via randomised multi-start.** Mode C
-   (ride-along) lets one required duration be split across several walks;
-   the planner now builds from many insertion orders (`restarts`, seeded
-   `Random`) and keeps the best (fewest unplaced, then shortest day), so
-   it discovers the multi-session structures splitting needs. The 19-June
-   Alfa now rides along several sessions instead of one dedicated 120-min
-   walk. The cost function minimises day length, not over-walking, so an
-   `allowLongerWalk=true` dog may be walked a bit longer than asked when
-   that shortens the day overall.
+- Follow plan: resumable-across-exit (persist step), dog photo (needs an
+  image loader → user OK), surface conflicts.
+- Manual override of the plan (drag-reorder, mark a dog not-doing-today).
+- History tab (stub; in-scope per SCOPE for invoicing).
+- Photo Picker (user deferred).
 
-4. **(Resolved) Plan caching.** `DayPlanService` now caches plans by
-   (inputs, seed) in an LRU map (the service is a Koin single, so the
-   cache spans screens and dates). Re-opening Follow plan or returning to
-   a day is a cache hit — no BRouter, no solver. The cache invalidates
-   when any planner-relevant input changes (and on `refresh`, which bumps
-   the date's seed). Remaining nuance: the key includes the full `Inputs`,
-   so editing an irrelevant dog field (e.g. photo) also invalidates it —
-   harmless, just an occasional needless recompute.
+## Project conventions
 
-5. **dayStart / dayEnd are hardcoded 08:00–20:00** in the
-   `DayPlanner` constructor. Belongs in Settings eventually.
-
-6. **`bakfiets.brf` profile parameters** are very conservative
-   (totalMass=180, bikerPower=80, S_C_x=0.45) which makes BRouter's
-   ROUTE CHOICE more pessimistic about hills than necessary. Now that
-   we override BRouter's time, the user might want a lighter profile
-   so BRouter picks faster routes even through small hills. Defer.
-
-## Roadmap, prioritised
-
-### Done: Follow-plan execution screen
-The **Follow-plan** screen ("Start trip" handoff from Today) is built
-(2026-06-19) — see `docs/SCREENS.md` #2 and "What works today" above.
-Today's "Start trip" FAB passes the selected date to
-`FollowPlanRoutes.route(date)`; `FollowPlanScreen` + `FollowPlanViewModel`
-walk through the day's events one stop at a time. Plan computation was
-extracted from `TodayViewModel` into `DayPlanService` so both screens
-share one pipeline.
-
-Remaining polish (not blocking):
-- **Resumable across exit**: step progress lives in the ViewModel, so it
-  survives rotation but resets if you leave and re-enter the screen. The
-  SCREENS doc wants a resumable suspended trip — needs persistence
-  (DataStore or a small Room row keyed by date).
-- **Dog photo**: the current-stop card is text-only. No image loader is
-  in the project yet (the dog list has none either); adding one (e.g.
-  Coil) needs the user's OK first.
-- **Conflicts** (unscheduled walks) are not surfaced in Follow plan.
-
-### Next round candidates (pick one)
-1. **Walk-location bug fix** (item 1 above). Tiny code change, real
-   correctness improvement.
-2. **Test on real multi-dog day** with the user and iterate based on
-   what they see. Probably reveals smaller issues we have not thought
-   of.
-3. **Waiting-time row in timeline** (item 2). Cosmetic but clarifying.
-4. **dayStart / dayEnd in Settings** (item 5). Small.
-5. **Cost matrix cache** across plan invocations (item 4). Medium.
-
-### Medium-term
-- **Manual override** of the plan (drag-drop reorder, mark a dog as
-  not-doing-today, etc.). These are the Today "fine-tune" actions that
-  `docs/SCREENS.md` lists as planned-but-not-built.
-- **Walk merging optimisation** post-pass.
-- **Walk splitting** in the planner for the rare cases where a
-  no-longer-walk dog cannot ride along with a long-walking dog.
-
-### Defer
-- Photo Picker (user explicitly deferred this; less interesting than
-  the planner).
-- History tab (in-scope per `SCOPE.md` but not started; nav stub only).
-- Profile-tuning workflow (sliders that write to bakfiets.brf).
-
-### Dropped
-- **Week tab** — removed from v1 (decided 2026-06-19). It only
-  visualised derived schedule data already editable under Dogs, and its
-  "tap a day" navigation is covered by Today's date picker. Rationale
-  kept under "Considered, not in v1" in `docs/SCREENS.md`. **Done
-  (2026-06-19):** `TabDestination.Week`, `WeekScreen.kt`, and its
-  `composable` in `AppNavigation.kt` are deleted; the bottom bar now has
-  four tabs (Today, Dogs, History, Settings).
-
-## Project conventions to keep in mind
-
-- **Workspace boundary**: stay inside
-  `/Users/wijnand/Documents/src/DogRouter/`. Enforced via deny rules
-  in `.claude/settings.local.json`.
-- **Language**: Dutch in chat with the user, English in source,
-  comments, commit messages, primary docs.
-- **Commit-message apostrophes** break the heredoc + bash trick we
-  use. Rephrase to avoid `'` in the body.
-- **User context**: Wijnand Suijlen, Dutch-speaking, lives and works
-  in Meudon (92) in Île-de-France. Two phones, Android 15 and 16.
-- **Build**: GitHub PAT with `read:packages` scope required for the
-  brouter artifact; documented in `README.md`. There is no system JDK on
-  the dev machine — the only JDK is the one bundled with Android Studio,
-  so CLI builds need `JAVA_HOME` pointed at it:
-
+- **Workspace boundary**: stay inside `/Users/wijnand/Documents/src/DogRouter/`
+  (enforced via `.claude/settings.local.json`).
+- **Language**: Dutch with the user; English in source/comments/commits/docs.
+- **Commit messages**: avoid `'` in the body (breaks the heredoc trick).
+- **User**: Wijnand Suijlen, Dutch-speaking, Meudon (92), Île-de-France.
+  Two phones (Android 15/16). **Laptop is fast + multi-core** — use it for
+  the solver harness.
+- **Build**: GitHub PAT (`read:packages`) for the brouter artifact (see
+  README). No system JDK — point `JAVA_HOME` at the Android Studio JBR:
   ```
   JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
-    ./gradlew :app:compileDebugKotlin
+    ./gradlew :app:testDebugUnitTest      # solver tests, fast
   ```
-
-  The Gradle wrapper (8.13) is committed, so no separate Gradle install
-  is needed.
-- **Schema migrations**: any change to a Room entity requires a
-  migration AND a schema-version bump. Schema JSON files are
-  committed to `app/schemas/`.
-- **Routing math**: BRouter for distance and route choice, user's
-  `cyclingSpeedKmh` setting for time. We do NOT use BRouter's
-  internal kinematic time. See `DistanceMatrix.build`.
+  Gradle wrapper (8.13) is committed. Phone serial for installs: `dd979738`
+  (FP4, Android 15); `ANDROID_SERIAL=$serial ./gradlew :app:installDebug`.
+- **Schema migrations**: entity change ⇒ migration + version bump + commit
+  the `app/schemas/*.json`.
+- **Routing math**: BRouter distance, user `cyclingSpeedKmh` for time; we
+  do NOT use BRouter's kinematic time.
 
 ## Documents to read on session start
 
 1. `CLAUDE.md` — global project rules.
-2. `SCOPE.md` — what v1 does and does not do.
-3. `docs/SCREENS.md` — screen inventory and design rationale.
-4. `docs/ROUTING_ENGINES.md` — why BRouter, what we ruled out.
-5. This file.
+2. **This file** — start here; the focus is the solver/model.
+3. `SCOPE.md` — what v1 does / does not do.
+4. `docs/SCREENS.md` — screen inventory and rationale.
+5. `docs/ROUTING_ENGINES.md` — why BRouter.
+6. `dogrouter-backup.json` (repo root) — the real test data for the harness.

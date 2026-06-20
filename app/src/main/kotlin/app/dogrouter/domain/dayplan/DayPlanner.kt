@@ -175,7 +175,7 @@ class DayPlanner(
      * This is the unit the multi-start (and, later, the LNS destroy/repair
      * search) works on; [toDayRoute] turns the winner into the public result.
      */
-    private class Solution(
+    internal class Solution(
         val events: List<RouteEvent>,
         val placed: List<WalkOption>,
         val unplaced: List<WalkOption>,
@@ -223,7 +223,7 @@ class DayPlanner(
     }
 
     /** One greedy build over a fixed insertion [order] of options. */
-    private fun buildOnce(
+    internal fun buildOnce(
         order: List<WalkOption>,
         matrix: DistanceMatrix,
         constraints: List<PlanningConstraint>,
@@ -241,6 +241,48 @@ class DayPlanner(
             }
         }
         return Solution(events, placed, unplaced)
+    }
+
+    /**
+     * Remove a placed [option] from [solution]: drop its pickup and dropoff
+     * and take its dog out of every walk **within that span** (dropping a walk
+     * that empties), then retime. Scoping to the span matters — a dog walked
+     * twice in a day has two spans, and removing one must not touch the other.
+     * Removing only relaxes constraints, so the result stays feasible. Used by
+     * the LNS destroy step; the caller hands the removed option to the repair
+     * step. A no-op if the option is not currently placed.
+     */
+    internal fun remove(solution: Solution, option: WalkOption, matrix: DistanceMatrix): Solution {
+        val ruleIds = option.alternatives.mapTo(HashSet()) { it.rule.id }
+        val span = solution.events.walkSpans().firstOrNull {
+            it.pickup.dog.id == option.dog.id && it.pickup.rule.id in ruleIds
+        } ?: return solution
+        val pickup = span.pickup
+        val dropoff = span.dropoff ?: return solution
+        val dogId = option.dog.id
+        val pIdx = solution.events.indexOfFirst { it === pickup }
+        val dIdx = solution.events.indexOfFirst { it === dropoff }
+
+        val reduced = ArrayList<RouteEvent>(solution.events.size)
+        for ((i, e) in solution.events.withIndex()) {
+            when {
+                i == pIdx || i == dIdx -> Unit // drop this span's pickup / dropoff
+                i in (pIdx + 1) until dIdx && e is RouteEvent.Walk && e.dogs.any { it.id == dogId } -> {
+                    val remaining = e.dogs.filter { it.id != dogId }
+                    if (remaining.isNotEmpty()) reduced.add(e.copy(dogs = remaining))
+                    // else: the walk had only this dog — drop it entirely.
+                }
+                else -> reduced.add(e)
+            }
+        }
+
+        val retimed = retimeAndCost(reduced, matrix)?.first
+            ?: error("remove: retiming a shortened plan should never exceed the day end")
+        return Solution(
+            events = retimed,
+            placed = solution.placed.filter { it !== option },
+            unplaced = solution.unplaced,
+        )
     }
 
     /**

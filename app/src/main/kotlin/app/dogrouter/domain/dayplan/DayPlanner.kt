@@ -11,6 +11,7 @@ import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RoutingProvider
 import java.time.LocalDate
 import kotlin.math.ceil
+import kotlin.math.pow
 import kotlin.random.Random
 
 /**
@@ -20,6 +21,14 @@ import kotlin.random.Random
  * placed that otherwise could not (fewer conflicts win first).
  */
 private const val OVERSIZE_PENALTY_SECONDS = 1_000_000L
+
+/**
+ * Bias of LNS worst removal toward the costliest options. The pick index is
+ * `rand^bias * size`; >1 skews toward index 0 (the worst) while still
+ * sometimes reaching down the list, so the ruin is greedy-leaning but not
+ * deterministic.
+ */
+private const val WORST_REMOVAL_BIAS = 4.0
 
 /**
  * Composes a day route from a list of scheduled walks using a greedy
@@ -59,7 +68,9 @@ class DayPlanner(
     // Large-neighbourhood search after the multi-start: each iteration ruins
     // a few placed walks and greedily re-inserts them, keeping the result if
     // it scores better. 0 disables LNS (pure multi-start, the old behaviour).
-    private val lnsIterations: Int = 0,
+    // Default tuned against the seed sweep: day length plateaus by ~200
+    // iterations (see docs/STATUS.md / docs/solver-baseline.md).
+    private val lnsIterations: Int = DEFAULT_LNS_ITERATIONS,
     private val lnsRemoveMin: Int = 1,
     private val lnsRemoveMax: Int = 3,
     // Walk-group size: never more than [maxGroupSize] dogs at once (hard),
@@ -68,6 +79,11 @@ class DayPlanner(
     private val maxGroupSize: Int = 4,
     private val preferredGroupSize: Int = 3,
 ) {
+    companion object {
+        /** LNS iterations the planner runs by default; see the ctor note. */
+        const val DEFAULT_LNS_ITERATIONS = 200
+    }
+
     /**
      * Build a day route. [seed] drives the randomised multi-start search:
      * the same seed and inputs always yield the same plan (so it can be
@@ -144,12 +160,46 @@ class DayPlanner(
     ): Solution {
         if (current.placed.isEmpty()) return current
         val k = rng.nextInt(lnsRemoveMin, lnsRemoveMax + 1).coerceIn(1, current.placed.size)
-        val toRemove = current.placed.shuffled(rng).take(k)
+        // Alternate two ruin operators: plain random removal, and worst
+        // removal (drop the options whose presence costs the day the most).
+        val toRemove = if (rng.nextBoolean()) {
+            current.placed.shuffled(rng).take(k)
+        } else {
+            worstOptions(current, k, matrix, rng)
+        }
         var partial = current
         for (option in toRemove) {
             partial = remove(partial, option, matrix) ?: return current
         }
         return repair(partial, toRemove + partial.unplaced, matrix, constraints, rng)
+    }
+
+    /**
+     * Worst removal: rank the placed options by how much removing one
+     * shortens the day (its score drop), then pick [k] biased toward the
+     * costliest — but randomised (`rand^bias` index) so the ruin is not
+     * purely greedy and the search keeps exploring. An option whose removal
+     * cannot retime contributes no gain and sinks to the bottom.
+     */
+    private fun worstOptions(
+        current: Solution,
+        k: Int,
+        matrix: DistanceMatrix,
+        rng: Random,
+    ): List<WalkOption> {
+        val base = current.score()
+        val ranked = current.placed
+            .sortedByDescending { option ->
+                base - (remove(current, option, matrix)?.score() ?: base)
+            }
+            .toMutableList()
+        val chosen = ArrayList<WalkOption>(k)
+        repeat(k.coerceAtMost(ranked.size)) {
+            val idx = (rng.nextDouble().pow(WORST_REMOVAL_BIAS) * ranked.size).toInt()
+                .coerceIn(0, ranked.size - 1)
+            chosen.add(ranked.removeAt(idx))
+        }
+        return chosen
     }
 
     /** Greedily insert [toReinsert] into [partial] (shuffled order). */

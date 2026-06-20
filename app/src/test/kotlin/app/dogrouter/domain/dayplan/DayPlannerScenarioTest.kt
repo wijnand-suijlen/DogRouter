@@ -102,6 +102,7 @@ class DayPlannerScenarioTest {
             stopBufferSeconds = 0,
             cyclingSpeedKmh = 15f,
             incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: this test exercises construction + constraints, not LNS
         )
 
         val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
@@ -170,6 +171,7 @@ class DayPlannerScenarioTest {
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
         )
         val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
         val summary = buildString {
@@ -201,6 +203,7 @@ class DayPlannerScenarioTest {
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
         )
         val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
         val summary = buildString {
@@ -235,6 +238,7 @@ class DayPlannerScenarioTest {
         fun planner() = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
         )
         val a = planner().plan(LocalDate.of(2026, 6, 22), walks.asOptions(), seed = 7L)
         val b = planner().plan(LocalDate.of(2026, 6, 22), walks.asOptions(), seed = 7L)
@@ -257,6 +261,7 @@ class DayPlannerScenarioTest {
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
         )
         val route = planner.plan(LocalDate.of(2026, 6, 22), listOf(option))
         val summary = buildString {
@@ -281,6 +286,7 @@ class DayPlannerScenarioTest {
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
         )
 
         val feasible = planner.plan(
@@ -318,6 +324,7 @@ class DayPlannerScenarioTest {
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
         )
         val route = planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions())
         val summary = buildString {
@@ -380,6 +387,7 @@ class DayPlannerScenarioTest {
         fun planner() = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
             walkingSpeedKmh = 3f, bikeOverheadSeconds = overhead,
         )
         val sierra = dog("sierra", "Sierra", 8f, 48.8179, 2.2311)
@@ -416,6 +424,7 @@ class DayPlannerScenarioTest {
         val planner = DayPlanner(
             routingProvider = FakeRouting(), home = home, capacityKg = 70f,
             stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: these tests exercise construction + constraints, not LNS
             walkingSpeedKmh = 3f, bikeOverheadSeconds = 600,
         )
         val walks = listOf(

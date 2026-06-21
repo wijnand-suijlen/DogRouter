@@ -459,6 +459,26 @@ Priority rationale: ascending complexity and dependencies — #2 reuses what
 the break already built; #3's "is there room / which to drop" advice and
 the home-lunch home-visits both feed the sleepover dog (#3, then #5).
 
+**Captured 2026-06-21 (not yet designed) — membership over time, data-model impact:**
+The walker wants to manage *which dogs* a day involves over time, not just
+shape a single day. Three related needs:
+- **Per-date dog availability (declarative).** A dog has one global on/off
+  (`Dog.active`, Dogs screen) plus a *reactive* plan edit ("mark a dog
+  not-today", Fase 0). Wanted: a per-`(dog, date)` on/off the walker sets
+  **ahead of time** (owner away next Tuesday), separate from editing a
+  generated plan. Likely a new per-date exception table, e.g.
+  `DogDateOverride(dogId, date, active)`, consulted when building the day's
+  walk options.
+- **Incidental dog on a date + clone.** Schedule a one-off dog for a single
+  day, with a **clone-from-a-regular-dog** action that copies its details and
+  normal walk times as a starting point. Generalises schedule rules to allow
+  one-off date-scoped walks (or a one-off dog record); reuses the clone.
+- **Longer-term acceptance / capacity validation.** Beyond one day: can the
+  walker **take on a new dog** (walking, or day-boarding/daycare) over a
+  horizon of days? Look-ahead feasibility, not a single plan. This is the same
+  capacity model as the sleepover "is there room?" check (#2) and the
+  cancellation/capacity-advice model (#1), run forward across dates.
+
 ## App-surface follow-ups (deferred while solver is the focus)
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an

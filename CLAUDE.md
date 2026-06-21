@@ -31,6 +31,22 @@ require touching files outside this directory, stop and ask the user first.
 
 This rule is also enforced via `.claude/settings.local.json` permissions.
 
+## Data privacy — anonymize everything committed
+
+This repo is **public**. Everything committed must always be anonymized — no
+real client names, dog-owner names, phone numbers, addresses, coordinates, or
+any other PII. This applies to **all** committed content without exception:
+source, tests, fixtures, docs, AND **commit messages** and PR descriptions.
+
+- Use fictional placeholders (e.g. `Alfa`, `Bravo`) in tests and docs.
+- Real-world data lives only in gitignored files (`dogrouter-backup*.json`,
+  `feedback-*`, `planningsprobleem-*`, the solver report) — never commit them,
+  never quote their contents (names/addresses) in a commit message or doc.
+- The **only** exception is the user's own git identity (author name + email)
+  in commit authorship — that is expected and fine.
+
+When in doubt, leave it out and ask.
+
 ## Language conventions
 
 - **Conversation with the user:** Dutch. The user writes in Dutch; reply in

@@ -6,6 +6,7 @@ import app.dogrouter.data.entity.BillableService
 import app.dogrouter.data.entity.CommittedDay
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.RouteEvent
+import app.dogrouter.domain.dayplan.SavedPlanCodec
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -40,6 +41,7 @@ class BillingService(
                 committedAt = now(),
                 serviceCount = services.size,
                 totalCents = services.sumOf { it.amountCents },
+                planJson = SavedPlanCodec.encode(route),
             ),
         )
         return true

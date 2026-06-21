@@ -26,10 +26,13 @@ import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.ui.addresspicker.AddressPickerScreen
 import app.dogrouter.ui.common.LegMapScreen
+import app.dogrouter.ui.billing.BillingScreen
+import app.dogrouter.ui.billing.CommittedDayDetailScreen
+import app.dogrouter.ui.billing.CommittedDaysScreen
+import app.dogrouter.ui.billing.OwnerAccountScreen
 import app.dogrouter.ui.dogs.DogEditScreen
 import app.dogrouter.ui.dogs.DogListScreen
 import app.dogrouter.ui.followplan.FollowPlanScreen
-import app.dogrouter.ui.history.HistoryScreen
 import app.dogrouter.ui.owners.OwnerEditScreen
 import app.dogrouter.ui.owners.OwnerListScreen
 import app.dogrouter.ui.planning.PlanningScreen
@@ -80,6 +83,16 @@ object LegMapRoutes {
 
 object PlanningRoutes {
     const val ROUTE = "planning"
+}
+
+object BillingRoutes {
+    const val GRAPH = "billing"
+    const val OVERVIEW = "billing/overview"
+    const val OWNER = "billing/owner/{ownerId}"
+    const val COMMITTED = "billing/committed"
+    const val COMMITTED_DAY = "billing/committed-day/{date}"
+    fun owner(ownerId: String) = "billing/owner/$ownerId"
+    fun committedDay(date: LocalDate) = "billing/committed-day/$date"
 }
 
 object AddressPickerRoutes {
@@ -173,7 +186,36 @@ fun AppNavigation() {
                 )
                 LegMapScreen(from = from, to = to, onExit = { navController.popBackStack() })
             }
-            composable(TabDestination.History.route) { HistoryScreen() }
+            navigation(startDestination = BillingRoutes.OVERVIEW, route = BillingRoutes.GRAPH) {
+                composable(BillingRoutes.OVERVIEW) {
+                    BillingScreen(
+                        onOwnerClick = { ownerId -> navController.navigate(BillingRoutes.owner(ownerId)) },
+                        onOpenCommittedDays = { navController.navigate(BillingRoutes.COMMITTED) },
+                    )
+                }
+                composable(
+                    route = BillingRoutes.OWNER,
+                    arguments = listOf(navArgument("ownerId") { type = NavType.StringType }),
+                ) { entry ->
+                    OwnerAccountScreen(
+                        ownerId = entry.arguments?.getString("ownerId").orEmpty(),
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(BillingRoutes.COMMITTED) {
+                    CommittedDaysScreen(
+                        onBack = { navController.popBackStack() },
+                        onDayClick = { date -> navController.navigate(BillingRoutes.committedDay(date)) },
+                    )
+                }
+                composable(
+                    route = BillingRoutes.COMMITTED_DAY,
+                    arguments = listOf(navArgument("date") { type = NavType.StringType }),
+                ) { entry ->
+                    val date = LocalDate.parse(entry.arguments?.getString("date"))
+                    CommittedDayDetailScreen(date = date, onBack = { navController.popBackStack() })
+                }
+            }
             composable(TabDestination.Settings.route) { entry ->
                 val picked = entry.consumePickedAddress(json)
                 SettingsScreen(

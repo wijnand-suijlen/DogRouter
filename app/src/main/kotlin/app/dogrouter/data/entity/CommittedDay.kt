@@ -14,4 +14,8 @@ data class CommittedDay(
     val committedAt: Long,
     val serviceCount: Int,
     val totalCents: Int,
+    // Snapshot of the committed day plan (SavedPlanCodec JSON) so the exact plan
+    // that was billed can be shown later, even if the editable plan changes.
+    // Empty for days committed before this snapshot existed.
+    val planJson: String = "",
 )

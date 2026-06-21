@@ -15,7 +15,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
-const val BACKUP_VERSION = 3
+const val BACKUP_VERSION = 4
 
 /**
  * Self-contained snapshot of everything the walker enters: dogs (with
@@ -62,6 +62,7 @@ data class CommittedDayDto(
     val committedAt: Long,
     val serviceCount: Int,
     val totalCents: Int,
+    val planJson: String = "",
 )
 
 @Serializable
@@ -184,7 +185,8 @@ fun BillableService.toDto() = ServiceDto(
 )
 
 fun CommittedDay.toDto() = CommittedDayDto(
-    date = date.toString(), committedAt = committedAt, serviceCount = serviceCount, totalCents = totalCents,
+    date = date.toString(), committedAt = committedAt, serviceCount = serviceCount,
+    totalCents = totalCents, planJson = planJson,
 )
 
 fun Appointment.toDto() = AppointmentDto(
@@ -238,7 +240,8 @@ fun ServiceDto.toEntity() = BillableService(
 )
 
 fun CommittedDayDto.toEntity() = CommittedDay(
-    date = LocalDate.parse(date), committedAt = committedAt, serviceCount = serviceCount, totalCents = totalCents,
+    date = LocalDate.parse(date), committedAt = committedAt, serviceCount = serviceCount,
+    totalCents = totalCents, planJson = planJson,
 )
 
 fun AppointmentDto.toEntity() = Appointment(

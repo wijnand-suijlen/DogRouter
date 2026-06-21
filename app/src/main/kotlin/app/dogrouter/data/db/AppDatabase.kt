@@ -23,7 +23,7 @@ import app.dogrouter.data.entity.SavedPlan
         BillableService::class,
         CommittedDay::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

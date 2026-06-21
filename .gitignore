@@ -28,6 +28,9 @@ out/
 # Logs
 *.log
 
+# Generated PDFs (rendered from Markdown via render_pdf.sh)
+docs/*.pdf
+
 # Keystores (never commit signing keys)
 *.jks
 *.keystore

@@ -56,3 +56,14 @@ When discussing the problem space, prefer these terms in code and docs:
   routes
 - *cargo bike* / *bakfiets* — the vehicle; routing must use cycling profiles,
   not car or pedestrian
+
+## Solver model spec
+
+`docs/CSP_MODEL.md` is the authoritative specification of the day-planning
+problem as a CSP: every decision variable (with its domain) and every
+constraint, each in plain English, predicate logic, and a code citation.
+
+**Keep it in sync with the code.** Any change to the variables, domains, or
+constraints in `domain/dayplan/` (a new/changed `PlanningConstraint`, a new
+decision variable, a domain or bound change in `DayPlanner.retimeAndCost`)
+**must** update `docs/CSP_MODEL.md` in the same change.

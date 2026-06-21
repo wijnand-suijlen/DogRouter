@@ -172,6 +172,20 @@ class TodayViewModel(
         applyEdit { dayPlanService.moveWalk(_selectedDate.value, route, eventIndex, earlier) }
     }
 
+    /** Split [dogId] out of its group into its own walk. */
+    fun splitDogAlone(dogId: String) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
+        applyEdit { dayPlanService.splitDogAlone(_selectedDate.value, route, dogId) }
+    }
+
+    /** Move [dogId] into the walk at [targetWalkEventIndex] so they walk together. */
+    fun groupDogWith(dogId: String, targetWalkEventIndex: Int) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
+        applyEdit { dayPlanService.groupDogWith(_selectedDate.value, route, dogId, targetWalkEventIndex) }
+    }
+
     /** Active dogs with coordinates — candidates for a hand-added walk. */
     val addableDogs: StateFlow<List<Dog>> = dayPlanService.observeAddableDogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

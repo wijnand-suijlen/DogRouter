@@ -226,6 +226,20 @@ class DayPlanService(
         pinEdited(date, current.copy(events = reordered))
     }
 
+    /** Split [dogId] out of its group into its own walk (Fase 2b). No-op if the
+     *  dog already walks alone. */
+    suspend fun splitDogAlone(date: LocalDate, current: DayRoute, dogId: String) {
+        val reordered = splitDogOut(current.events, dogId) ?: return
+        pinEdited(date, current.copy(events = reordered))
+    }
+
+    /** Move [dogId] into the walk at [targetWalkEventIndex] so they walk
+     *  together (Fase 2b). No-op if the target is not a walk or already holds it. */
+    suspend fun groupDogWith(date: LocalDate, current: DayRoute, dogId: String, targetWalkEventIndex: Int) {
+        val reordered = groupDogInto(current.events, dogId, targetWalkEventIndex) ?: return
+        pinEdited(date, current.copy(events = reordered))
+    }
+
     /** Re-time [edited] (keeping manual durations) and persist it as the pinned
      *  plan for [date], carrying over its conflicts. */
     private suspend fun pinEdited(date: LocalDate, edited: DayRoute) {

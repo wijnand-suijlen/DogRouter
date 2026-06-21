@@ -215,15 +215,20 @@ class DayPlanner(
      * are dropped and regenerated. Returns null if routing is unavailable or
      * the edited plan cannot be timed within the day. Conflicts are not
      * produced here (empty); the caller carries any over and validates
-     * separately.
+     * separately. [recomputeDwells] = false keeps the walk durations already
+     * set (so a manual duration survives a later structural edit).
      */
-    suspend fun retime(date: LocalDate, events: List<RouteEvent>): DayRoute? {
+    suspend fun retime(
+        date: LocalDate,
+        events: List<RouteEvent>,
+        recomputeDwells: Boolean = true,
+    ): DayRoute? {
         if (home == null || !routingProvider.isReady()) return null
         val core = events.filterNot { it is RouteEvent.FetchBike }.toMutableList()
         if (core.size < 2) return null
         val points = (core.map { it.location } + home).toSet()
         val matrix = DistanceMatrix.build(points, routingProvider)
-        val retimed = retimeAndCost(core, matrix)?.first ?: return null
+        val retimed = retimeAndCost(core, matrix, recomputeDwells)?.first ?: return null
         // withBikeFetches recomputes the cycling/walking totals.
         return DayRoute(date, retimed, 0, 0, emptyList()).withBikeFetches()
     }
@@ -807,7 +812,11 @@ class DayPlanner(
      * [dayEndSeconds]. The on-foot group cap is enforced separately as a hard
      * constraint (see [canRideBike] for the transport-mode rule it pairs with).
      */
-    private fun retimeAndCost(events: MutableList<RouteEvent>, matrix: DistanceMatrix): Pair<List<RouteEvent>, Int>? {
+    private fun retimeAndCost(
+        events: MutableList<RouteEvent>,
+        matrix: DistanceMatrix,
+        recomputeDwells: Boolean = true,
+    ): Pair<List<RouteEvent>, Int>? {
         val n = events.size
         val homeLocation = events.first().location
 
@@ -867,8 +876,14 @@ class DayPlanner(
 
         // Phase 2 — dwell durations. Shorten each in-place walk by the on-foot
         // time the dog already accrues while aboard, so foot legs are true
-        // double-duty rather than extra walking on top.
-        val dwell = effectiveDwells(events, byFoot, travel, returnToBike)
+        // double-duty rather than extra walking on top. Manual edits pass
+        // recomputeDwells=false to keep the durations already on the walks
+        // (walker-owned once a plan is pinned).
+        val dwell = if (recomputeDwells) {
+            effectiveDwells(events, byFoot, travel, returnToBike)
+        } else {
+            IntArray(n) { (events[it] as? RouteEvent.Walk)?.durationSeconds ?: 0 }
+        }
 
         // Phase 3 — times. Walk forward accumulating travel, dwell, stop
         // buffers and earliestStart waits; bail if the day runs past its end.

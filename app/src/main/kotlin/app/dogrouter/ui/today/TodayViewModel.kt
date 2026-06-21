@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -60,6 +61,30 @@ class TodayViewModel(
         .flatMapLatest { dayPlanService.observeIsEdited(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /** Constraint warnings for the shown plan (empty for a feasible/solver plan).
+     *  Shown but not enforced — the walker may keep an edit that bends a rule. */
+    val planWarnings: StateFlow<List<String>> = planState
+        .mapLatest { state ->
+            if (state is PlanState.Ready) dayPlanService.warningsFor(state.route) else emptyList()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _isApplyingEdit = MutableStateFlow(false)
+
+    /** True while an edit is being re-timed and saved, for a progress hint. */
+    val isApplyingEdit: StateFlow<Boolean> = _isApplyingEdit.asStateFlow()
+
+    private fun applyEdit(block: suspend () -> Unit) {
+        _isApplyingEdit.value = true
+        viewModelScope.launch {
+            try {
+                block()
+            } finally {
+                _isApplyingEdit.value = false
+            }
+        }
+    }
+
     private val _removingDogIds = MutableStateFlow<Set<String>>(emptySet())
 
     /**
@@ -85,9 +110,13 @@ class TodayViewModel(
     fun markDogNotToday(dogId: String) {
         val route = (planState.value as? PlanState.Ready)?.route ?: return
         _removingDogIds.update { it + dogId } // immediate visual feedback
-        viewModelScope.launch {
-            dayPlanService.markDogNotToday(_selectedDate.value, route, dogId)
-        }
+        applyEdit { dayPlanService.markDogNotToday(_selectedDate.value, route, dogId) }
+    }
+
+    /** Set how long the walk at [eventIndex] lasts (minutes), then pin. */
+    fun setWalkDuration(eventIndex: Int, minutes: Int) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        applyEdit { dayPlanService.setWalkDuration(_selectedDate.value, route, eventIndex, minutes) }
     }
 
     /** Discard the hand-edited plan and go back to the solver's plan. */

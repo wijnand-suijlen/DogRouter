@@ -121,14 +121,46 @@ class DayPlanService(
      * rest, and pin the result. The plan flow then re-emits the edited plan.
      */
     suspend fun markDogNotToday(date: LocalDate, current: DayRoute, dogId: String) {
-        val edited = removeDog(current, dogId)
+        pinEdited(date, removeDog(current, dogId))
+    }
+
+    /**
+     * Set the [minutes] a single walk lasts (the [eventIndex]-th event of
+     * [current], which must be a [RouteEvent.Walk]), re-time, and pin. The
+     * manual duration is kept by re-timing with recomputeDwells = false.
+     */
+    suspend fun setWalkDuration(date: LocalDate, current: DayRoute, eventIndex: Int, minutes: Int) {
+        val walk = current.events.getOrNull(eventIndex) as? RouteEvent.Walk ?: return
+        val events = current.events.toMutableList()
+        events[eventIndex] = walk.copy(durationSeconds = minutes.coerceAtLeast(0) * 60)
+        pinEdited(date, current.copy(events = events))
+    }
+
+    /** Re-time [edited] (keeping manual durations) and persist it as the pinned
+     *  plan for [date], carrying over its conflicts. */
+    private suspend fun pinEdited(date: LocalDate, edited: DayRoute) {
         val settings = settingsRepo.settings.first()
         // Incompatibilities are irrelevant to a pure re-time, so pass none.
-        val retimed = buildPlanner(settings, emptySet()).retime(date, edited.events)
+        val retimed = buildPlanner(settings, emptySet())
+            .retime(date, edited.events, recomputeDwells = false)
             ?.copy(conflicts = edited.conflicts)
             ?: edited
         savedPlanDao.upsert(
             SavedPlan(date, SavedPlanCodec.encode(retimed), edited = true, updatedAt = System.currentTimeMillis()),
+        )
+    }
+
+    /** Constraint warnings for a (possibly hand-edited) plan — shown but not
+     *  enforced, so the walker can keep an edit that bends a rule. */
+    suspend fun warningsFor(route: DayRoute): List<String> {
+        val settings = settingsRepo.settings.first()
+        val pairs = incompatibilityDao.observeAll().first()
+            .map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
+        return PlanVerifier.violations(
+            route = route,
+            capacityKg = settings.bikeCapacityKg,
+            stopBufferSeconds = settings.stopBufferMinutes * 60,
+            incompatibilities = pairs,
         )
     }
 

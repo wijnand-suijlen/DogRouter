@@ -461,6 +461,36 @@ class DayPlannerScenarioTest {
         )
     }
 
+    /**
+     * A manual plan edit re-times with recomputeDwells = false so a hand-set
+     * walk duration survives (whereas the default recompute would reset it to
+     * the dwell the solver computes).
+     */
+    @Test
+    fun retimeKeepsAManualWalkDurationWhenNotRecomputing() = runBlocking {
+        val alfa = dog("alfa", "Alfa", 8f, 48.8145, 102.2360)
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0,
+        )
+        val date = LocalDate.of(2026, 6, 22)
+        val route = planner.plan(date, listOf(PlannedWalk(alfa, rule("alfa1", "alfa", "09:00", "17:00", 60))).asOptions())
+
+        // Hand-set the walk to 25 minutes.
+        val edited = route.events.map { e ->
+            if (e is RouteEvent.Walk) e.copy(durationSeconds = 25 * 60) else e
+        }
+
+        val kept = planner.retime(date, edited, recomputeDwells = false)!!
+        val keptWalk = kept.events.filterIsInstance<RouteEvent.Walk>().single()
+        assertEquals("manual duration must survive", 25 * 60, keptWalk.durationSeconds)
+
+        val recomputed = planner.retime(date, edited, recomputeDwells = true)!!
+        val recomputedWalk = recomputed.events.filterIsInstance<RouteEvent.Walk>().single()
+        assertEquals("default recompute restores the required 60 min", 60 * 60, recomputedWalk.durationSeconds)
+    }
+
     @Test
     fun fitsALunchBreakInAnEmptyMidDayGap() = runBlocking {
         // Alfa in the morning, Bravo in the afternoon — an empty gap between.

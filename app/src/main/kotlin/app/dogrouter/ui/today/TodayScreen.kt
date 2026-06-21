@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -32,10 +33,12 @@ import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -60,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -91,8 +95,12 @@ fun TodayScreen(
     val stopBufferSeconds by viewModel.stopBufferSeconds.collectAsStateWithLifecycle()
     val isPlanEdited by viewModel.isPlanEdited.collectAsStateWithLifecycle()
     val removingDogIds by viewModel.removingDogIds.collectAsStateWithLifecycle()
+    val planWarnings by viewModel.planWarnings.collectAsStateWithLifecycle()
+    val isApplyingEdit by viewModel.isApplyingEdit.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
+    // The walk whose duration is being edited: (event index, current minutes).
+    var editingWalk by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     val readyRoute = (planState as? PlanState.Ready)?.route
 
     Scaffold(
@@ -145,11 +153,18 @@ fun TodayScreen(
             if (isPlanEdited) {
                 EditedPlanBanner(onRevert = viewModel::revertPlan)
             }
+            if (planWarnings.isNotEmpty()) {
+                PlanWarningsPanel(planWarnings)
+            }
+            if (isApplyingEdit) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
             HorizontalDivider()
             DayRouteContent(
                 planState, stopBufferSeconds, onOpenLegMap,
                 editMode = editMode,
                 onMarkDogNotToday = viewModel::markDogNotToday,
+                onEditWalkDuration = { index, minutes -> editingWalk = index to minutes },
                 removingDogIds = removingDogIds,
             )
         }
@@ -162,6 +177,77 @@ fun TodayScreen(
             onDismiss = { showDatePicker = false },
         )
     }
+
+    editingWalk?.let { (index, minutes) ->
+        WalkDurationDialog(
+            initialMinutes = minutes,
+            onConfirm = { newMinutes ->
+                viewModel.setWalkDuration(index, newMinutes)
+                editingWalk = null
+            },
+            onDismiss = { editingWalk = null },
+        )
+    }
+}
+
+@Composable
+private fun WalkDurationDialog(
+    initialMinutes: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initialMinutes.toString()) }
+    val parsed = text.toIntOrNull()?.takeIf { it > 0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Walk duration") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Minutes") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                isError = parsed == null,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onConfirm) }, enabled = parsed != null) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PlanWarningsPanel(warnings: List<String>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "Plan warnings (kept anyway)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        warnings.forEach { w ->
+            Text(
+                text = "• $w",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp),
+            )
+        }
+    }
 }
 
 @Composable
@@ -171,6 +257,7 @@ private fun DayRouteContent(
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     editMode: Boolean,
     onMarkDogNotToday: (String) -> Unit,
+    onEditWalkDuration: (eventIndex: Int, currentMinutes: Int) -> Unit,
     removingDogIds: Set<String>,
 ) {
     when (state) {
@@ -194,7 +281,10 @@ private fun DayRouteContent(
                     }
                     val timeline = buildTimelineRows(route.events, stopBufferSeconds)
                     items(timeline) { row ->
-                        TimelineRowView(row, onOpenLegMap, editMode, onMarkDogNotToday, removingDogIds)
+                        TimelineRowView(
+                            row, onOpenLegMap, editMode,
+                            onMarkDogNotToday, onEditWalkDuration, removingDogIds,
+                        )
                     }
                 }
             }
@@ -346,7 +436,7 @@ private fun BreakUnavailablePanel() {
 
 /** UI-only view-model rows: an event, a travel leg, or a wait row. */
 private sealed interface TimelineRow {
-    data class Event(val event: RouteEvent) : TimelineRow
+    data class Event(val event: RouteEvent, val eventIndex: Int) : TimelineRow
     data class Leg(
         val seconds: Int,
         val from: GeoPoint,
@@ -360,7 +450,7 @@ private sealed interface TimelineRow {
 
 private fun buildTimelineRows(events: List<RouteEvent>, stopBufferSeconds: Int): List<TimelineRow> {
     if (events.isEmpty()) return emptyList()
-    val rows = mutableListOf<TimelineRow>(TimelineRow.Event(events[0]))
+    val rows = mutableListOf<TimelineRow>(TimelineRow.Event(events[0], 0))
     for (i in 1 until events.size) {
         val prev = events[i - 1]
         val current = events[i]
@@ -382,7 +472,7 @@ private fun buildTimelineRows(events: List<RouteEvent>, stopBufferSeconds: Int):
         val arrival = prev.timeSeconds + prev.durationAtSeconds(stopBufferSeconds) + current.incomingTravelSeconds
         val wait = current.timeSeconds - arrival
         if (wait >= 60) rows.add(TimelineRow.Wait(wait))
-        rows.add(TimelineRow.Event(current))
+        rows.add(TimelineRow.Event(current, i))
     }
     return rows
 }
@@ -393,11 +483,15 @@ private fun TimelineRowView(
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     editMode: Boolean,
     onMarkDogNotToday: (String) -> Unit,
+    onEditWalkDuration: (eventIndex: Int, currentMinutes: Int) -> Unit,
     removingDogIds: Set<String>,
 ) {
     when (row) {
         is TimelineRow.Leg -> LegRow(row, onOpenLegMap)
-        is TimelineRow.Event -> EventRow(row.event, editMode, onMarkDogNotToday, removingDogIds)
+        is TimelineRow.Event -> EventRow(
+            row.event, editMode, onMarkDogNotToday, removingDogIds,
+            onEditDuration = { minutes -> onEditWalkDuration(row.eventIndex, minutes) },
+        )
         is TimelineRow.Wait -> WaitRow(row)
     }
 }
@@ -458,6 +552,7 @@ private fun EventRow(
     editMode: Boolean = false,
     onMarkDogNotToday: (String) -> Unit = {},
     removingDogIds: Set<String> = emptySet(),
+    onEditDuration: (minutes: Int) -> Unit = {},
 ) {
     val icon = event.icon()
     val title = event.title()
@@ -470,8 +565,19 @@ private fun EventRow(
         is RouteEvent.Walk -> event.dogs.any { it.id in removingDogIds }
         else -> false
     }
+    // In edit mode a walk is tappable to change its duration.
+    val editableWalk = editMode && event is RouteEvent.Walk
     Row(
-        modifier = Modifier.fillMaxWidth().alpha(if (removing) 0.4f else 1f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (removing) 0.4f else 1f)
+            .then(
+                if (editableWalk) {
+                    Modifier.clickable { onEditDuration((event as RouteEvent.Walk).durationSeconds / 60) }
+                } else {
+                    Modifier
+                },
+            ),
         verticalAlignment = Alignment.Top,
     ) {
         Text(

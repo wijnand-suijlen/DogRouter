@@ -367,13 +367,17 @@ randomised property test asserts the solver never emits an infeasible plan;
 - **Schema** at v9 (migrations 1→2 … 8→9; 4→5 adds `isAlternative`, 5→6
   adds `latestStart`, 6→7 adds `Dog.active`, 7→8 adds the `appointments`
   table, 8→9 adds the `saved_plans` table).
-- **Manual plan edit (Fase 0)**: a plan can be pinned/hand-edited per date
+- **Manual plan edit (Fase 0–1)**: a plan can be pinned/hand-edited per date
   (`SavedPlan`, JSON via `SavedPlanCodec`, rehydrated against current
-  dogs/rules). `DayPlanService` shows a saved plan instead of re-solving; the
-  first edit — **"mark a dog not today"** (Today edit mode) — drops the dog,
-  re-times via `DayPlanner.retime`, and pins the result. Refresh/Revert discard
-  it. Foundation for the billing journal; more edit types (time/duration, add,
-  reorder) and the journal/History are the next steps.
+  dogs/rules). `DayPlanService` shows a saved plan instead of re-solving.
+  Edits (Today edit mode): **mark a dog not-today** (drops the dog) and **set a
+  walk's duration** (tap a walk). Both re-time via `DayPlanner.retime` with
+  `recomputeDwells = false` so a hand-set duration survives later edits, and
+  pin the result. A `PlanVerifier`-backed **warnings panel** flags an edit that
+  bends a constraint (kept anyway — "warn but allow"); `PlanVerifier` now lives
+  in main for this. Refresh/Revert discard the pinned plan. Next (Fase 1b):
+  add a walk and pin a stop's time (need ad-hoc rule storage / per-event time
+  pins); then drag-reorder and the billing journal/History.
 
 ## Architecture snapshot
 
@@ -483,9 +487,10 @@ shape a single day. Three related needs:
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an
   image loader → user OK), surface conflicts.
-- Manual override of the plan — **started** (Fase 0: mark a dog not-today +
-  persisted/pinned plans). Next: edit time/duration, add a walk, drag-reorder;
-  then the billing journal/History.
+- Manual override of the plan — **in progress** (Fase 0–1: mark a dog
+  not-today, set a walk's duration, persisted/pinned plans, warnings panel).
+  Next: add a walk, pin a stop's time, drag-reorder; then the billing
+  journal/History.
 - History tab (stub; in-scope per SCOPE for invoicing).
 - Photo Picker (user deferred).
 

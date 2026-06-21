@@ -86,6 +86,18 @@ fun SettingsScreen(
         }
     }
 
+    val urssafLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportUrssaf { bytes ->
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(bytes)
+                } ?: error("Could not open the file for writing")
+            }
+        }
+    }
+
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) pendingImportUri = uri }
@@ -159,6 +171,7 @@ fun SettingsScreen(
                 onDeleteRoutingData = viewModel::deleteRoutingData,
                 onRunRoutingSelfTest = viewModel::runRoutingSelfTest,
                 onExportData = { exportLauncher.launch("dogrouter-backup.json") },
+                onExportUrssaf = { urssafLauncher.launch("dogrouter-urssaf.zip") },
                 onImportData = {
                     importLauncher.launch(
                         arrayOf("application/json", "application/octet-stream", "text/plain"),
@@ -224,6 +237,7 @@ private fun SettingsForm(
     onDeleteRoutingData: () -> Unit,
     onRunRoutingSelfTest: () -> Unit,
     onExportData: () -> Unit,
+    onExportUrssaf: () -> Unit,
     onImportData: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -432,6 +446,19 @@ private fun SettingsForm(
                 Icon(Icons.Default.Download, contentDescription = null)
                 Text("  Import")
             }
+        }
+        Spacer(Modifier.height(12.dp))
+        SectionTitle("URSSAF")
+        Text(
+            text = "Export a .zip with two CSV tables (walks + receipts, test owners " +
+                "excluded, with a quarter column) and a full backup — for the quarterly " +
+                "turnover declaration and safe-keeping.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(onClick = onExportUrssaf, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Upload, contentDescription = null)
+            Text("  Export for URSSAF (.zip)")
         }
     }
 }

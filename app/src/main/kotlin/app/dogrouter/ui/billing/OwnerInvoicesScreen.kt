@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +36,6 @@ import app.dogrouter.data.entity.InvoiceKind
 import app.dogrouter.domain.billing.formatEuros
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
-import java.io.File
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
@@ -49,6 +49,10 @@ fun OwnerInvoicesScreen(
 ) {
     val invoices by viewModel.invoices.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    LaunchedEffect(viewModel) {
+        viewModel.result.collect { file -> sharePdf(context, file) }
+    }
 
     Scaffold(
         topBar = {
@@ -72,14 +76,7 @@ fun OwnerInvoicesScreen(
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                 items(invoices, key = { it.number }) { invoice ->
-                    InvoiceRow(
-                        invoice = invoice,
-                        onShare = {
-                            val path = invoice.pdfPath
-                            val file = path?.let { File(it) }
-                            if (file != null && file.exists()) sharePdf(context, file)
-                        },
-                    )
+                    InvoiceRow(invoice = invoice, onShare = { viewModel.shareInvoice(invoice.number) })
                 }
             }
         }
@@ -114,8 +111,7 @@ private fun InvoiceRow(invoice: Invoice, onShare: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            val hasPdf = invoice.pdfPath?.let { File(it).exists() } == true
-            IconButton(onClick = onShare, enabled = hasPdf) {
+            IconButton(onClick = onShare) {
                 Icon(Icons.Default.Share, contentDescription = "Share invoice")
             }
         }

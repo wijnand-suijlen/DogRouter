@@ -72,6 +72,7 @@ fun OwnerAccountScreen(
     ownerId: String,
     onBack: () -> Unit,
     onOpenInvoices: () -> Unit,
+    onCorrectService: (serviceId: String) -> Unit,
     viewModel: OwnerAccountViewModel = koinViewModel { parametersOf(ownerId) },
 ) {
     val owner by viewModel.owner.collectAsStateWithLifecycle()
@@ -198,6 +199,7 @@ fun OwnerAccountScreen(
                         selected = service.id in selected,
                         onToggleSelected = { viewModel.toggleSelected(service.id) },
                         onDelete = { viewModel.removeService(service) },
+                        onCorrect = { onCorrectService(service.id) },
                     )
                 }
             }
@@ -221,6 +223,7 @@ private fun ServiceRow(
     selected: Boolean,
     onToggleSelected: () -> Unit,
     onDelete: () -> Unit,
+    onCorrect: () -> Unit,
 ) {
     Card(colors = CardDefaults.outlinedCardColors()) {
         Row(
@@ -258,6 +261,9 @@ private fun ServiceRow(
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "Remove service", tint = MaterialTheme.colorScheme.error)
                 }
+            } else if (service.amountCents > 0) {
+                // A paid service can only be corrected via a credit note (avoir).
+                TextButton(onClick = onCorrect) { Text("Correct") }
             }
         }
     }

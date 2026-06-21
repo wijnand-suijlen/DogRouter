@@ -55,3 +55,6 @@ planningsprobleem-*
 
 # Local BRouter data for the off-device harness (large segment, never push)
 brouter-data/
+
+# Invoice regeneration output (tools/regenerate_invoices.py)
+invoices_out/

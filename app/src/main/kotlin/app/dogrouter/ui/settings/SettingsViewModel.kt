@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.backup.BackupRepository
 import app.dogrouter.data.backup.BackupSummary
+import app.dogrouter.data.backup.BillingExportRepository
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.IssuerProfile
 import app.dogrouter.data.prefs.SettingsRepository
@@ -99,6 +100,7 @@ class SettingsViewModel(
     private val routingInstaller: RoutingDataInstaller,
     private val routingProvider: RoutingProvider,
     private val backupRepo: BackupRepository,
+    private val billingExportRepo: BillingExportRepository,
 ) : ViewModel() {
 
     private val _form = MutableStateFlow<SettingsFormState?>(null)
@@ -257,6 +259,21 @@ class SettingsViewModel(
                 withContext(Dispatchers.IO) {
                     val text = backupRepo.exportToJson()
                     write(text)
+                }
+            }.onSuccess { _backupEvents.send(BackupEvent.Exported) }
+                .onFailure { _backupEvents.send(BackupEvent.Failed(it.message ?: "Export failed")) }
+        }
+    }
+
+    /**
+     * Build the URSSAF export (two CSVs + full backup) as a ZIP and hand the
+     * bytes to [write] (backed by the chosen file URI). IO off the main thread.
+     */
+    fun exportUrssaf(write: suspend (bytes: ByteArray) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    write(billingExportRepo.buildUrssafZip())
                 }
             }.onSuccess { _backupEvents.send(BackupEvent.Exported) }
                 .onFailure { _backupEvents.send(BackupEvent.Failed(it.message ?: "Export failed")) }

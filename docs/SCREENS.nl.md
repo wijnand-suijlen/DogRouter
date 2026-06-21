@@ -1,172 +1,157 @@
 # Schermen (v1)
 
-Schermen-inventarisatie en navigatie voor DogRouter v1. Afgeleid van
-[`SCOPE.nl.md`](../SCOPE.nl.md). Werkafspraak, geen contract — schermen
-mogen verschuiven tijdens de bouw.
+Scherm-inventaris en navigatie voor DogRouter v1. Afgeleid van
+[`SCOPE.md`](../SCOPE.md). Werkafspraak, geen contract — schermen verschuiven
+naarmate we tijdens het bouwen leren.
 
-> Vertaling van [`SCREENS.md`](SCREENS.md). De Engelse versie is canoniek.
+> Dit is de Nederlandse vertaling van [`SCREENS.md`](SCREENS.md). De Engelse
+> versie is leidend.
 
-## Ontwerp-constraints
+## Ontwerpbeperkingen
 
-- Eén gebruiker (de uitlater), kleine dataset (≤ 20 klanten, vrijwel
-  allemaal één hond).
-- De meeste klanten hebben exact één hond, verhuizen zelden, en hebben een
-  vast weekrooster. Het datamodel klapt daarop in: **één `Dog`-entity
-  bundelt eigenaar-info, adres en stop-eigenaardigheden.** In-place bewerken
-  van zelden-veranderende velden is op deze schaal prima.
-- De app moet bruikbaar zijn op een rijdende bakfiets (handschoenen,
-  felle zon). Het uitvoer-scherm prioriteert een heldere "huidige stop /
-  volgende stops"-weergave.
-- Offline-first volgens `SCOPE.nl.md`.
+- Eén gebruiker (de uitlaatster), kleine dataset (≤ 20 klanten, meestal één hond).
+- De app moet bruikbaar zijn op een rijdende bakfiets (handschoenen, zonlicht).
+  Het uitvoerscherm zet "huidige stop / volgende stops" voorop.
+- Offline-first volgens `SCOPE.md`.
+- **Eigenaren zijn een eigen entiteit.** Facturatie telt gedane wandelingen per
+  eigenaar op, dus elke `Dog` verwijst naar een `Owner` (naam, factuuradres,
+  telefoon, e-mail). (Vroeg in v1 zaten de eigenaargegevens op de hond; dat
+  promoveren was een kleine migratie — zie [Ontwerpkeuzes](#ontwerpkeuzes).)
 
-## Schermen-overzicht
+## Scherm-inventaris
 
-Status-legenda: **Gebouwd** = werkt in de app · **Stub** = in de navigatie
-gekoppeld maar placeholder · **Gepland** = nog niet begonnen.
+Statuslegenda: **Gebouwd** = werkt in de app · **Stub** = in navigatie maar
+placeholder · **Gepland** = nog niet begonnen.
 
-| # | Scherm | Hoofdgebruik | Toegang | Status |
+| # | Scherm | Hoofdgebruik | Ingang | Status |
 |---|---|---|---|---|
-| 1 | **Vandaag** | Plan van vandaag bekijken en finetunen (of een andere dag kiezen). | Standaard openings-scherm. | Gebouwd (read-only timeline; finetune-acties gepland) |
-| 2 | **Plan volgen** | Fietsmodus — huidige stop groot, volgende stops eronder, afvinken onderweg. | "Start rit" vanuit Vandaag (volledig scherm). | Gebouwd (foto + hervatten-na-afsluiten volgt) |
-| 3 | **Honden** | Lijst + add/edit. Elke hond bundelt eigenaar, adres, eigenaardigheden, rooster, gewicht, etc. | Onderste tab. | Gebouwd |
-| 4 | **Geschiedenis** | Afgesloten dagen uit het verleden, filterbaar op hond. Genoeg detail om externe facturatie te ondersteunen. | Onderste tab. | Stub |
-| 5 | **Instellingen** | Planning-parameters + app-voorkeuren + data-backup/import. | Onderste tab of overflow. | Gebouwd |
+| 1 | **Today** | Dagplan bekijken, handmatig bewerken (drag & drop) en committen. | Startscherm. | Gebouwd |
+| 2 | **Follow plan** | Fietsmodus — huidige stop groot, volgende eronder, afvinken. | "Start trip" vanuit Today (volledig scherm). | Gebouwd (foto + hervatten volgt) |
+| 3 | **Dogs** | Lijst + toevoegen/bewerken; elke hond koppelt aan een eigenaar. | Onderste tab. | Gebouwd |
+| 3b | **Owners** | Gedeelde eigenarenlijst (naam, factuuradres, telefoon, e-mail, werkgever/test-vlaggen). | Personen-icoon op Dogs, of "Add owner" bij een hond. | Gebouwd |
+| 4 | **Billing** | Lopende rekeningen per eigenaar; facturen, betalingen, URSSAF-export. | Onderste tab (vervangt de oude History-tab). | Gebouwd |
+| 5 | **Settings** | Planningsparameters, uitgever-profiel, backup/import + URSSAF-export. | Onderste tab. | Gebouwd |
 
-**Week** (een read-only week-raster) stond eerder als v1-scherm én onderste
-tab. Het is uit v1 geschrapt — zie
-[Overwogen, niet in v1](#overwogen-niet-in-v1) — en uit de navigatiecode
-verwijderd, dus de onderste balk heeft nu vier tabs.
+De onderbalk heeft vier tabs: **Today · Dogs · Billing · Settings.**
 
-## Detail per scherm
+## Per-scherm detail
 
-### 1. Vandaag *(Gebouwd — finetune-acties nog gepland)*
-- Datum-kiezer bovenaan, met vorige/volgende/vandaag-knoppen (standaard:
-  vandaag).
-- Stops in voorgestelde volgorde, gegroepeerd per rit als er meer dan één
-  ronde nodig is. *Nu is dit een PDPTW-event-timeline (thuis-start, ophalen,
-  wandelingen, brengen, thuis-eind) met een samenvattingskaart en een
-  conflictpaneel voor onplanbare wandelingen.*
-- Per stop: hondnaam, adres, verwachte aankomsttijd, eventuele
-  eigenaardigheden ("aanbellen, ~3 min wachten"), planner-schatting van de
-  duur.
-- Elk fietsbeen tussen stops heeft een kaart-icoon; tik erop voor een
-  volledig-scherm straatkaart van dat been die je kunt zoomen en
-  verschuiven. (Geen inline kaart in de lijst — veel levende kaarten daar
-  gaven prestatieproblemen.)
-- Inline acties *(gepland, niet gebouwd)*: stops herordenen, een hond naar
-  een andere rit verplaatsen, geschatte duur van een leg overschrijven, een
-  stop overslaan, een tijdelijke obstructie toevoegen ("X-straat vandaag
-  dicht" — alleen voor het plan van vandaag).
-- Knop "Start rit" → opent Plan volgen *(gepland)*.
+### 1. Today *(Gebouwd)*
+- Datumkiezer bovenaan met vorige/volgende/vandaag (standaard: vandaag).
+- Leesmodus: een PDPTW-tijdlijn (thuis-start, pickups, wandelingen, dropoffs,
+  thuis-eind) met reis-legs, wachtrijen, een samenvattingskaart en een
+  conflictpaneel.
+- Elke fiets/voet-leg heeft een kaart-icoon; tik voor een volledig stratenkaartje.
+- **Bewerkmodus** (potlood): het plan splitst in versleepbare **chips** waarbij
+  *positie = uitvoeringsvolgorde*. Long-press de sleep-handle om te herordenen
+  (pickup ≤ walk ≤ dropoff afgedwongen); een leg-chip togglet voet/fiets; tik een
+  walk voor de duur, een pickup voor de starttijd; een walk split/merge; een
+  pickup zet de hond op niet-vandaag; de FAB voegt een walk of afspraak toe.
+  Hertimet na elke wijziging (onmogelijke plannen worden rood getoond en
+  gewaarschuwd); undo; Done finaliseert.
+- **Commit** (bonnetje-icoon): zet na bevestiging de wandelingen van de dag tegen
+  de huidige prijzen op de lopende rekeningen. Een gecommitte dag toont een
+  vinkje en kan niet dubbel.
+- "Start trip" → Follow plan.
 
-### 2. Plan volgen *(Gebouwd — foto + hervatten-na-afsluiten volgt)*
-- Volledig scherm, grote tekst, ontworpen om in één blik tijdens het
-  fietsen te lezen; verbergt de onderste balk.
-- Huidige stop domineert: grote verwachte aankomsttijd, titel (bv.
-  "Pickup Rex"), adres, telefoonnummer eigenaar, en eigenaardigheden in
-  een uitgelichte notitie. Hondfoto wordt nog niet getoond (geen
-  image-loader in het project).
-- Wanneer je de stop fietsend bereikt vanaf de vorige, toont een inline
-  straatkaart-overzicht dat been; tik erop voor een volledig-scherm kaart
-  die je kunt zoomen en verschuiven.
-- Volgende 1–2 stops kleiner eronder.
-- Eén tik op de grote "Done — next stop"-knop gaat verder; "Back"
-  corrigeert een misklik. Een voortgangsbalk en "Stop n of N" tonen de
-  positie; een "Trip complete"-staat sluit de rit af.
-- Afsluiten gaat terug naar Vandaag. Voortgang overleeft nu rotatie maar
-  niet het verlaten van het scherm — een hervatbare gesuspendeerde rit is
-  een vervolgstap.
+### 2. Follow plan *(Gebouwd — foto + hervatten volgt)*
+- Volledig scherm, grote tekst, te overzien tijdens het fietsen; verbergt de
+  onderbalk.
+- Huidige stop domineert (ETA, titel, adres, telefoon eigenaar, bijzonderheden).
+  Volgende 1–2 stops eronder. Eén grote "Done — next stop"; "Back" corrigeert.
+- Inline leg-kaart; tik voor volledig scherm. Afsluiten gaat terug naar Today.
 
-### 3. Honden *(Gebouwd)*
-- Lijst met foto, naam, eigenaar; zoek/filter.
-- Tik → Hond-detail / bewerken:
-  - Foto, naam, ras, gewicht (kg).
-  - Eigenaar-naam + telefoonnummer.
-  - Ophaal-/breng-adres + stop-eigenaardigheden (vrije tekst + optionele
-    vaste tijdscorrectie).
-  - **Transport-staat:** *bakfiets* en *rugzak*, elk een keuze uit
-    *ja / nee / nog niet getest*. Twee onafhankelijke velden; nieuwe honden
-    staan standaard op "nog niet getest" voor beide.
-  - Incompatibiliteiten: kies uit lijst van andere honden (symmetrisch).
-  - Weekrooster: per weekdag, aan/uit + optioneel tijdvenster.
-  - Opmerkingen (vrije tekst).
+### 3. Dogs *(Gebouwd)*
+- Lijst met naam, eigenaar, gewicht; pauzeer/hervat-schakelaar.
+- Tik → hond bewerken: foto, naam, ras, gewicht; **eigenaar-dropdown + "Add
+  owner"**; ophaal/afzet-adres (+ bijzonderheden, tijdcorrectie); transportstatus
+  (bak / rugzak: ja/nee/niet getest); incompatibiliteiten; weekschema met **per
+  uitlaatregel een bewerkbare prijs** (standaardtarief voorgevuld); notities.
 
-### 4. Geschiedenis *(Stub)*
-- Lijst van voltooide dagen, nieuwste eerst.
-- Per rij: datum, aantal ritten, aantal honden, totale verstreken tijd.
-- Tik op een dag → details: welke honden, in welke volgorde, start- en
-  eindtijden.
-- Filters: op hond, op datumbereik. Genoeg om wandelingen per klant te
-  tellen wanneer je facturen maakt in een externe tool.
+### 3b. Owners *(Gebouwd)*
+- Bereikbaar via de Dogs-lijst (personen-icoon) of "Add owner" op een hondformulier.
+- Eigarenlijst met werkgever/test-chips. Toevoegen/bewerken: voor/achternaam,
+  factuuradres, telefoon, e-mail, schakelaars **Employer** (employeur particulier
+  — alleen maanduren tellen, geen facturen) en **Test** (buiten de URSSAF-omzet,
+  facturen met watermerk). Eigenaren worden niet verwijderd zodra ze diensten
+  hebben.
 
-### 5. Instellingen *(Gebouwd)*
-- **Planning-parameters:** gemiddelde fietssnelheid (km/u), bakfiets-
-  gewichtscapaciteit (kg, standaard 70), standaard tijdmarge per stop (min).
-- **App-voorkeuren:** thema, taal.
-- **Data:** export naar bestand, import uit bestand.
+### 4. Billing *(Gebouwd — vervangt History)*
+- **Overzicht:** eigenaren met hun openstaand saldo; werkgever-eigenaren tonen in
+  plaats daarvan de uren deze maand. Een "committed days"-ingang (bovenbalk) toont
+  elke gecommitte dag; tik erop voor het volledige plan zoals het gecommit was
+  (een momentopname).
+- **Eigenaar-rekening:** saldo (of uren-per-maand voor werkgevers); de
+  dienstenlijst (betaald/onbetaald-badges); handmatig item toevoegen; onbetaalde
+  dienst verwijderen; de TEST-status read-only. Vink onbetaalde diensten →
+  **Invoice** (proef-factuur) of **Register payment** (facture acquittée — markeert
+  betaald, verlaagt saldo). Een betaalde dienst biedt **Correct** → de avoir-wizard.
+- **Facturen** (per eigenaar): elke facture / acquittée / avoir met een deel-actie
+  die de PDF opnieuw rendert uit de bevroren momentopname (werkt ook na herstel).
+- **Avoir-wizard:** een 3-staps tutorial om een negatieve correctie (facture
+  d'avoir) te maken voor een al-betaalde dienst.
+- Facturen zijn Franse micro-entrepreneur (BNC, niet-TVA) PDF's via het ingebouwde
+  `PdfDocument`; test-eigenaren krijgen een aparte `TEST-`-nummerreeks + watermerk;
+  delen via de systeem-deel-sheet (e-mail/print).
+
+### 5. Settings *(Gebouwd)*
+- **Planningsparameters:** fiets/loopsnelheid, capaciteit, buffers, gewichten,
+  LNS-iteraties; thuisbasis; pauzes & afspraken.
+- **Uitgever (Invoice issuer):** je naam (incl. EI), adres, SIRET, e-mail,
+  telefoon, factuurnummer-prefix, bewerkbare Franse wettelijke vermeldingen.
+  Alleen lokaal opgeslagen.
+- **Data:** volledige backup exporteren/importeren (JSON).
+- **URSSAF:** een `.zip` met `wandelingen.csv` + `ontvangsten.csv` (test-eigenaren
+  uitgesloten, kwartaal-kolom) en een volledige `backup.json`.
 
 ## Navigatie-sitemap
 
 ```
                        Onderste navigatie
    ┌──────────┬──────────┬──────────┬──────────┐
-   │ Vandaag  │  Honden  │ Geschied │Instelling│
+   │  Today   │   Dogs   │ Billing  │ Settings │
    └────┬─────┴────┬─────┴────┬─────┴────┬─────┘
-        │          │          │          │
-        │          │          │          ├── Planning-parameters
-        │          │          │          ├── App-voorkeuren
-        │          │          │          └── Data backup / import
+        │          │          │          ├── Planningsparameters
+        │          │          │          ├── Uitgever-profiel
+        │          │          │          └── Backup/import · URSSAF-export
         │          │          │
-        │          │          └── Dag-detail (read-only)
+        │          │          ├── Eigenaar-rekening ── Facturen ── (delen/her-renderen)
+        │          │          │                    └── Correct → avoir-wizard
+        │          │          └── Committed days ── Gecommitte dag (plan-momentopname)
         │          │
-        │          ├── Hond-detail / bewerken
-        │          └── Nieuwe hond
+        │          ├── Hond bewerken ── Add owner
+        │          ├── Nieuwe hond
+        │          └── Owners (lijst) ── Eigenaar bewerken
         │
-        └── Start rit → Plan volgen (volledig-scherm-bestemming)
+        └── Start trip → Follow plan (volledig-scherm bestemming)
 ```
 
-## Ontwerp-rationale
+## Ontwerpkeuzes
 
-### Waarom één `Dog`-entity in plaats van aparte Klant / Adres / Hond?
+### Eigenaren gepromoveerd van losse velden naar eigen entiteit
 
-Op deze schaal — ~20 klanten, vrijwel allemaal één hond, zelden verhuizend
-— voegt het scheiden van eigenaar en adres in eigen entiteiten in 95% van
-de gevallen bewerk-overhead toe voor theoretisch voordeel in 5%. Als een
-klant écht twee honden heeft, voer je de eigenaar-velden twee keer in;
-mild irritant, misschien één keer per jaar. Als een klant verhuist, wordt
-het adres één keer per hond aangepast (waarschijnlijk één hond).
-
-Geaccepteerde trade-off: kleine data-duplicatie in het zeldzame
-meerdere-honden-geval, plus een kleine migratie als we `Client` later toch
-naar eerste-klas willen promoveren. Op deze schaal is die migratie klein.
+Vroeg in v1 zaten naam/telefoon van de eigenaar op de `Dog` om bewerk-overhead te
+sparen bij ~20 klanten. Facturatie veranderde dat: lopende rekeningen, facturen en
+de tweede-hond-korting zijn allemaal *per eigenaar*, dus een `Owner`-entiteit
+verdient z'n plek. De migratie seedt één eigenaar per bestaande eigenaarsnaam en
+koppelt de honden; de oude `ownerName`/`ownerPhone`-kolommen blijven als cache.
 
 ### Waarom onderste tabs en geen drawer?
 
-De top-level bestemmingen (Vandaag, Honden, Geschiedenis, Instellingen) passen
-comfortabel in Material 3's onderste navigatie (aanbevolen max is vijf). Een
-drawer voegt een extra tik toe en verbergt het overzicht.
+De hoofdbestemmingen (Today, Dogs, Billing, Settings) passen prima in Material 3's
+onderste navigatie. Een drawer kost een tik extra en verbergt de inventaris.
+
+### Waarom is Follow plan een apart scherm van Today?
+
+Andere modus, andere ergonomie. Today is voor plannen en bewerken — veel velden,
+kleine tekst. Follow plan is voor uitvoering op de fiets — grote tekst, weinig
+taps, in één oogopslag. Eén scherm voor beide doet beide tekort.
 
 ## Overwogen, niet in v1
 
-### Week (read-only week-raster)
+### Week (alleen-lezen weekraster)
 
-Een 7-koloms raster (ma–zo) van welke honden op welke dag komen, bereikbaar
-als eigen onderste tab. Geschrapt uit v1 omdat:
-
-- Het toont **puur afgeleide data**: welke hond op welke dag komt rechtstreeks
-  uit de weekrooster-regels per hond, die je al onder Honden bewerkt. Het
-  raster is een visualisatie, geen eigen bron van waarheid.
-- De enige navigatiewaarde — "tik op een cel om die dag te openen" — wordt al
-  gedekt door de datum-kiezer van Vandaag (vorige/volgende/vandaag).
-- Het verdient geen plek op een werkdag, waar de echte behoefte uitvoer is
-  (Plan volgen), niet een read-only weekoverzicht.
-
-Kan later terugkeren als nice-to-have om overvolle dagen te spotten of een
-nieuwe klant in te werken, maar is in v1 geen tab waard.
-
-### Waarom is Plan volgen een apart scherm van Vandaag?
-
-Andere modi, andere ergonomie. Vandaag is voor plannen — veel velden,
-kleine tekst, bewerkingen. Plan volgen is voor uitvoer op de fiets — grote
-tekst, minimale tikken, glanceable. Eén scherm beide laten doen
-compromitteert beide.
+Een 7-koloms raster van welke honden op welke dag komen, als eigen tab. Uit v1
+geschrapt: het toont puur afgeleide data (het weekschema per hond), de "tik een
+dag"-navigatie zit al in de datumkiezer van Today, en een werkdag vraagt
+uitvoering (Follow plan), geen alleen-lezen overzicht. Komt misschien terug.

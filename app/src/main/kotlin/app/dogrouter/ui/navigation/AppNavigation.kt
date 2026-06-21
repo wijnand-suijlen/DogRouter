@@ -26,6 +26,7 @@ import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.ui.addresspicker.AddressPickerScreen
 import app.dogrouter.ui.common.LegMapScreen
+import app.dogrouter.ui.billing.AvoirWizardScreen
 import app.dogrouter.ui.billing.BillingScreen
 import app.dogrouter.ui.billing.CommittedDayDetailScreen
 import app.dogrouter.ui.billing.CommittedDaysScreen
@@ -93,9 +94,11 @@ object BillingRoutes {
     const val OWNER_INVOICES = "billing/owner/{ownerId}/invoices"
     const val COMMITTED = "billing/committed"
     const val COMMITTED_DAY = "billing/committed-day/{date}"
+    const val AVOIR = "billing/owner/{ownerId}/avoir/{serviceId}"
     fun owner(ownerId: String) = "billing/owner/$ownerId"
     fun ownerInvoices(ownerId: String) = "billing/owner/$ownerId/invoices"
     fun committedDay(date: LocalDate) = "billing/committed-day/$date"
+    fun avoir(ownerId: String, serviceId: String) = "billing/owner/$ownerId/avoir/$serviceId"
 }
 
 object AddressPickerRoutes {
@@ -205,6 +208,7 @@ fun AppNavigation() {
                         ownerId = ownerId,
                         onBack = { navController.popBackStack() },
                         onOpenInvoices = { navController.navigate(BillingRoutes.ownerInvoices(ownerId)) },
+                        onCorrectService = { serviceId -> navController.navigate(BillingRoutes.avoir(ownerId, serviceId)) },
                     )
                 }
                 composable(
@@ -214,6 +218,19 @@ fun AppNavigation() {
                     OwnerInvoicesScreen(
                         ownerId = entry.arguments?.getString("ownerId").orEmpty(),
                         onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(
+                    route = BillingRoutes.AVOIR,
+                    arguments = listOf(
+                        navArgument("ownerId") { type = NavType.StringType },
+                        navArgument("serviceId") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    AvoirWizardScreen(
+                        ownerId = entry.arguments?.getString("ownerId").orEmpty(),
+                        serviceId = entry.arguments?.getString("serviceId").orEmpty(),
+                        onDone = { navController.popBackStack() },
                     )
                 }
                 composable(BillingRoutes.COMMITTED) {

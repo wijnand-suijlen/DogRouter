@@ -17,7 +17,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
-const val BACKUP_VERSION = 5
+const val BACKUP_VERSION = 6
 
 /**
  * Self-contained snapshot of everything the walker enters: dogs (with
@@ -54,6 +54,7 @@ data class InvoiceDto(
     val acquittedDate: String? = null,
     val totalCents: Int,
     val pdfPath: String? = null,
+    val renderJson: String = "",
 )
 
 @Serializable
@@ -210,7 +211,8 @@ fun CommittedDay.toDto() = CommittedDayDto(
 
 fun Invoice.toDto() = InvoiceDto(
     number = number, ownerId = ownerId, date = date.toString(), kind = kind, isTest = isTest,
-    acquitted = acquitted, acquittedDate = acquittedDate?.toString(), totalCents = totalCents, pdfPath = pdfPath,
+    acquitted = acquitted, acquittedDate = acquittedDate?.toString(), totalCents = totalCents,
+    pdfPath = pdfPath, renderJson = renderJson,
 )
 
 fun Appointment.toDto() = AppointmentDto(
@@ -272,7 +274,7 @@ fun CommittedDayDto.toEntity() = CommittedDay(
 fun InvoiceDto.toEntity() = Invoice(
     number = number, ownerId = ownerId, date = LocalDate.parse(date), kind = kind, isTest = isTest,
     acquitted = acquitted, acquittedDate = acquittedDate?.let { LocalDate.parse(it) },
-    totalCents = totalCents, pdfPath = pdfPath,
+    totalCents = totalCents, pdfPath = pdfPath, renderJson = renderJson,
 )
 
 fun AppointmentDto.toEntity() = Appointment(

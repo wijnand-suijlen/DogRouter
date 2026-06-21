@@ -24,6 +24,9 @@ interface BillableServiceDao {
     @Query("SELECT * FROM billable_services WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): BillableService?
 
+    @Query("SELECT * FROM billable_services WHERE invoiceNumber = :number")
+    suspend fun findByInvoiceNumber(number: String): List<BillableService>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(service: BillableService)
 

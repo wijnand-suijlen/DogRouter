@@ -1,21 +1,21 @@
 # Screens (v1)
 
 Screen inventory and navigation for DogRouter v1. Derived from
-[`SCOPE.md`](../SCOPE.md). Working agreement, not a contract — screens may
-move as we learn during build.
+[`SCOPE.md`](../SCOPE.md). Working agreement, not a contract — screens move as we
+learn during build.
 
 > Dutch translation: [`SCREENS.nl.md`](SCREENS.nl.md). English is canonical.
 
 ## Design constraints
 
 - Single user (the walker), small dataset (≤ 20 clients, mostly one dog each).
-- Most clients have exactly one dog, rarely move, and have a fixed weekly
-  schedule. The data model is collapsed accordingly: **one `Dog` entity
-  bundles owner info, address, and stop quirks.** Editing the rarely-changing
-  fields in place is acceptable at this scale.
 - The app must be usable on a moving cargo bike (gloves, sun glare). The
   execution screen prioritises a clear "current stop / next stops" view.
 - Offline-first per `SCOPE.md`.
+- **Owners are a first-class entity.** Billing rolls up done walks per owner, so
+  an `Owner` (name, billing address, phone, email) is referenced by each `Dog`.
+  (Early v1 bundled owner info onto the dog; promoting it was a small migration —
+  see [Design rationale](#design-rationale).)
 
 ## Screen inventory
 
@@ -24,138 +24,129 @@ placeholder · **Planned** = not yet started.
 
 | # | Screen | Primary use | Entry point | Status |
 |---|---|---|---|---|
-| 1 | **Today** | View and fine-tune today's plan (or pick another day). | Default landing screen. | Built (read-only timeline; fine-tune actions planned) |
+| 1 | **Today** | View, hand-edit (drag & drop) and commit a day's plan. | Default landing screen. | Built |
 | 2 | **Follow plan** | Cycling mode — current stop big, next stops listed, tick off as you go. | "Start trip" from Today (full-screen). | Built (photo + resume-on-exit to come) |
-| 3 | **Dogs** | List + add/edit. Each dog bundles owner, address, quirks, schedule, weight, etc. | Bottom tab. | Built |
-| 4 | **History** | Past completed days, filterable by dog. Enough detail to support external invoicing. | Bottom tab. | Stub |
-| 5 | **Settings** | Planning parameters + app prefs + data backup/import. | Bottom tab or overflow. | Built |
+| 3 | **Dogs** | List + add/edit; each dog links to an owner. | Bottom tab. | Built |
+| 3b | **Owners** | Shared list of owners (name, billing address, phone, email, employer/test flags). | Person icon on Dogs, or "Add owner" from a dog. | Built |
+| 4 | **Billing** | Running accounts per owner; invoices, payments, URSSAF export. | Bottom tab (replaces the old History tab). | Built |
+| 5 | **Settings** | Planning parameters, invoice issuer profile, data backup/import + URSSAF export. | Bottom tab. | Built |
 
-**Week** (a read-only weekly grid) was previously listed as a v1 screen and a
-bottom tab. It has been dropped from v1 — see
-[Considered, not in v1](#considered-not-in-v1) — and removed from the
-navigation code, so the bottom bar now has four tabs.
+The bottom bar has four tabs: **Today · Dogs · Billing · Settings.**
 
 ## Per-screen detail
 
-### 1. Today *(Built — fine-tune actions still planned)*
+### 1. Today *(Built)*
 - Date picker at top, with prev/next/today controls (default: today).
-- Stops in proposed order, grouped by trip if more than one round is needed.
-  *Today this is a PDPTW event timeline (home-start, pickups, walks, drop-offs,
-  home-end) with a summary card and a conflict panel for unschedulable walks.*
-- Per stop: dog name, address, expected arrival, any quirks ("ring bell,
-  wait ~3 min"), planner-estimated duration.
-- Each cycling leg between stops has a map icon; tap it to open a
-  full-screen street map of that leg you can zoom and pan. (No inline map
-  in the list — many live maps there caused performance problems.)
-- Inline actions *(planned, not built)*: reorder stops, move a dog between
-  trips, override a leg's estimated duration, mark a stop skipped, add a
-  temporary obstacle ("X-street closed today" — applies only to this day's
-  plan).
-- "Start trip" button → enters Follow plan *(planned)*.
+- Read-only mode: a PDPTW event timeline (home-start, pickups, walks, drop-offs,
+  home-end) with travel legs, wait rows, a summary card and a conflict panel.
+- Each cycling/foot leg has a map icon; tap to open a full-screen street map of
+  that leg.
+- **Edit mode** (pencil): the plan explodes into draggable **chips** where
+  *position = execution order*. Long-press the drag handle to reorder
+  (pickup ≤ walk ≤ dropoff is enforced); a leg chip toggles foot/bike; tap a walk
+  to set duration, a pickup to pin its start time; a walk splits/merges; a
+  pickup drops the dog for the day; the FAB adds a walk or a forced appointment.
+  Re-times after each change (impossible plans are shown red and warned); undo;
+  Done finalises.
+- **Commit** (receipt icon): adds the day's walks to the owners' running accounts
+  at the current prices, after a confirmation. A committed day shows a check and
+  can't be committed twice.
+- "Start trip" → Follow plan.
 
 ### 2. Follow plan *(Built — photo + resume-on-exit to come)*
-- Full-screen, large text, designed to glance at while cycling; hides the
-  bottom bar.
-- Current stop dominates: big ETA, title (e.g. "Pickup Rex"), address,
-  owner phone, and quirks in a highlighted note. Dog photo is not shown
-  yet (no image loader in the project).
-- When the stop is reached by cycling from the previous one, an inline
-  street-map overview shows that leg; tap it to open a full-screen map you
-  can zoom and pan.
-- Next 1–2 stops listed smaller below.
-- Single tap on the large "Done — next stop" button advances; "Back"
-  corrects a mis-tap. A progress bar and "Stop n of N" show position; a
-  "Trip complete" state ends the run.
-- Exit returns to Today. Progress currently survives rotation but not
-  leaving the screen — a resumable suspended trip is a follow-up.
+- Full-screen, large text, glanceable while cycling; hides the bottom bar.
+- Current stop dominates (ETA, title, address, owner phone, quirks). Next 1–2
+  stops below. Single big "Done — next stop"; "Back" corrects a mis-tap.
+- Inline leg map; tap for full-screen. Exit returns to Today.
 
 ### 3. Dogs *(Built)*
-- List with photo, name, owner; search/filter.
-- Tap → Dog detail / edit:
-  - Photo, name, breed, weight (kg).
-  - Owner name + phone.
-  - Pickup/drop-off address + stop quirks (free text + optional fixed time
-    adjustment).
-  - **Transport state:** *cargo bike* and *backpack*, each one of
-    *yes / no / not yet tested*. Two independent fields; new dogs default to
-    "not yet tested" for both.
-  - Incompatibilities: pick from list of other dogs (symmetric).
-  - Weekly schedule: per weekday, on/off + optional time window.
-  - Notes (free text).
+- List with name, owner, weight; pause/resume toggle.
+- Tap → dog edit: photo, name, breed, weight; **owner dropdown + "Add owner"**;
+  pickup/drop-off address (+ quirks, time adjustment); transport state (cargo
+  bike / backpack: yes/no/not tested); incompatibilities; weekly schedule with,
+  **per walk rule, an editable price** (default tariff pre-filled); notes.
 
-### 4. History *(Stub)*
-- List of completed days, newest first.
-- Per row: date, number of trips, number of dogs, total elapsed time.
-- Tap a day → details: which dogs, in which order, start/finish times.
-- Filters: by dog, by date range. Enough to count walks per client when
-  preparing invoices in an external tool.
+### 3b. Owners *(Built)*
+- Reachable from the Dogs list (person icon) or "Add owner" on a dog form.
+- List of owners with employer/test chips. Add/edit: first/last name, billing
+  address, phone, email, **Employer** (employeur particulier — only monthly hours
+  matter, no invoices) and **Test** (excluded from URSSAF turnover, invoices
+  watermarked) switches. Owners aren't deleted once they have billed services.
+
+### 4. Billing *(Built — replaces History)*
+- **Overview:** owners with their outstanding balance; employer owners show this
+  month's hours instead. A "committed days" entry (top bar) lists every committed
+  day; tapping one shows the full plan as it was committed (a snapshot).
+- **Owner account:** balance (or hours-per-month for employers); the service list
+  (paid/unpaid badges); add a manual item; remove an unpaid service; the TEST
+  status read-only. Tick unpaid services → **Invoice** (proof facture) or
+  **Register payment** (facture acquittée — marks paid, lowers the balance). A
+  paid service offers **Correct** → the credit-note (avoir) wizard.
+- **Invoices** (per owner): every facture / acquittée / avoir with a share action
+  that re-renders the PDF from its frozen snapshot (works after a restore too).
+- **Credit-note wizard:** a 3-step tutorial to issue a negative correction
+  (facture d'avoir) for an already-paid service.
+- Invoices are French micro-entrepreneur (BNC, non-TVA) PDFs via the built-in
+  `PdfDocument`; test owners use a separate `TEST-` number series + watermark;
+  shared via the system share sheet (email/print).
 
 ### 5. Settings *(Built)*
-- **Planning parameters:** average cycling speed (km/h), cargo-bike weight
-  capacity (kg, default 70), default per-stop time buffer (min).
-- **App preferences:** theme, language.
-- **Data:** export to file, import from file.
+- **Planning parameters:** cycling/walking speed, capacity, buffers, weights,
+  LNS iterations; home base; breaks & appointments.
+- **Invoice issuer:** your name (incl. EI), address, SIRET, email, phone, invoice
+  number prefix, editable French legal mentions. Stored locally only.
+- **Data:** export/import a full backup (JSON).
+- **URSSAF:** export a `.zip` with `wandelingen.csv` + `ontvangsten.csv` (test
+  owners excluded, quarter column) and a full `backup.json`.
 
 ## Navigation sitemap
 
 ```
                        Bottom Navigation
    ┌──────────┬──────────┬──────────┬──────────┐
-   │  Today   │   Dogs   │ History  │ Settings │
+   │  Today   │   Dogs   │ Billing  │ Settings │
    └────┬─────┴────┬─────┴────┬─────┴────┬─────┘
-        │          │          │          │
         │          │          │          ├── Planning params
-        │          │          │          ├── App preferences
-        │          │          │          └── Data backup / import
+        │          │          │          ├── Invoice issuer
+        │          │          │          └── Data backup / import · URSSAF export
         │          │          │
-        │          │          └── Day detail (read-only)
+        │          │          ├── Owner account ── Invoices ── (share/re-render)
+        │          │          │                └── Correct → credit-note wizard
+        │          │          └── Committed days ── Committed day (plan snapshot)
         │          │
-        │          ├── Dog detail / edit
-        │          └── New dog
+        │          ├── Dog detail / edit ── Add owner
+        │          ├── New dog
+        │          └── Owners (list) ── Owner edit
         │
         └── Start trip → Follow plan (full-screen destination)
 ```
 
 ## Design rationale
 
-### Why one `Dog` entity instead of separate Client / Address / Dog?
+### Owners promoted from bundled fields to a first-class entity
 
-At this scale — ~20 clients, mostly one dog each, rarely moving — separating
-owner and address into their own entities adds editing overhead in 95% of
-cases for theoretical benefit in 5%. If a client genuinely has two dogs the
-owner fields are entered twice; mildly annoying maybe once a year. If a
-client moves, the address is edited once per dog (probably one dog).
-
-Accepted trade-off: small data duplication in the rare multi-dog case, and a
-small migration if we later promote `Client` to a first-class entity. On
-this scale the migration is small.
+Early v1 bundled owner name/phone onto the `Dog` to save editing overhead at a
+~20-client scale. Billing changed the calculus: running accounts, invoices and
+the second-dog discount are all *per owner*, so an `Owner` entity earns its keep.
+The migration seeds one owner per distinct existing owner name and links the
+dogs; the legacy `ownerName`/`ownerPhone` columns stay as a denormalised cache.
 
 ### Why bottom tabs and not a drawer?
 
-The top-level destinations (Today, Dogs, History, Settings) sit comfortably
-in Material 3's bottom navigation (max recommended is five). A drawer adds a
-tap and hides the inventory.
+The top-level destinations (Today, Dogs, Billing, Settings) sit comfortably in
+Material 3's bottom navigation. A drawer adds a tap and hides the inventory.
+
+### Why is Follow plan a separate screen from Today?
+
+Different modes, different ergonomics. Today is for planning and editing — many
+fields, small text. Follow plan is for execution on a bike — big text, minimal
+taps, glanceable. One screen doing both compromises both.
 
 ## Considered, not in v1
 
 ### Week (read-only weekly grid)
 
-A 7-column (Mon–Sun) grid of which dogs come on which day, reachable as its
-own bottom tab. Dropped from v1 because:
-
-- It shows **purely derived data**: which dog on which day comes straight
-  from each dog's weekly schedule rules, already editable under Dogs. The grid
-  is a visualisation, not its own source of truth.
-- Its only navigation value — "tap a cell to open that day" — is already
-  covered by Today's date picker (prev/next/today).
-- It earns no place on a working day, where the real need is execution
-  (Follow plan), not a read-only weekly overview.
-
-May return later as a nice-to-have for spotting overloaded days or onboarding
-a new client, but it is not worth a tab in v1.
-
-### Why is Follow plan a separate screen from Today?
-
-Different modes, different ergonomics. Today is for planning — many fields,
-small text, edits. Follow plan is for execution on a bike — big text,
-minimal taps, glanceable. Forcing one screen to do both compromises both.
+A 7-column grid of which dogs come on which day, as its own tab. Dropped from v1:
+it shows purely derived data (each dog's weekly schedule), its "tap a day"
+navigation is covered by Today's date picker, and a working day needs execution
+(Follow plan), not a read-only overview. May return as a nice-to-have.

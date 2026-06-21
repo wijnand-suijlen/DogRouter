@@ -17,6 +17,7 @@ import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.routing.LegGeometryCache
 import app.dogrouter.domain.routing.RoutingProvider
 import app.dogrouter.ui.addresspicker.AddressPickerViewModel
+import app.dogrouter.ui.billing.AvoirWizardViewModel
 import app.dogrouter.ui.billing.BillingOverviewViewModel
 import app.dogrouter.ui.billing.CommittedDayDetailViewModel
 import app.dogrouter.ui.billing.CommittedDaysViewModel
@@ -100,6 +101,7 @@ val appModule = module {
     single { LegGeometryCache(get()) }
 
     single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { app.dogrouter.data.backup.BillingExportRepository(get(), get(), get(), get()) }
 
     single { DayPlanService(get(), get(), get(), get(), get(), get(), get()) }
     single { app.dogrouter.domain.billing.BillingService(get(), get()) }
@@ -112,11 +114,14 @@ val appModule = module {
     viewModel { (ownerId: String?) -> OwnerEditViewModel(get(), ownerId) }
     viewModel { BillingOverviewViewModel(get(), get()) }
     viewModel { (ownerId: String) -> OwnerAccountViewModel(get(), get(), get(), ownerId) }
-    viewModel { (ownerId: String) -> OwnerInvoicesViewModel(get(), ownerId) }
+    viewModel { (ownerId: String) -> OwnerInvoicesViewModel(get(), get(), ownerId) }
+    viewModel { (ownerId: String, serviceId: String) ->
+        AvoirWizardViewModel(get(), get(), ownerId, serviceId)
+    }
     viewModel { CommittedDaysViewModel(get()) }
     viewModel { (date: LocalDate) -> CommittedDayDetailViewModel(get(), get(), date) }
     viewModel { AddressPickerViewModel(get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { PlanningViewModel(get(), get()) }
     viewModel { TodayViewModel(get(), get(), get(), get()) }
     viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }

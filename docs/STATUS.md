@@ -404,8 +404,7 @@ randomised property test asserts the solver never emits an infeasible plan;
   than dropped. Per-date undo; Done finalises. Domain foundation: `LegMode` on
   `RouteEvent` (honoured in `retimeAndCost` phase 1, BIKE even when C9 forbids),
   `retime(allowInfeasible)`, and pure transforms in **`PlanEdit.kt`**; `legMode`
-  round-trips through `SavedPlanCodec`. *Next:* **Fase 3** the billing journal /
-  History.
+  round-trips through `SavedPlanCodec`. Was the keystone for billing (now done).
 
 ## Architecture snapshot
 
@@ -432,8 +431,8 @@ domain/
 ui/
   common/  AddressAutocompleteField, AddressMapPreview, CyclingLegMap,
            RouteLegMap + LegMapScreen
-  dogs/ today/ followplan/ history(stub)/ settings/ addresspicker/
-  navigation/ (4 tabs: Today, Dogs, History, Settings)  theme/
+  dogs/ owners/ today/ followplan/ billing/ settings/ addresspicker/
+  navigation/ (4 tabs: Today, Dogs, Billing, Settings)  theme/
 ```
 
 ## Smaller known issues (not the focus, but real)
@@ -517,9 +516,23 @@ shape a single day. Three related needs:
   image loader → user OK), surface conflicts.
 - Manual override of the plan — **done**, as a drag-and-drop chip editor
   (position = execution order; `Calvin-LL/Reorderable`, `PlanEdit` transforms,
-  `LegMode` override, `commitEdit` with `allowInfeasible`). Then **Fase 3** the
-  billing journal / History screen (the goal manual editing was built for).
-- History tab (stub; in-scope per SCOPE for invoicing).
+  `LegMode` override, `commitEdit` with `allowInfeasible`).
+- **Billing — done** (replaced the History tab). Owners as a first-class entity
+  (dog → owner dropdown, owner screen; `isEmployer`/`isTest`). Per-rule price
+  (`Pricing`: €4 + €3/quarter, capped €24; second same-owner dog in a walk half
+  price). A day plan is **committed** to per-dog services on owners' running
+  accounts (frozen amounts, idempotent, plan snapshot kept; billed once per
+  pickup→dropoff span). Billing screen: balances / employer monthly hours,
+  manual items, committed-days list. **Invoices**: issuer profile + continuous
+  number series (real / TEST) in settings; facture / facture acquittée PDFs via
+  `PdfDocument` (French BNC; TEST watermark + series), shared via FileProvider;
+  per-owner invoice list. Each invoice freezes a **render snapshot**
+  (`renderJson`) so a reprint is identical; the in-app share re-renders from it,
+  and `tools/regenerate_invoices.py` rebuilds the PDFs from a `backup.json` on a
+  laptop (headless Chrome, else print-from-HTML). **URSSAF export**: a ZIP with
+  `wandelingen.csv` + `ontvangsten.csv` (test owners excluded, quarter column) +
+  a full `backup.json`. **Credit notes** (facture d'avoir) via a step-by-step
+  wizard. All new entities round-trip through the backup (version 6).
 - Photo Picker (user deferred).
 
 ## Project conventions

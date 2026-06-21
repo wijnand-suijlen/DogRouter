@@ -28,4 +28,8 @@ data class Invoice(
     val acquittedDate: LocalDate? = null,
     val totalCents: Int,
     val pdfPath: String? = null,
+    // Frozen snapshot (InvoiceRenderCodec JSON) of everything printed, so a
+    // reprint is identical even if issuer/owner/prices change. Empty for
+    // invoices issued before snapshots existed.
+    val renderJson: String = "",
 )

@@ -45,6 +45,7 @@ val appModule = module {
     single { get<AppDatabase>().dogScheduleDao() }
     single { get<AppDatabase>().dogIncompatibilityDao() }
     single { get<AppDatabase>().appointmentDao() }
+    single { get<AppDatabase>().savedPlanDao() }
 
     single<DataStore<Preferences>> {
         PreferenceDataStoreFactory.create(
@@ -89,7 +90,7 @@ val appModule = module {
 
     single { BackupRepository(get(), get(), get(), get(), get(), get(), get()) }
 
-    single { DayPlanService(get(), get(), get(), get(), get(), get()) }
+    single { DayPlanService(get(), get(), get(), get(), get(), get(), get()) }
 
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }

@@ -21,6 +21,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
@@ -83,7 +86,9 @@ fun TodayScreen(
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val breakRequested by viewModel.breakRequested.collectAsStateWithLifecycle()
     val stopBufferSeconds by viewModel.stopBufferSeconds.collectAsStateWithLifecycle()
+    val isPlanEdited by viewModel.isPlanEdited.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
+    var editMode by remember { mutableStateOf(false) }
     val readyRoute = (planState as? PlanState.Ready)?.route
 
     Scaffold(
@@ -91,6 +96,14 @@ fun TodayScreen(
             TopAppBar(
                 title = { Text("Today") },
                 actions = {
+                    if (readyRoute?.events?.isNotEmpty() == true) {
+                        IconButton(onClick = { editMode = !editMode }) {
+                            Icon(
+                                if (editMode) Icons.Default.Done else Icons.Default.Edit,
+                                contentDescription = if (editMode) "Done editing" else "Edit plan",
+                            )
+                        }
+                    }
                     IconButton(onClick = viewModel::refresh) {
                         Icon(Icons.Default.Refresh, contentDescription = "Generate another plan")
                     }
@@ -125,8 +138,15 @@ fun TodayScreen(
                 checked = breakRequested,
                 onCheckedChange = viewModel::setBreakRequested,
             )
+            if (isPlanEdited) {
+                EditedPlanBanner(onRevert = viewModel::revertPlan)
+            }
             HorizontalDivider()
-            DayRouteContent(planState, stopBufferSeconds, onOpenLegMap)
+            DayRouteContent(
+                planState, stopBufferSeconds, onOpenLegMap,
+                editMode = editMode,
+                onMarkDogNotToday = viewModel::markDogNotToday,
+            )
         }
     }
 
@@ -144,6 +164,8 @@ private fun DayRouteContent(
     state: PlanState,
     stopBufferSeconds: Int,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+    editMode: Boolean,
+    onMarkDogNotToday: (String) -> Unit,
 ) {
     when (state) {
         is PlanState.Loading -> LoadingBox(state.fraction, state.phase)
@@ -165,10 +187,30 @@ private fun DayRouteContent(
                         item { BreakUnavailablePanel() }
                     }
                     val timeline = buildTimelineRows(route.events, stopBufferSeconds)
-                    items(timeline) { row -> TimelineRowView(row, onOpenLegMap) }
+                    items(timeline) { row ->
+                        TimelineRowView(row, onOpenLegMap, editMode, onMarkDogNotToday)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EditedPlanBanner(onRevert: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Hand-edited plan",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRevert) { Text("Revert to auto plan") }
     }
 }
 
@@ -343,10 +385,12 @@ private fun buildTimelineRows(events: List<RouteEvent>, stopBufferSeconds: Int):
 private fun TimelineRowView(
     row: TimelineRow,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+    editMode: Boolean,
+    onMarkDogNotToday: (String) -> Unit,
 ) {
     when (row) {
         is TimelineRow.Leg -> LegRow(row, onOpenLegMap)
-        is TimelineRow.Event -> EventRow(row.event)
+        is TimelineRow.Event -> EventRow(row.event, editMode, onMarkDogNotToday)
         is TimelineRow.Wait -> WaitRow(row)
     }
 }
@@ -402,7 +446,11 @@ private fun LegRow(
 }
 
 @Composable
-private fun EventRow(event: RouteEvent) {
+private fun EventRow(
+    event: RouteEvent,
+    editMode: Boolean = false,
+    onMarkDogNotToday: (String) -> Unit = {},
+) {
     val icon = event.icon()
     val title = event.title()
     val subtitle = event.subtitle()
@@ -433,6 +481,18 @@ private fun EventRow(event: RouteEvent) {
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // In edit mode a pickup gets a "not today" action that drops the dog
+        // from the whole day (all its walks).
+        if (editMode && event is RouteEvent.Pickup) {
+            IconButton(onClick = { onMarkDogNotToday(event.dog.id) }) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Mark ${event.dog.name} not walked today",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }

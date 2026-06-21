@@ -4,10 +4,12 @@ import app.dogrouter.data.db.AppointmentDao
 import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
+import app.dogrouter.data.db.SavedPlanDao
 import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.SavedPlan
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.domain.planner.PlannedWalk
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -46,6 +49,7 @@ class DayPlanService(
     private val scheduleDao: DogScheduleDao,
     private val incompatibilityDao: DogIncompatibilityDao,
     private val appointmentDao: AppointmentDao,
+    private val savedPlanDao: SavedPlanDao,
     private val settingsRepo: SettingsRepository,
     private val routingProvider: RoutingProvider,
 ) {
@@ -68,30 +72,88 @@ class DayPlanService(
         val requests = combine(seeds, breaks) { s, b ->
             PlanRequest(s[date] ?: 0L, b[date] ?: false)
         }
-        val settingsAndAppointments = combine(settingsRepo.settings, appointmentDao.observeAll()) { s, a -> s to a }
+        // Settings + appointments + the pinned/edited plan (if any) for the date.
+        val settingsApptSaved = combine(
+            settingsRepo.settings,
+            appointmentDao.observeAll(),
+            savedPlanDao.observeForDate(date),
+        ) { s, a, saved -> Triple(s, a, saved) }
         return combine(
             dogDao.observeAll(),
             scheduleDao.observeAll(),
             incompatibilityDao.observeAll(),
-            settingsAndAppointments,
+            settingsApptSaved,
             requests,
-        ) { dogs, rules, incompatibilities, (settings, appointments), request ->
-            Inputs(date, dogs, rules, incompatibilities, settings, appointments) to request
-        }.flatMapLatest { (inputs, request) ->
+        ) { dogs, rules, incompatibilities, (settings, appointments, saved), request ->
+            PlanContext(Inputs(date, dogs, rules, incompatibilities, settings, appointments), request, saved)
+        }.flatMapLatest { ctx ->
             channelFlow {
-                val key = CacheKey(inputs, request)
+                // A pinned/edited plan wins: show it (rehydrated against current
+                // dogs/rules) instead of re-solving. A stale one (a referenced
+                // dog/rule was deleted) fails to rehydrate and we fall back.
+                ctx.saved?.let { saved ->
+                    SavedPlanCodec.decode(saved.planJson, date, ctx.inputs.dogs, ctx.inputs.rules)?.let {
+                        send(PlanState.Ready(it))
+                        return@channelFlow
+                    }
+                }
+                val key = CacheKey(ctx.inputs, ctx.request)
                 cached(key)?.let {
                     send(PlanState.Ready(it))
                     return@channelFlow
                 }
                 send(PlanState.Loading(0f, PlanPhase.ROUTING))
-                val plan = computePlan(inputs, request) { fraction, phase ->
+                val plan = computePlan(ctx.inputs, ctx.request) { fraction, phase ->
                     trySend(PlanState.Loading(fraction, phase))
                 }
                 store(key, plan)
                 send(PlanState.Ready(plan))
             }.conflate()
         }
+    }
+
+    /** Whether [date] currently has a hand-edited plan pinned. */
+    fun observeIsEdited(date: LocalDate): Flow<Boolean> =
+        savedPlanDao.observeForDate(date).map { it?.edited == true }
+
+    /**
+     * Mark a dog as not walked on [date]: drop it from [current], re-time the
+     * rest, and pin the result. The plan flow then re-emits the edited plan.
+     */
+    suspend fun markDogNotToday(date: LocalDate, current: DayRoute, dogId: String) {
+        val edited = removeDog(current, dogId)
+        val settings = settingsRepo.settings.first()
+        // Incompatibilities are irrelevant to a pure re-time, so pass none.
+        val retimed = buildPlanner(settings, emptySet()).retime(date, edited.events)
+            ?.copy(conflicts = edited.conflicts)
+            ?: edited
+        savedPlanDao.upsert(
+            SavedPlan(date, SavedPlanCodec.encode(retimed), edited = true, updatedAt = System.currentTimeMillis()),
+        )
+    }
+
+    /** Discard a pinned/edited plan for [date], reverting to the solver. */
+    suspend fun discardSavedPlan(date: LocalDate) = savedPlanDao.deleteForDate(date)
+
+    /** Remove a dog's pickups, dropoffs and walk membership (drop emptied
+     *  walks) and any conflict for it. Pure; the caller re-times the result. */
+    private fun removeDog(route: DayRoute, dogId: String): DayRoute {
+        val events = route.events.mapNotNull { e ->
+            when (e) {
+                is RouteEvent.Pickup -> e.takeIf { it.dog.id != dogId }
+                is RouteEvent.Dropoff -> e.takeIf { it.dog.id != dogId }
+                is RouteEvent.Walk -> {
+                    val remaining = e.dogs.filter { it.id != dogId }
+                    when {
+                        remaining.isEmpty() -> null
+                        remaining.size != e.dogs.size -> e.copy(dogs = remaining)
+                        else -> e
+                    }
+                }
+                else -> e
+            }
+        }
+        return route.copy(events = events, conflicts = route.conflicts.filter { it.dog.id != dogId })
     }
 
     /** Ask for a different plan for [date] (advances its solver seed). */
@@ -140,19 +202,7 @@ class DayPlanService(
         val pairs = inputs.incompatibilities
             .map { canonicalPair(it.dogIdA, it.dogIdB) }
             .toSet()
-        val planner = DayPlanner(
-            routingProvider = routingProvider,
-            home = inputs.settings.homeGeoPoint(),
-            capacityKg = inputs.settings.bikeCapacityKg,
-            stopBufferSeconds = inputs.settings.stopBufferMinutes * 60,
-            cyclingSpeedKmh = inputs.settings.cyclingSpeedKmh,
-            incompatibilities = pairs,
-            cyclingWeight = inputs.settings.cyclingWeight,
-            overWalkWeight = inputs.settings.overWalkWeight,
-            walkingSpeedKmh = inputs.settings.walkingSpeedKmh,
-            bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
-            lnsIterations = inputs.settings.lnsIterations,
-        )
+        val planner = buildPlanner(inputs.settings, pairs)
         val breakSpec = inputs.settings.breakSpec().takeIf { request.breakRequested }
         val appointments = inputs.appointments
             .filter { it.date == inputs.date }
@@ -174,6 +224,20 @@ class DayPlanService(
             planner.plan(inputs.date, options, request.seed, onProgress, breakSpec, appointments)
         }
     }
+
+    private fun buildPlanner(settings: AppSettings, pairs: Set<Pair<String, String>>) = DayPlanner(
+        routingProvider = routingProvider,
+        home = settings.homeGeoPoint(),
+        capacityKg = settings.bikeCapacityKg,
+        stopBufferSeconds = settings.stopBufferMinutes * 60,
+        cyclingSpeedKmh = settings.cyclingSpeedKmh,
+        incompatibilities = pairs,
+        cyclingWeight = settings.cyclingWeight,
+        overWalkWeight = settings.overWalkWeight,
+        walkingSpeedKmh = settings.walkingSpeedKmh,
+        bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
+        lnsIterations = settings.lnsIterations,
+    )
 
     /** A [BreakSpec] from the settings. Home lunch works even with no break
      *  locations, so the spec is built whenever a break is requested. */
@@ -206,4 +270,6 @@ class DayPlanService(
     private data class PlanRequest(val seed: Long, val breakRequested: Boolean)
 
     private data class CacheKey(val inputs: Inputs, val request: PlanRequest)
+
+    private data class PlanContext(val inputs: Inputs, val request: PlanRequest, val saved: SavedPlan?)
 }

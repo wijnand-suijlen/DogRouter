@@ -207,6 +207,28 @@ class DayPlanner(
     }
 
     /**
+     * Re-time an externally edited plan: keep the given event **order and
+     * grouping**, but recompute leg modes, travel, dwell and times from
+     * scratch, then re-add the presentation-only bike-fetch legs. Used by
+     * manual plan edits (the order/grouping is the walker's; the timing stays
+     * the planner's). Presentation [RouteEvent.FetchBike] events in the input
+     * are dropped and regenerated. Returns null if routing is unavailable or
+     * the edited plan cannot be timed within the day. Conflicts are not
+     * produced here (empty); the caller carries any over and validates
+     * separately.
+     */
+    suspend fun retime(date: LocalDate, events: List<RouteEvent>): DayRoute? {
+        if (home == null || !routingProvider.isReady()) return null
+        val core = events.filterNot { it is RouteEvent.FetchBike }.toMutableList()
+        if (core.size < 2) return null
+        val points = (core.map { it.location } + home).toSet()
+        val matrix = DistanceMatrix.build(points, routingProvider)
+        val retimed = retimeAndCost(core, matrix)?.first ?: return null
+        // withBikeFetches recomputes the cycling/walking totals.
+        return DayRoute(date, retimed, 0, 0, emptyList()).withBikeFetches()
+    }
+
+    /**
      * Fit one dog-free break into a finished [solution]. Prefers a lunch at
      * home when there is a long mid-day free gap ([insertHomeLunch]); else a
      * break at the nearest break location ([insertCafeBreak]). Returns null

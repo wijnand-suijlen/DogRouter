@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -52,6 +53,24 @@ class TodayViewModel(
         .flatMapLatest { dayPlanService.observeBreakRequested(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /** Whether the day in view shows a hand-edited (pinned) plan. */
+    val isPlanEdited: StateFlow<Boolean> = _selectedDate
+        .flatMapLatest { dayPlanService.observeIsEdited(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Mark a dog as not walked today: drop it from the plan and pin the rest. */
+    fun markDogNotToday(dogId: String) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        viewModelScope.launch {
+            dayPlanService.markDogNotToday(_selectedDate.value, route, dogId)
+        }
+    }
+
+    /** Discard the hand-edited plan and go back to the solver's plan. */
+    fun revertPlan() {
+        viewModelScope.launch { dayPlanService.discardSavedPlan(_selectedDate.value) }
+    }
+
     fun setBreakRequested(requested: Boolean) {
         dayPlanService.setBreakRequested(_selectedDate.value, requested)
     }
@@ -72,8 +91,13 @@ class TodayViewModel(
         _selectedDate.value = date
     }
 
-    /** Ask the solver for a different plan for the day in view. */
+    /** Ask the solver for a different plan for the day in view. Discards any
+     *  hand-edited plan first, so a fresh solver plan actually takes effect. */
     fun refresh() {
-        dayPlanService.refresh(_selectedDate.value)
+        val date = _selectedDate.value
+        viewModelScope.launch {
+            dayPlanService.discardSavedPlan(date)
+            dayPlanService.refresh(date)
+        }
     }
 }

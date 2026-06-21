@@ -364,9 +364,16 @@ randomised property test asserts the solver never emits an infeasible plan;
 - **BRouter** embedded on-device (`org.btools:brouter-core`), `bakfiets.brf`
   profile. Distance from BRouter, time from the user's cycling speed (we do
   NOT use BRouter's kinematic time).
-- **Schema** at v8 (migrations 1→2 … 7→8; 4→5 adds `isAlternative`, 5→6
+- **Schema** at v9 (migrations 1→2 … 8→9; 4→5 adds `isAlternative`, 5→6
   adds `latestStart`, 6→7 adds `Dog.active`, 7→8 adds the `appointments`
-  table).
+  table, 8→9 adds the `saved_plans` table).
+- **Manual plan edit (Fase 0)**: a plan can be pinned/hand-edited per date
+  (`SavedPlan`, JSON via `SavedPlanCodec`, rehydrated against current
+  dogs/rules). `DayPlanService` shows a saved plan instead of re-solving; the
+  first edit — **"mark a dog not today"** (Today edit mode) — drops the dog,
+  re-times via `DayPlanner.retime`, and pins the result. Refresh/Revert discard
+  it. Foundation for the billing journal; more edit types (time/duration, add,
+  reorder) and the journal/History are the next steps.
 
 ## Architecture snapshot
 
@@ -374,8 +381,9 @@ randomised property test asserts the solver never emits an infeasible plan;
 data/
   entity/  Dog, DogScheduleRule (incl. latestStart, isAlternative),
            DogIncompatibility, TransportState
-  db/      AppDatabase (v8), DogDao, DogScheduleDao,
-           DogIncompatibilityDao, AppointmentDao, Migrations, Converters
+  db/      AppDatabase (v9), DogDao, DogScheduleDao,
+           DogIncompatibilityDao, AppointmentDao, SavedPlanDao, Migrations, Converters
+  entity/  ... SavedPlan (pinned/edited day plan, JSON)
   prefs/   AppSettings (incl. cyclingWeight, overWalkWeight, lnsIterations, break fields),
            BreakLocation, SettingsRepository (DataStore)
   backup/  BackupModels (JSON DTOs), BackupRepository (export/import)
@@ -385,7 +393,7 @@ domain/
   planner/  PlannedWalk
   dayplan/  RouteEvent, DayRoute, PlanConflict, PlanningConstraint,
             WalkOption, WalkSpans, DistanceMatrix, BreakSpec,
-            DayPlanner, DayPlanService
+            DayPlanner, DayPlanService, SavedPlanCodec
             constraints/  Capacity, TimeWindow, WalkDuration, Incompatibility,
                           NoDogLeftBehind, GroupSize, Appointment
   routing/  RouteEstimate, RoutingProvider, GeoPoint, LegGeometryCache
@@ -455,7 +463,9 @@ the home-lunch home-visits both feed the sleepover dog (#3, then #5).
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an
   image loader → user OK), surface conflicts.
-- Manual override of the plan (drag-reorder, mark a dog not-doing-today).
+- Manual override of the plan — **started** (Fase 0: mark a dog not-today +
+  persisted/pinned plans). Next: edit time/duration, add a walk, drag-reorder;
+  then the billing journal/History.
 - History tab (stub; in-scope per SCOPE for invoicing).
 - Photo Picker (user deferred).
 

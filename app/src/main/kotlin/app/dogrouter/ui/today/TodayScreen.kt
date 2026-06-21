@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
@@ -49,6 +50,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -71,6 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanConflict
 import app.dogrouter.domain.dayplan.PlanPhase
+import app.dogrouter.data.entity.Dog
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.dayplan.durationAtSeconds
@@ -103,6 +106,9 @@ fun TodayScreen(
     var editMode by remember { mutableStateOf(false) }
     // The walk whose duration is being edited: (event index, current minutes).
     var editingWalk by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    // The pickup whose start time is being edited: (event index, current seconds).
+    var editingStop by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var showAddWalk by remember { mutableStateOf(false) }
     val readyRoute = (planState as? PlanState.Ready)?.route
 
     Scaffold(
@@ -133,7 +139,13 @@ fun TodayScreen(
             )
         },
         floatingActionButton = {
-            if (readyRoute?.events?.isNotEmpty() == true) {
+            if (editMode) {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddWalk = true },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add walk") },
+                )
+            } else if (readyRoute?.events?.isNotEmpty() == true) {
                 ExtendedFloatingActionButton(
                     onClick = { onStartTrip(selectedDate) },
                     icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
@@ -172,6 +184,7 @@ fun TodayScreen(
                 editMode = editMode,
                 onMarkDogNotToday = viewModel::markDogNotToday,
                 onEditWalkDuration = { index, minutes -> editingWalk = index to minutes },
+                onEditStopTime = { index, seconds -> editingStop = index to seconds },
                 removingDogIds = removingDogIds,
             )
         }
@@ -195,6 +208,120 @@ fun TodayScreen(
             onDismiss = { editingWalk = null },
         )
     }
+
+    editingStop?.let { (index, seconds) ->
+        StopTimeDialog(
+            initialSeconds = seconds,
+            onConfirm = { newSeconds ->
+                viewModel.setStopTime(index, newSeconds)
+                editingStop = null
+            },
+            onDismiss = { editingStop = null },
+        )
+    }
+
+    if (showAddWalk) {
+        val dogs by viewModel.addableDogs.collectAsStateWithLifecycle()
+        AddWalkDialog(
+            dogs = dogs,
+            onConfirm = { dogId, minutes ->
+                viewModel.addWalk(dogId, minutes)
+                showAddWalk = false
+            },
+            onDismiss = { showAddWalk = false },
+        )
+    }
+}
+
+/** Edit a pickup's earliest start time as HH:MM. */
+@Composable
+private fun StopTimeDialog(
+    initialSeconds: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by remember { mutableStateOf("%02d:%02d".format(initialSeconds / 3600, (initialSeconds % 3600) / 60)) }
+    val parsed = parseHhMm(text)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Earliest start time") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("HH:MM") },
+                singleLine = true,
+                isError = parsed == null,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { parsed?.let(onConfirm) }, enabled = parsed != null) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Parse "HH:MM" to seconds-of-day, or null if invalid. */
+private fun parseHhMm(text: String): Int? {
+    val parts = text.trim().split(":")
+    if (parts.size != 2) return null
+    val h = parts[0].toIntOrNull() ?: return null
+    val m = parts[1].toIntOrNull() ?: return null
+    if (h !in 0..23 || m !in 0..59) return null
+    return h * 3600 + m * 60
+}
+
+/** Pick a dog and a duration for a hand-added walk. */
+@Composable
+private fun AddWalkDialog(
+    dogs: List<Dog>,
+    onConfirm: (dogId: String, minutes: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var selectedId by remember { mutableStateOf(dogs.firstOrNull()?.id) }
+    var minutesText by remember { mutableStateOf("60") }
+    val minutes = minutesText.toIntOrNull()?.takeIf { it > 0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add a walk") },
+        text = {
+            Column {
+                if (dogs.isEmpty()) {
+                    Text("No dogs with an address available.")
+                } else {
+                    dogs.forEach { dog ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedId = dog.id }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selectedId == dog.id, onClick = { selectedId = dog.id })
+                            Spacer(Modifier.width(4.dp))
+                            Text(dog.name)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = minutesText,
+                        onValueChange = { minutesText = it },
+                        label = { Text("Minutes") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        isError = minutes == null,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedId?.let { id -> minutes?.let { m -> onConfirm(id, m) } } },
+                enabled = selectedId != null && minutes != null,
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -265,6 +392,7 @@ private fun DayRouteContent(
     editMode: Boolean,
     onMarkDogNotToday: (String) -> Unit,
     onEditWalkDuration: (eventIndex: Int, currentMinutes: Int) -> Unit,
+    onEditStopTime: (eventIndex: Int, currentSeconds: Int) -> Unit,
     removingDogIds: Set<String>,
 ) {
     when (state) {
@@ -290,7 +418,7 @@ private fun DayRouteContent(
                     items(timeline) { row ->
                         TimelineRowView(
                             row, onOpenLegMap, editMode,
-                            onMarkDogNotToday, onEditWalkDuration, removingDogIds,
+                            onMarkDogNotToday, onEditWalkDuration, onEditStopTime, removingDogIds,
                         )
                     }
                 }
@@ -491,6 +619,7 @@ private fun TimelineRowView(
     editMode: Boolean,
     onMarkDogNotToday: (String) -> Unit,
     onEditWalkDuration: (eventIndex: Int, currentMinutes: Int) -> Unit,
+    onEditStopTime: (eventIndex: Int, currentSeconds: Int) -> Unit,
     removingDogIds: Set<String>,
 ) {
     when (row) {
@@ -498,6 +627,7 @@ private fun TimelineRowView(
         is TimelineRow.Event -> EventRow(
             row.event, editMode, onMarkDogNotToday, removingDogIds,
             onEditDuration = { minutes -> onEditWalkDuration(row.eventIndex, minutes) },
+            onEditTime = { seconds -> onEditStopTime(row.eventIndex, seconds) },
         )
         is TimelineRow.Wait -> WaitRow(row)
     }
@@ -560,6 +690,7 @@ private fun EventRow(
     onMarkDogNotToday: (String) -> Unit = {},
     removingDogIds: Set<String> = emptySet(),
     onEditDuration: (minutes: Int) -> Unit = {},
+    onEditTime: (seconds: Int) -> Unit = {},
 ) {
     val icon = event.icon()
     val title = event.title()
@@ -572,19 +703,25 @@ private fun EventRow(
         is RouteEvent.Walk -> event.dogs.any { it.id in removingDogIds }
         else -> false
     }
-    // In edit mode a walk is tappable to change its duration.
+    // In edit mode a walk is tappable to change its duration, a pickup to pin
+    // its earliest start time.
     val editableWalk = editMode && event is RouteEvent.Walk
+    val editablePickup = editMode && event is RouteEvent.Pickup && !removing
+    val rowClick: (() -> Unit)? = when {
+        editableWalk -> { { onEditDuration((event as RouteEvent.Walk).durationSeconds / 60) } }
+        editablePickup -> {
+            {
+                val p = event as RouteEvent.Pickup
+                onEditTime(p.rule.earliestStart?.toSecondOfDay() ?: p.timeSeconds)
+            }
+        }
+        else -> null
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (removing) 0.4f else 1f)
-            .then(
-                if (editableWalk) {
-                    Modifier.clickable { onEditDuration((event as RouteEvent.Walk).durationSeconds / 60) }
-                } else {
-                    Modifier
-                },
-            ),
+            .then(if (rowClick != null) Modifier.clickable(onClick = rowClick) else Modifier),
         verticalAlignment = Alignment.Top,
     ) {
         Text(

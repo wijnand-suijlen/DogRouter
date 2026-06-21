@@ -52,7 +52,7 @@ class SavedPlanCodecTest {
     @Test
     fun roundTripsAPlanThroughJson() {
         val json = SavedPlanCodec.encode(route)
-        val decoded = SavedPlanCodec.decode(json, date, listOf(alfa, bravo), listOf(alfaRule, bravoRule))
+        val decoded = SavedPlanCodec.decode(json, date, listOf(alfa, bravo))
         assertEquals(route, decoded)
     }
 
@@ -61,7 +61,7 @@ class SavedPlanCodecTest {
         val json = SavedPlanCodec.encode(route)
         // Bravo deleted since the plan was saved: rehydration must fail so the
         // caller re-solves instead of showing a corrupt plan.
-        val decoded = SavedPlanCodec.decode(json, date, listOf(alfa), listOf(alfaRule, bravoRule))
+        val decoded = SavedPlanCodec.decode(json, date, listOf(alfa))
         assertNull(decoded)
     }
 }

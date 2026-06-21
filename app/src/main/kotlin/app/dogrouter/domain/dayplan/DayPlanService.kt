@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import java.time.LocalDate
+import java.time.LocalTime
 
 private const val MAX_CACHED_PLANS = 32
 
@@ -89,10 +90,10 @@ class DayPlanService(
         }.flatMapLatest { ctx ->
             channelFlow {
                 // A pinned/edited plan wins: show it (rehydrated against current
-                // dogs/rules) instead of re-solving. A stale one (a referenced
-                // dog/rule was deleted) fails to rehydrate and we fall back.
+                // dogs) instead of re-solving. A stale one (a referenced dog was
+                // deleted) fails to rehydrate and we fall back.
                 ctx.saved?.let { saved ->
-                    SavedPlanCodec.decode(saved.planJson, date, ctx.inputs.dogs, ctx.inputs.rules)?.let {
+                    SavedPlanCodec.decode(saved.planJson, date, ctx.inputs.dogs)?.let {
                         send(PlanState.Ready(it))
                         return@channelFlow
                     }
@@ -116,6 +117,12 @@ class DayPlanService(
     fun observeIsEdited(date: LocalDate): Flow<Boolean> =
         savedPlanDao.observeForDate(date).map { it?.edited == true }
 
+    /** Active dogs with coordinates — the candidates for a hand-added walk. */
+    fun observeAddableDogs(): Flow<List<Dog>> =
+        dogDao.observeAll().map { dogs ->
+            dogs.filter { it.active && it.latitude != null && it.longitude != null }
+        }
+
     /**
      * Mark a dog as not walked on [date]: drop it from [current], re-time the
      * rest, and pin the result. The plan flow then re-emits the edited plan.
@@ -133,6 +140,48 @@ class DayPlanService(
         val walk = current.events.getOrNull(eventIndex) as? RouteEvent.Walk ?: return
         val events = current.events.toMutableList()
         events[eventIndex] = walk.copy(durationSeconds = minutes.coerceAtLeast(0) * 60)
+        pinEdited(date, current.copy(events = events))
+    }
+
+    /**
+     * Add an extra walk for an existing [dogId] of [minutes] on [date]: a
+     * pickup + walk + dropoff at the dog's address, inserted at the end of the
+     * day (re-time places it), with an ad-hoc rule (no windows) stored inline
+     * in the saved plan. The walker can shorten/move it with the other edits.
+     */
+    suspend fun addWalk(date: LocalDate, current: DayRoute, dogId: String, minutes: Int) {
+        val dog = dogDao.findById(dogId) ?: return
+        val lat = dog.latitude ?: return
+        val lon = dog.longitude ?: return
+        val loc = GeoPoint(lat, lon)
+        val dur = minutes.coerceAtLeast(1)
+        val rule = DogScheduleRule(
+            id = "adhoc-$dogId-${System.currentTimeMillis()}",
+            dogId = dogId, weekdaysMask = 0,
+            earliestStart = null, latestStart = null, latestEnd = null,
+            durationMinutes = dur, isAlternative = false,
+        )
+        val events = current.events.toMutableList()
+        // Just before HomeEnd (the last event). Add in reverse so the final
+        // order is pickup -> walk -> dropoff.
+        val insertAt = (events.size - 1).coerceAtLeast(1)
+        events.add(insertAt, RouteEvent.Dropoff(0, loc, dog))
+        events.add(insertAt, RouteEvent.Walk(0, loc, listOf(dog), dur * 60))
+        events.add(insertAt, RouteEvent.Pickup(0, loc, dog, rule))
+        pinEdited(date, current.copy(events = events))
+    }
+
+    /**
+     * Pin the start time of the pickup at [eventIndex] to [secondsOfDay] (the
+     * walker waits there until then) by setting its rule's earliestStart, then
+     * re-time and pin.
+     */
+    suspend fun setStopTime(date: LocalDate, current: DayRoute, eventIndex: Int, secondsOfDay: Int) {
+        val pickup = current.events.getOrNull(eventIndex) as? RouteEvent.Pickup ?: return
+        val clamped = secondsOfDay.coerceIn(0, 24 * 3600 - 1)
+        val newRule = pickup.rule.copy(earliestStart = LocalTime.ofSecondOfDay(clamped.toLong()))
+        val events = current.events.toMutableList()
+        events[eventIndex] = pickup.copy(rule = newRule)
         pinEdited(date, current.copy(events = events))
     }
 

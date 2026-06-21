@@ -2,6 +2,7 @@ package app.dogrouter.ui.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.dayplan.DayRoute
@@ -149,6 +150,24 @@ class TodayViewModel(
         val route = (planState.value as? PlanState.Ready)?.route ?: return
         pushUndo()
         applyEdit { dayPlanService.setWalkDuration(_selectedDate.value, route, eventIndex, minutes) }
+    }
+
+    /** Pin the start time (seconds since midnight) of the pickup at [eventIndex]. */
+    fun setStopTime(eventIndex: Int, secondsOfDay: Int) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
+        applyEdit { dayPlanService.setStopTime(_selectedDate.value, route, eventIndex, secondsOfDay) }
+    }
+
+    /** Active dogs with coordinates — candidates for a hand-added walk. */
+    val addableDogs: StateFlow<List<Dog>> = dayPlanService.observeAddableDogs()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Add an extra walk of [minutes] for [dogId] on the day in view. */
+    fun addWalk(dogId: String, minutes: Int) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
+        applyEdit { dayPlanService.addWalk(_selectedDate.value, route, dogId, minutes) }
     }
 
     /** Discard the hand-edited plan and go back to the solver's plan. */

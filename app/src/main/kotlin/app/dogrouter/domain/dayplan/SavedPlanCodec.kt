@@ -8,13 +8,16 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
- * JSON persistence for a [DayRoute]. Events are stored by dog/rule **id**
- * (plus the fields needed to render and re-time), so a saved plan tracks the
- * current dogs and rules: on load it is rehydrated against them. If any
- * referenced dog or rule is gone, rehydration fails (returns null) and the
- * caller re-solves rather than show a corrupt plan.
+ * JSON persistence for a [DayRoute]. Dogs are stored by **id** and rehydrated
+ * against the current dogs (so name/address edits show through); if a
+ * referenced dog is gone, rehydration fails (returns null) and the caller
+ * re-solves rather than show a corrupt plan. Each pickup's schedule **rule is
+ * stored inline** — a pinned plan is a snapshot, and this also lets a plan hold
+ * an ad-hoc walk whose rule is not in the database (a hand-added walk, a pinned
+ * start time).
  *
  * Kept a flat DTO (not a normalized event tree) — simple for now; when billing
  * lands it can be read out or projected into a normalized journal.
@@ -24,13 +27,11 @@ object SavedPlanCodec {
 
     fun encode(route: DayRoute): String = json.encodeToString(route.toDto())
 
-    /** Decode + rehydrate against current dogs/rules. Null if unparseable or a
-     *  referenced dog/rule no longer exists. */
-    fun decode(planJson: String, date: LocalDate, dogs: List<Dog>, rules: List<DogScheduleRule>): DayRoute? {
+    /** Decode + rehydrate against current dogs. Null if unparseable or a
+     *  referenced dog no longer exists. */
+    fun decode(planJson: String, date: LocalDate, dogs: List<Dog>): DayRoute? {
         val dto = runCatching { json.decodeFromString<SavedPlanDto>(planJson) }.getOrNull() ?: return null
-        val dogById = dogs.associateBy { it.id }
-        val ruleById = rules.associateBy { it.id }
-        return dto.toDayRoute(date, dogById, ruleById)
+        return dto.toDayRoute(date, dogs.associateBy { it.id })
     }
 }
 
@@ -53,13 +54,37 @@ private data class PlanEventDto(
     val incomingTravelSeconds: Int = 0,
     val returnToBikeSeconds: Int = 0,
     val dogId: String? = null,
-    val ruleId: String? = null,
+    val rule: RuleDto? = null,
     val dogIds: List<String> = emptyList(),
     val durationSeconds: Int = 0,
     val label: String? = null,
     val startSeconds: Int = 0,
     val earliestStartSeconds: Int = 0,
     val atHome: Boolean = false,
+)
+
+@Serializable
+private data class RuleDto(
+    val id: String,
+    val dogId: String,
+    val weekdaysMask: Int,
+    val earliestStart: String? = null,
+    val latestStart: String? = null,
+    val latestEnd: String? = null,
+    val durationMinutes: Int,
+    val isAlternative: Boolean = false,
+)
+
+private fun DogScheduleRule.toDto() = RuleDto(
+    id = id, dogId = dogId, weekdaysMask = weekdaysMask,
+    earliestStart = earliestStart?.toString(), latestStart = latestStart?.toString(),
+    latestEnd = latestEnd?.toString(), durationMinutes = durationMinutes, isAlternative = isAlternative,
+)
+
+private fun RuleDto.toRule() = DogScheduleRule(
+    id = id, dogId = dogId, weekdaysMask = weekdaysMask,
+    earliestStart = earliestStart?.let(LocalTime::parse), latestStart = latestStart?.let(LocalTime::parse),
+    latestEnd = latestEnd?.let(LocalTime::parse), durationMinutes = durationMinutes, isAlternative = isAlternative,
 )
 
 @Serializable
@@ -85,7 +110,7 @@ private fun RouteEvent.toDto(): PlanEventDto {
     )
     return when (this) {
         is RouteEvent.HomeStart, is RouteEvent.HomeEnd, is RouteEvent.FetchBike -> base
-        is RouteEvent.Pickup -> base.copy(dogId = dog.id, ruleId = rule.id)
+        is RouteEvent.Pickup -> base.copy(dogId = dog.id, rule = rule.toDto())
         is RouteEvent.Dropoff -> base.copy(dogId = dog.id)
         is RouteEvent.Walk -> base.copy(dogIds = dogs.map { it.id }, durationSeconds = durationSeconds)
         is RouteEvent.Break -> base.copy(
@@ -111,11 +136,10 @@ private fun RouteEvent.typeName(): String = when (this) {
 private fun SavedPlanDto.toDayRoute(
     date: LocalDate,
     dogById: Map<String, Dog>,
-    ruleById: Map<String, DogScheduleRule>,
 ): DayRoute? {
     val rebuilt = ArrayList<RouteEvent>(events.size)
     for (e in events) {
-        rebuilt.add(e.toRouteEvent(dogById, ruleById) ?: return null)
+        rebuilt.add(e.toRouteEvent(dogById) ?: return null)
     }
     val conflictsResolved = conflicts.map { c ->
         val dog = dogById[c.dogId] ?: return null
@@ -133,7 +157,6 @@ private fun SavedPlanDto.toDayRoute(
 
 private fun PlanEventDto.toRouteEvent(
     dogById: Map<String, Dog>,
-    ruleById: Map<String, DogScheduleRule>,
 ): RouteEvent? {
     val loc = GeoPoint(lat, lon)
     return when (type) {
@@ -142,7 +165,7 @@ private fun PlanEventDto.toRouteEvent(
         "FETCH_BIKE" -> RouteEvent.FetchBike(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
         "PICKUP" -> {
             val dog = dogById[dogId] ?: return null
-            val rule = ruleById[ruleId] ?: return null
+            val rule = rule?.toRule() ?: return null
             RouteEvent.Pickup(timeSeconds, loc, dog, rule, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
         }
         "DROPOFF" -> {

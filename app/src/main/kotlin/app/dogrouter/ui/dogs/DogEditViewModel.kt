@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
+import app.dogrouter.data.db.OwnerDao
 import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.data.remote.BanApi
@@ -39,8 +41,7 @@ data class DogFormState(
     val breed: String = "",
     val weightKg: String = "",
     val photoUri: String? = null,
-    val ownerName: String = "",
-    val ownerPhone: String = "",
+    val ownerId: String? = null,
     val address: String = "",
     val addressLatitude: Double? = null,
     val addressLongitude: Double? = null,
@@ -69,6 +70,7 @@ class DogEditViewModel(
     private val dogDao: DogDao,
     private val dogScheduleDao: DogScheduleDao,
     private val incompatibilityDao: DogIncompatibilityDao,
+    private val ownerDao: OwnerDao,
     private val banApi: BanApi,
     private val dogId: String?,
 ) : ViewModel() {
@@ -77,6 +79,10 @@ class DogEditViewModel(
 
     private val _state = MutableStateFlow(DogFormState(loading = !isNew))
     val state: StateFlow<DogFormState> = _state.asStateFlow()
+
+    /** Owners to choose from in the dropdown; updates live as owners are added. */
+    val owners: StateFlow<List<Owner>> = ownerDao.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _events = Channel<DogEditEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -119,8 +125,7 @@ class DogEditViewModel(
                     breed = existing.breed.orEmpty(),
                     weightKg = existing.weightKg.toString(),
                     photoUri = existing.photoUri,
-                    ownerName = existing.ownerName,
-                    ownerPhone = existing.ownerPhone.orEmpty(),
+                    ownerId = existing.ownerId,
                     address = existing.address,
                     addressLatitude = existing.latitude,
                     addressLongitude = existing.longitude,
@@ -241,14 +246,19 @@ class DogEditViewModel(
             val adjustment = s.stopAdjustmentMinutes.toIntOrNull() ?: 0
             val effectiveDogId = dogId ?: UUID.randomUUID().toString()
 
+            // Keep the deprecated ownerName/ownerPhone columns as a denormalised
+            // cache of the chosen owner, so the Dogs list still reads at a glance.
+            val owner = s.ownerId?.let { ownerDao.findById(it) }
+
             val dog = Dog(
                 id = effectiveDogId,
                 name = s.name.trim(),
                 breed = s.breed.trim().ifBlank { null },
                 weightKg = weight,
                 photoUri = s.photoUri,
-                ownerName = s.ownerName.trim(),
-                ownerPhone = s.ownerPhone.trim().ifBlank { null },
+                ownerId = s.ownerId,
+                ownerName = owner?.displayName.orEmpty(),
+                ownerPhone = owner?.phone,
                 address = s.address.trim(),
                 latitude = s.addressLatitude,
                 longitude = s.addressLongitude,

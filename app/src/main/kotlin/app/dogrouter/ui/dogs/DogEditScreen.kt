@@ -20,14 +20,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -50,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.ui.common.AddressAutocompleteField
@@ -63,11 +69,13 @@ fun DogEditScreen(
     dogId: String?,
     onDone: () -> Unit,
     onPickOnMap: (lat: Double?, lon: Double?) -> Unit,
+    onAddOwner: () -> Unit,
     pickedAddress: AddressSuggestion? = null,
     viewModel: DogEditViewModel = koinViewModel { parametersOf(dogId) },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val addressSuggestions by viewModel.addressSuggestions.collectAsStateWithLifecycle()
+    val owners by viewModel.owners.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -121,6 +129,9 @@ fun DogEditScreen(
             DogForm(
                 state = state,
                 addressSuggestions = addressSuggestions,
+                owners = owners,
+                onOwnerSelected = { id -> viewModel.update { copy(ownerId = id) } },
+                onAddOwner = onAddOwner,
                 onChange = viewModel::update,
                 onAddressTextChange = viewModel::onAddressTextChange,
                 onAddressPick = viewModel::pickAddressSuggestion,
@@ -168,6 +179,9 @@ fun DogEditScreen(
 private fun DogForm(
     state: DogFormState,
     addressSuggestions: List<AddressSuggestion>,
+    owners: List<Owner>,
+    onOwnerSelected: (String?) -> Unit,
+    onAddOwner: () -> Unit,
     onChange: (DogFormState.() -> DogFormState) -> Unit,
     onAddressTextChange: (String) -> Unit,
     onAddressPick: (AddressSuggestion) -> Unit,
@@ -216,21 +230,15 @@ private fun DogForm(
 
         Spacer(Modifier.height(8.dp))
         SectionTitle("Owner")
-        OutlinedTextField(
-            value = state.ownerName,
-            onValueChange = { v -> onChange { copy(ownerName = v) } },
-            label = { Text("Owner name") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+        OwnerDropdown(
+            owners = owners,
+            selectedId = state.ownerId,
+            onSelected = onOwnerSelected,
         )
-        OutlinedTextField(
-            value = state.ownerPhone,
-            onValueChange = { v -> onChange { copy(ownerPhone = v) } },
-            label = { Text("Phone") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        OutlinedButton(onClick = onAddOwner, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Text("  Add owner")
+        }
 
         Spacer(Modifier.height(8.dp))
         SectionTitle("Stop")
@@ -320,6 +328,48 @@ private fun DogForm(
             label = { Text("General notes") },
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OwnerDropdown(
+    owners: List<Owner>,
+    selectedId: String?,
+    onSelected: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = owners.firstOrNull { it.id == selectedId }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = selected?.displayName ?: "",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Owner") },
+            placeholder = { Text(if (owners.isEmpty()) "No owners yet — add one" else "Pick an owner") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (selectedId != null) {
+                DropdownMenuItem(
+                    text = { Text("(none)") },
+                    onClick = { onSelected(null); expanded = false },
+                )
+            }
+            owners.forEach { owner ->
+                DropdownMenuItem(
+                    text = { Text(owner.displayName.ifBlank { "(no name)" }) },
+                    onClick = { onSelected(owner.id); expanded = false },
+                )
+            }
+        }
     }
 }
 

@@ -7,6 +7,7 @@ import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.SavedPlan
 
 @Database(
@@ -16,8 +17,9 @@ import app.dogrouter.data.entity.SavedPlan
         DogIncompatibility::class,
         Appointment::class,
         SavedPlan::class,
+        Owner::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -27,4 +29,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dogIncompatibilityDao(): DogIncompatibilityDao
     abstract fun appointmentDao(): AppointmentDao
     abstract fun savedPlanDao(): SavedPlanDao
+    abstract fun ownerDao(): OwnerDao
 }

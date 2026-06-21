@@ -6,6 +6,7 @@ import app.dogrouter.data.db.AppointmentDao
 import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
+import app.dogrouter.data.db.OwnerDao
 import app.dogrouter.data.prefs.SettingsRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -26,6 +27,7 @@ class BackupRepository(
     private val scheduleDao: DogScheduleDao,
     private val incompatibilityDao: DogIncompatibilityDao,
     private val appointmentDao: AppointmentDao,
+    private val ownerDao: OwnerDao,
     private val settingsRepo: SettingsRepository,
     private val json: Json,
     private val now: () -> Long = { System.currentTimeMillis() },
@@ -38,6 +40,7 @@ class BackupRepository(
             scheduleRules = scheduleDao.getAll().map { it.toDto() },
             incompatibilities = incompatibilityDao.getAll().map { it.toDto() },
             appointments = appointmentDao.getAll().map { it.toDto() },
+            owners = ownerDao.getAll().map { it.toDto() },
         )
         return json.encodeToString(file)
     }
@@ -76,8 +79,11 @@ class BackupRepository(
         } catch (e: Exception) {
             throw BackupException("An appointment in the backup is malformed.", e)
         }
+        val owners = file.owners.map { it.toEntity() }
 
         db.withTransaction {
+            ownerDao.deleteAll()
+            ownerDao.insertAll(owners)
             dogDao.deleteAll() // cascades to rules and incompatibilities
             dogDao.insertAll(dogs)
             scheduleDao.insertAll(rules)

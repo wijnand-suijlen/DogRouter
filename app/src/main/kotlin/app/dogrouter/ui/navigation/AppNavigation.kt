@@ -30,6 +30,8 @@ import app.dogrouter.ui.dogs.DogEditScreen
 import app.dogrouter.ui.dogs.DogListScreen
 import app.dogrouter.ui.followplan.FollowPlanScreen
 import app.dogrouter.ui.history.HistoryScreen
+import app.dogrouter.ui.owners.OwnerEditScreen
+import app.dogrouter.ui.owners.OwnerListScreen
 import app.dogrouter.ui.planning.PlanningScreen
 import app.dogrouter.ui.settings.SettingsScreen
 import app.dogrouter.ui.today.TodayScreen
@@ -44,6 +46,14 @@ object DogsRoutes {
     const val NEW = "dogs/new"
     const val EDIT = "dogs/edit/{dogId}"
     fun edit(dogId: String) = "dogs/edit/$dogId"
+}
+
+object OwnersRoutes {
+    const val GRAPH = "owners"
+    const val LIST = "owners/list"
+    const val NEW = "owners/new"
+    const val EDIT = "owners/edit/{ownerId}"
+    fun edit(ownerId: String) = "owners/edit/$ownerId"
 }
 
 object FollowPlanRoutes {
@@ -189,6 +199,7 @@ fun AppNavigation() {
                     DogListScreen(
                         onAddClick = { navController.navigate(DogsRoutes.NEW) },
                         onDogClick = { dogId -> navController.navigate(DogsRoutes.edit(dogId)) },
+                        onManageOwners = { navController.navigate(OwnersRoutes.LIST) },
                     )
                 }
                 composable(DogsRoutes.NEW) { entry ->
@@ -200,6 +211,7 @@ fun AppNavigation() {
                         onPickOnMap = { lat, lon ->
                             navController.navigate(AddressPickerRoutes.navigate(lat, lon))
                         },
+                        onAddOwner = { navController.navigate(OwnersRoutes.NEW) },
                     )
                 }
                 composable(DogsRoutes.EDIT) { entry ->
@@ -212,6 +224,29 @@ fun AppNavigation() {
                         onPickOnMap = { lat, lon ->
                             navController.navigate(AddressPickerRoutes.navigate(lat, lon))
                         },
+                        onAddOwner = { navController.navigate(OwnersRoutes.NEW) },
+                    )
+                }
+            }
+
+            navigation(startDestination = OwnersRoutes.LIST, route = OwnersRoutes.GRAPH) {
+                composable(OwnersRoutes.LIST) {
+                    OwnerListScreen(
+                        onBack = { navController.popBackStack() },
+                        onAddClick = { navController.navigate(OwnersRoutes.NEW) },
+                        onOwnerClick = { ownerId -> navController.navigate(OwnersRoutes.edit(ownerId)) },
+                    )
+                }
+                composable(OwnersRoutes.NEW) {
+                    OwnerEditScreen(ownerId = null, onDone = { navController.popBackStack() })
+                }
+                composable(
+                    route = OwnersRoutes.EDIT,
+                    arguments = listOf(navArgument("ownerId") { type = NavType.StringType }),
+                ) { entry ->
+                    OwnerEditScreen(
+                        ownerId = entry.arguments?.getString("ownerId"),
+                        onDone = { navController.popBackStack() },
                     )
                 }
             }

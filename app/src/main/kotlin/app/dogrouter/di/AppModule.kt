@@ -20,6 +20,8 @@ import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
 import app.dogrouter.ui.followplan.FollowPlanViewModel
+import app.dogrouter.ui.owners.OwnerEditViewModel
+import app.dogrouter.ui.owners.OwnerListViewModel
 import app.dogrouter.ui.planning.PlanningViewModel
 import app.dogrouter.ui.settings.SettingsViewModel
 import app.dogrouter.ui.today.TodayViewModel
@@ -46,6 +48,7 @@ val appModule = module {
     single { get<AppDatabase>().dogIncompatibilityDao() }
     single { get<AppDatabase>().appointmentDao() }
     single { get<AppDatabase>().savedPlanDao() }
+    single { get<AppDatabase>().ownerDao() }
 
     single<DataStore<Preferences>> {
         PreferenceDataStoreFactory.create(
@@ -88,12 +91,14 @@ val appModule = module {
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
     single { LegGeometryCache(get()) }
 
-    single { BackupRepository(get(), get(), get(), get(), get(), get(), get()) }
+    single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get()) }
 
     single { DayPlanService(get(), get(), get(), get(), get(), get(), get()) }
 
     viewModel { DogListViewModel(get()) }
-    viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), dogId) }
+    viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), get(), dogId) }
+    viewModel { OwnerListViewModel(get()) }
+    viewModel { (ownerId: String?) -> OwnerEditViewModel(get(), ownerId) }
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get()) }
     viewModel { PlanningViewModel(get(), get()) }

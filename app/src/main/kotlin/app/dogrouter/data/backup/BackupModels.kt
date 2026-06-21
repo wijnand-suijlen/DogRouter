@@ -4,6 +4,7 @@ import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.BreakLocation
@@ -12,7 +13,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
-const val BACKUP_VERSION = 1
+const val BACKUP_VERSION = 2
 
 /**
  * Self-contained snapshot of everything the walker enters: dogs (with
@@ -32,6 +33,20 @@ data class BackupFile(
     val scheduleRules: List<ScheduleRuleDto>,
     val incompatibilities: List<IncompatibilityDto>,
     val appointments: List<AppointmentDto> = emptyList(),
+    val owners: List<OwnerDto> = emptyList(),
+)
+
+@Serializable
+data class OwnerDto(
+    val id: String,
+    val firstName: String,
+    val lastName: String,
+    val billingAddress: String = "",
+    val phone: String? = null,
+    val email: String? = null,
+    val isEmployer: Boolean = false,
+    val isTest: Boolean = false,
+    val createdAt: Long,
 )
 
 @Serializable
@@ -53,6 +68,7 @@ data class DogDto(
     val breed: String? = null,
     val weightKg: Float,
     val photoUri: String? = null,
+    val ownerId: String? = null,
     val ownerName: String,
     val ownerPhone: String? = null,
     val address: String,
@@ -110,7 +126,7 @@ data class SettingsDto(
 
 fun Dog.toDto() = DogDto(
     id = id, name = name, breed = breed, weightKg = weightKg, photoUri = photoUri,
-    ownerName = ownerName, ownerPhone = ownerPhone, address = address,
+    ownerId = ownerId, ownerName = ownerName, ownerPhone = ownerPhone, address = address,
     latitude = latitude, longitude = longitude, stopNotes = stopNotes,
     stopAdjustmentMinutes = stopAdjustmentMinutes,
     inCargoBike = inCargoBike.name, inBackpack = inBackpack.name,
@@ -125,6 +141,11 @@ fun DogScheduleRule.toDto() = ScheduleRuleDto(
 )
 
 fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
+
+fun Owner.toDto() = OwnerDto(
+    id = id, firstName = firstName, lastName = lastName, billingAddress = billingAddress,
+    phone = phone, email = email, isEmployer = isEmployer, isTest = isTest, createdAt = createdAt,
+)
 
 fun Appointment.toDto() = AppointmentDto(
     id = id, date = date.toString(), startTime = startTime.toString(), endTime = endTime.toString(),
@@ -147,7 +168,7 @@ fun AppSettings.toDto() = SettingsDto(
 
 fun DogDto.toEntity() = Dog(
     id = id, name = name, breed = breed, weightKg = weightKg, photoUri = photoUri,
-    ownerName = ownerName, ownerPhone = ownerPhone, address = address,
+    ownerId = ownerId, ownerName = ownerName, ownerPhone = ownerPhone, address = address,
     latitude = latitude, longitude = longitude, stopNotes = stopNotes,
     stopAdjustmentMinutes = stopAdjustmentMinutes,
     inCargoBike = transportStateOf(inCargoBike), inBackpack = transportStateOf(inBackpack),
@@ -163,6 +184,11 @@ fun ScheduleRuleDto.toEntity() = DogScheduleRule(
 )
 
 fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)
+
+fun OwnerDto.toEntity() = Owner(
+    id = id, firstName = firstName, lastName = lastName, billingAddress = billingAddress,
+    phone = phone, email = email, isEmployer = isEmployer, isTest = isTest, createdAt = createdAt,
+)
 
 fun AppointmentDto.toEntity() = Appointment(
     id = id, date = LocalDate.parse(date),

@@ -127,8 +127,41 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
+/**
+ * Add the `owners` table (the billing/contact party) and a nullable `ownerId`
+ * on dogs. Seed one owner per distinct existing `ownerName` (whole name kept in
+ * `lastName`, phone taken from any of that owner's dogs) and link the dogs to
+ * it. The legacy `ownerName`/`ownerPhone` columns are left in place; `ownerId`
+ * is the new source of truth.
+ */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `owners` (" +
+                "`id` TEXT NOT NULL, `firstName` TEXT NOT NULL, `lastName` TEXT NOT NULL, " +
+                "`billingAddress` TEXT NOT NULL, `phone` TEXT, `email` TEXT, " +
+                "`isEmployer` INTEGER NOT NULL, `isTest` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        )
+        db.execSQL("ALTER TABLE `dogs` ADD COLUMN `ownerId` TEXT")
+        val now = System.currentTimeMillis()
+        // One owner per distinct non-blank owner name; random hex id.
+        db.execSQL(
+            "INSERT INTO `owners` (id, firstName, lastName, billingAddress, phone, email, isEmployer, isTest, createdAt) " +
+                "SELECT lower(hex(randomblob(16))), '', ownerName, '', MIN(ownerPhone), NULL, 0, 0, $now " +
+                "FROM `dogs` WHERE TRIM(ownerName) <> '' GROUP BY ownerName",
+        )
+        db.execSQL(
+            "UPDATE `dogs` SET ownerId = " +
+                "(SELECT o.id FROM `owners` o WHERE o.lastName = dogs.ownerName) " +
+                "WHERE TRIM(ownerName) <> ''",
+        )
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+        MIGRATION_9_10,
     )

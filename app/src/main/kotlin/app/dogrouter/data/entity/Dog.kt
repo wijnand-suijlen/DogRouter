@@ -10,6 +10,11 @@ data class Dog(
     val breed: String?,
     val weightKg: Float,
     val photoUri: String?,
+    // Reference to the dog's [Owner] (billing/contact party). Nullable: a dog
+    // may be temporarily without an owner. The source of truth for owner
+    // details; [ownerName]/[ownerPhone] below are deprecated, kept only so old
+    // data and backups still load.
+    val ownerId: String? = null,
     val ownerName: String,
     val ownerPhone: String?,
     val address: String,

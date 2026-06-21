@@ -755,8 +755,9 @@ private fun EventRow(
                 )
             }
         }
-        // In edit mode a pickup gets a "not today" action that drops the dog
-        // from the whole day; while the re-time runs it shows a spinner.
+        // In edit mode a pickup gets a "set start time" affordance and a
+        // "not today" action (the whole row is also tappable for the time);
+        // while the re-time runs it shows a spinner.
         if (event is RouteEvent.Pickup && (editMode || removing)) {
             if (removing) {
                 CircularProgressIndicator(
@@ -764,6 +765,16 @@ private fun EventRow(
                     modifier = Modifier.padding(12.dp).size(20.dp),
                 )
             } else {
+                IconButton(onClick = {
+                    onEditTime(event.rule.earliestStart?.toSecondOfDay() ?: event.timeSeconds)
+                }) {
+                    Icon(
+                        imageVector = Icons.Outlined.Schedule,
+                        contentDescription = "Set ${event.dog.name} start time",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
                 IconButton(onClick = { onMarkDogNotToday(event.dog.id) }) {
                     Icon(
                         imageVector = Icons.Default.Close,

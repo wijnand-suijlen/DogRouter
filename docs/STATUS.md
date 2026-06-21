@@ -373,7 +373,9 @@ randomised property test asserts the solver never emits an infeasible plan;
   and can hold an ad-hoc walk). `DayPlanService` shows a saved plan instead of
   re-solving. Edits (Today edit mode): **mark a dog not-today**, **set a walk's
   duration** (tap a walk), **pin a stop's start time** (tap a pickup → sets its
-  `earliestStart`), and **add a walk** (FAB → pick dog + minutes; ad-hoc rule).
+  `earliestStart`), **add a walk** (FAB → pick dog + minutes; ad-hoc rule), and
+  **force a dog-free appointment** (FAB → label + window + BAN address; inserted
+  as a `RouteEvent.Appointment` and re-timed — for a doctor/shop/manual lunch).
   All re-time via `DayPlanner.retime` with `recomputeDwells = false` (a hand-set
   duration survives later edits) and pin the result. **Undo** (per-date stack)
   and Refresh/Revert. A `PlanVerifier`-backed **warnings panel** flags an edit

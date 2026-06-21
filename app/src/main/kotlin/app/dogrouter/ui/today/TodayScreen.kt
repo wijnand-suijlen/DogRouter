@@ -74,10 +74,12 @@ import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanConflict
 import app.dogrouter.domain.dayplan.PlanPhase
 import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.dayplan.durationAtSeconds
 import app.dogrouter.domain.routing.GeoPoint
+import app.dogrouter.ui.common.AddressAutocompleteField
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -108,7 +110,9 @@ fun TodayScreen(
     var editingWalk by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // The pickup whose start time is being edited: (event index, current seconds).
     var editingStop by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var showAddChooser by remember { mutableStateOf(false) }
     var showAddWalk by remember { mutableStateOf(false) }
+    var showAddAppointment by remember { mutableStateOf(false) }
     val readyRoute = (planState as? PlanState.Ready)?.route
 
     Scaffold(
@@ -141,9 +145,9 @@ fun TodayScreen(
         floatingActionButton = {
             if (editMode) {
                 ExtendedFloatingActionButton(
-                    onClick = { showAddWalk = true },
+                    onClick = { showAddChooser = true },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Add walk") },
+                    text = { Text("Add") },
                 )
             } else if (readyRoute?.events?.isNotEmpty() == true) {
                 ExtendedFloatingActionButton(
@@ -220,6 +224,21 @@ fun TodayScreen(
         )
     }
 
+    if (showAddChooser) {
+        AlertDialog(
+            onDismissRequest = { showAddChooser = false },
+            title = { Text("Add to the day") },
+            text = {
+                Column {
+                    TextButton(onClick = { showAddChooser = false; showAddWalk = true }) { Text("Walk") }
+                    TextButton(onClick = { showAddChooser = false; showAddAppointment = true }) { Text("Appointment") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showAddChooser = false }) { Text("Cancel") } },
+        )
+    }
+
     if (showAddWalk) {
         val dogs by viewModel.addableDogs.collectAsStateWithLifecycle()
         AddWalkDialog(
@@ -229,6 +248,24 @@ fun TodayScreen(
                 showAddWalk = false
             },
             onDismiss = { showAddWalk = false },
+        )
+    }
+
+    if (showAddAppointment) {
+        val addressText by viewModel.apptAddressText.collectAsStateWithLifecycle()
+        val addressValidated by viewModel.apptAddressValidated.collectAsStateWithLifecycle()
+        val suggestions by viewModel.apptAddressSuggestions.collectAsStateWithLifecycle()
+        AddAppointmentDialog(
+            addressText = addressText,
+            addressValidated = addressValidated,
+            suggestions = suggestions,
+            onAddressChange = viewModel::onApptAddressChange,
+            onAddressPick = viewModel::pickApptAddress,
+            onConfirm = { label, startSeconds, endSeconds ->
+                viewModel.addAppointment(label, startSeconds, endSeconds)
+                showAddAppointment = false
+            },
+            onDismiss = { showAddAppointment = false },
         )
     }
 }
@@ -318,6 +355,77 @@ private fun AddWalkDialog(
             TextButton(
                 onClick = { selectedId?.let { id -> minutes?.let { m -> onConfirm(id, m) } } },
                 enabled = selectedId != null && minutes != null,
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Force a dog-free appointment: label, time window and a BAN address. */
+@Composable
+private fun AddAppointmentDialog(
+    addressText: String,
+    addressValidated: Boolean,
+    suggestions: List<AddressSuggestion>,
+    onAddressChange: (String) -> Unit,
+    onAddressPick: (AddressSuggestion) -> Unit,
+    onConfirm: (label: String, startSeconds: Int, endSeconds: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var label by remember { mutableStateOf("") }
+    var startText by remember { mutableStateOf("14:00") }
+    var endText by remember { mutableStateOf("15:00") }
+    val start = parseHhMm(startText)
+    val end = parseHhMm(endText)
+    val valid = label.isNotBlank() && addressValidated && start != null && end != null && end > start
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add appointment") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label (doctor, shop, lunch, …)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    OutlinedTextField(
+                        value = startText,
+                        onValueChange = { startText = it },
+                        label = { Text("From HH:MM") },
+                        singleLine = true,
+                        isError = start == null,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = endText,
+                        onValueChange = { endText = it },
+                        label = { Text("To HH:MM") },
+                        singleLine = true,
+                        isError = end == null,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                AddressAutocompleteField(
+                    value = addressText,
+                    isValidated = addressValidated,
+                    suggestions = suggestions,
+                    label = "Address",
+                    onValueChange = onAddressChange,
+                    onPick = onAddressPick,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (valid) onConfirm(label.trim(), start!!, end!!) },
+                enabled = valid,
             ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

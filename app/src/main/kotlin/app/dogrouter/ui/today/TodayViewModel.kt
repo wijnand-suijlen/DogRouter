@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.prefs.SettingsRepository
+import app.dogrouter.data.remote.AddressSuggestion
+import app.dogrouter.data.remote.BanApi
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanPhase
@@ -14,6 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -22,10 +27,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
 class TodayViewModel(
     private val dayPlanService: DayPlanService,
     settingsRepository: SettingsRepository,
+    private val banApi: BanApi,
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
@@ -168,6 +174,51 @@ class TodayViewModel(
         val route = (planState.value as? PlanState.Ready)?.route ?: return
         pushUndo()
         applyEdit { dayPlanService.addWalk(_selectedDate.value, route, dogId, minutes) }
+    }
+
+    // --- Appointment address autocomplete (BAN) for "add appointment" ---------
+    private val _apptAddressQuery = MutableStateFlow("")
+    private val _apptPicked = MutableStateFlow<AddressSuggestion?>(null)
+
+    /** Current text in the appointment address field. */
+    val apptAddressText: StateFlow<String> = _apptAddressQuery.asStateFlow()
+
+    /** Whether a real address (with coordinates) is picked for the appointment. */
+    val apptAddressValidated: StateFlow<Boolean> = _apptPicked
+        .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Live BAN suggestions for the appointment address field. */
+    val apptAddressSuggestions: StateFlow<List<AddressSuggestion>> = _apptAddressQuery
+        .debounce(300)
+        .filter { it.length >= 3 }
+        .distinctUntilChanged()
+        .mapLatest { query -> banApi.search(query) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun onApptAddressChange(text: String) {
+        _apptAddressQuery.value = text
+        _apptPicked.value = null
+    }
+
+    fun pickApptAddress(suggestion: AddressSuggestion) {
+        _apptAddressQuery.value = suggestion.label
+        _apptPicked.value = suggestion
+    }
+
+    /** Force a dog-free appointment (label, window) at the picked address. */
+    fun addAppointment(label: String, startSeconds: Int, endSeconds: Int) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        val picked = _apptPicked.value ?: return
+        pushUndo()
+        applyEdit {
+            dayPlanService.addAppointment(
+                _selectedDate.value, route, label, startSeconds, endSeconds,
+                picked.latitude, picked.longitude,
+            )
+        }
+        _apptAddressQuery.value = ""
+        _apptPicked.value = null
     }
 
     /** Discard the hand-edited plan and go back to the solver's plan. */

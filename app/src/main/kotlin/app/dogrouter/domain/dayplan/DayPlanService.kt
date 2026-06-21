@@ -172,6 +172,36 @@ class DayPlanService(
     }
 
     /**
+     * Force a one-off, dog-free appointment into [date]'s plan: a fixed
+     * commitment at [lat]/[lon] the walker must reach by [startSeconds] and
+     * stay at until [endSeconds] (a doctor's visit, the shop, a manual lunch).
+     * Inserted at its chronological spot and re-timed; [warningsFor] flags it
+     * if a dog would still be aboard then.
+     */
+    suspend fun addAppointment(
+        date: LocalDate,
+        current: DayRoute,
+        label: String,
+        startSeconds: Int,
+        endSeconds: Int,
+        lat: Double,
+        lon: Double,
+    ) {
+        val appt = RouteEvent.Appointment(
+            timeSeconds = 0,
+            location = GeoPoint(lat, lon),
+            durationSeconds = (endSeconds - startSeconds).coerceAtLeast(0),
+            startSeconds = startSeconds,
+            label = label,
+        )
+        val events = current.events.toMutableList()
+        val idx = events.indexOfFirst { it !is RouteEvent.HomeStart && it.timeSeconds >= startSeconds }
+        val insertAt = if (idx < 1) events.size - 1 else idx
+        events.add(insertAt, appt)
+        pinEdited(date, current.copy(events = events))
+    }
+
+    /**
      * Pin the start time of the pickup at [eventIndex] to [secondsOfDay] (the
      * walker waits there until then) by setting its rule's earliestStart, then
      * re-time and pin.

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -116,6 +117,7 @@ class TodayViewModel(
     fun endEdit() {
         _editItems.value = null
         _undo.value = emptyList()
+        _pendingCommit.value = null
     }
 
     // Snapshots of the chip events before each edit, for undo.
@@ -138,24 +140,34 @@ class TodayViewModel(
         commit(prev, pushUndo = false)
     }
 
-    private fun applyEdit(block: suspend () -> Unit) {
-        _isApplyingEdit.value = true
+    // The latest chip list awaiting a re-time. A new edit replaces it and the
+    // collector below cancels any in-flight re-time, so the walker can keep
+    // editing without waiting and only the most recent state is timed/pinned.
+    private val _pendingCommit = MutableStateFlow<Pair<LocalDate, List<RouteEvent>>?>(null)
+
+    init {
         viewModelScope.launch {
-            try {
-                block()
-            } finally {
-                _isApplyingEdit.value = false
+            _pendingCommit.collectLatest { pending ->
+                pending ?: return@collectLatest
+                val (date, events) = pending
+                _isApplyingEdit.value = true
+                try {
+                    val retimed = dayPlanService.commitEdit(date, events)
+                    if (retimed != null && date == _selectedDate.value && _editItems.value != null) {
+                        _editItems.value = toItems(retimed.events)
+                    }
+                } finally {
+                    _isApplyingEdit.value = false
+                }
             }
         }
     }
 
-    /** Re-time + pin [events] and refresh the chips from the result. */
+    /** Queue [events] for a (cancellable) re-time + pin; the chips refresh from
+     *  the result. The UI already shows the edit optimistically. */
     private fun commit(events: List<RouteEvent>, pushUndo: Boolean) {
         if (pushUndo) currentEvents()?.let(::pushUndo)
-        applyEdit {
-            val retimed = dayPlanService.commitEdit(_selectedDate.value, events)
-            if (retimed != null) _editItems.value = toItems(retimed.events)
-        }
+        _pendingCommit.value = _selectedDate.value to events
     }
 
     /** Apply a pure chip transform and commit it; no-op if [transform] returns null. */
@@ -196,6 +208,26 @@ class TodayViewModel(
     fun setWalkDuration(index: Int, minutes: Int) = edit { events ->
         val walk = events.getOrNull(index) as? RouteEvent.Walk ?: return@edit null
         events.toMutableList().also { it[index] = walk.copy(durationSeconds = minutes.coerceAtLeast(0) * 60) }
+    }
+
+    /** Set the start time (seconds) and duration (minutes) of the appointment
+     *  chip at [index]. */
+    fun setAppointment(index: Int, startSeconds: Int, minutes: Int) = edit { events ->
+        val appt = events.getOrNull(index) as? RouteEvent.Appointment ?: return@edit null
+        val start = startSeconds.coerceIn(0, 24 * 3600 - 1)
+        events.toMutableList().also {
+            it[index] = appt.copy(startSeconds = start, durationSeconds = minutes.coerceAtLeast(0) * 60)
+        }
+    }
+
+    /** Set the earliest start (seconds) and duration (minutes) of the break
+     *  chip at [index]. */
+    fun setBreakTimes(index: Int, startSeconds: Int, minutes: Int) = edit { events ->
+        val br = events.getOrNull(index) as? RouteEvent.Break ?: return@edit null
+        val start = startSeconds.coerceIn(0, 24 * 3600 - 1)
+        events.toMutableList().also {
+            it[index] = br.copy(earliestStartSeconds = start, durationSeconds = minutes.coerceAtLeast(0) * 60)
+        }
     }
 
     /** Pin the earliest start time (seconds) of the pickup chip at [index]. */
@@ -325,6 +357,7 @@ class TodayViewModel(
         viewModelScope.launch { dayPlanService.discardSavedPlan(_selectedDate.value) }
         _editItems.value = null
         _undo.value = emptyList()
+        _pendingCommit.value = null
     }
 
     fun setBreakRequested(requested: Boolean) {
@@ -340,6 +373,7 @@ class TodayViewModel(
     private fun changeDate(date: LocalDate) {
         _editItems.value = null
         _undo.value = emptyList()
+        _pendingCommit.value = null
         _selectedDate.value = date
     }
 
@@ -348,6 +382,7 @@ class TodayViewModel(
         val date = _selectedDate.value
         _editItems.value = null
         _undo.value = emptyList()
+        _pendingCommit.value = null
         viewModelScope.launch {
             dayPlanService.discardSavedPlan(date)
             dayPlanService.refresh(date)

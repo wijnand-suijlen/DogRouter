@@ -104,6 +104,10 @@ import java.util.Locale
  *  common "this can't be done" cue. PlanVerifier carries the exact reason. */
 private const val DAY_END_SECONDS = 20 * 3600
 
+/** A break/appointment chip being edited: its index, start (seconds) and
+ *  duration (minutes); [isBreak] picks which VM setter the dialog calls. */
+data class TimedEdit(val index: Int, val startSeconds: Int, val minutes: Int, val isBreak: Boolean)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
@@ -127,6 +131,8 @@ fun TodayScreen(
     var editingWalk by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // The pickup whose start time is being edited: (chip index, current seconds).
     var editingStop by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    // A break/appointment whose start time + duration is being edited.
+    var editingTimed by remember { mutableStateOf<TimedEdit?>(null) }
     var showAddChooser by remember { mutableStateOf(false) }
     var showAddWalk by remember { mutableStateOf(false) }
     var showAddAppointment by remember { mutableStateOf(false) }
@@ -213,6 +219,7 @@ fun TodayScreen(
                     onReorderStop = viewModel::onReorderStop,
                     onTapWalk = { index, minutes -> editingWalk = index to minutes },
                     onTapPickupTime = { index, seconds -> editingStop = index to seconds },
+                    onTapTimed = { edit -> editingTimed = edit },
                     onSplitMergeWalk = viewModel::splitOrMergeWalk,
                     onToggleLeg = viewModel::toggleLeg,
                     onNotToday = viewModel::markDogNotToday,
@@ -250,6 +257,23 @@ fun TodayScreen(
                 editingStop = null
             },
             onDismiss = { editingStop = null },
+        )
+    }
+
+    editingTimed?.let { edit ->
+        TimedEventDialog(
+            title = if (edit.isBreak) "Lunch break" else "Appointment",
+            initialStartSeconds = edit.startSeconds,
+            initialMinutes = edit.minutes,
+            onConfirm = { startSeconds, minutes ->
+                if (edit.isBreak) {
+                    viewModel.setBreakTimes(edit.index, startSeconds, minutes)
+                } else {
+                    viewModel.setAppointment(edit.index, startSeconds, minutes)
+                }
+                editingTimed = null
+            },
+            onDismiss = { editingTimed = null },
         )
     }
 
@@ -312,6 +336,7 @@ private fun EditableTimeline(
     onReorderStop: () -> Unit,
     onTapWalk: (index: Int, currentMinutes: Int) -> Unit,
     onTapPickupTime: (index: Int, currentSeconds: Int) -> Unit,
+    onTapTimed: (TimedEdit) -> Unit,
     onSplitMergeWalk: (index: Int) -> Unit,
     onToggleLeg: (index: Int) -> Unit,
     onNotToday: (dogId: String) -> Unit,
@@ -365,6 +390,12 @@ private fun EditableTimeline(
                         is RouteEvent.Walk -> { { onTapWalk(index, event.durationSeconds / 60) } }
                         is RouteEvent.Pickup -> {
                             { onTapPickupTime(index, event.rule.earliestStart?.toSecondOfDay() ?: event.timeSeconds) }
+                        }
+                        is RouteEvent.Appointment -> {
+                            { onTapTimed(TimedEdit(index, event.startSeconds, event.durationSeconds / 60, isBreak = false)) }
+                        }
+                        is RouteEvent.Break -> {
+                            { onTapTimed(TimedEdit(index, event.earliestStartSeconds, event.durationSeconds / 60, isBreak = true)) }
                         }
                         else -> null
                     },
@@ -525,6 +556,57 @@ private fun StopTimeDialog(
         onConfirm = onConfirm,
         onDismiss = onDismiss,
     )
+}
+
+/** Edit a break/appointment: its start time (clock dial) and duration. */
+@Composable
+private fun TimedEventDialog(
+    title: String,
+    initialStartSeconds: Int,
+    initialMinutes: Int,
+    onConfirm: (startSeconds: Int, minutes: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var startSeconds by remember { mutableStateOf(initialStartSeconds) }
+    var minutesText by remember { mutableStateOf(initialMinutes.toString()) }
+    var pickingStart by remember { mutableStateOf(false) }
+    val minutes = minutesText.toIntOrNull()?.takeIf { it > 0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedButton(onClick = { pickingStart = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Starts at ${formatTime(startSeconds)}")
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = minutesText,
+                    onValueChange = { minutesText = it },
+                    label = { Text("Duration (minutes)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = minutes == null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { minutes?.let { onConfirm(startSeconds, it) } },
+                enabled = minutes != null,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+    if (pickingStart) {
+        TimePickerDialog(
+            initialSeconds = startSeconds,
+            title = "Start time",
+            onConfirm = { startSeconds = it; pickingStart = false },
+            onDismiss = { pickingStart = false },
+        )
+    }
 }
 
 /** A Material3 clock-dial time picker in a dialog; returns seconds-of-day. */

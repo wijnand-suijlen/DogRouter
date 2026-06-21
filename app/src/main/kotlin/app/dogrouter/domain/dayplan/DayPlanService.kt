@@ -130,22 +130,27 @@ class DayPlanService(
      * re-timed route. This is the single entry point for the drag-and-drop
      * editor — reorders, splits, merges, leg toggles, add/remove all flow here.
      * Returns null only if routing is unavailable (the caller keeps its chips).
+     *
+     * The re-time (matrix build + retiming) is CPU-bound and runs on
+     * [Dispatchers.Default] so it never blocks the UI thread; the caller can
+     * cancel an in-flight commit (e.g. when the walker edits again) and the
+     * latest one wins.
      */
     suspend fun commitEdit(
         date: LocalDate,
         events: List<RouteEvent>,
         conflicts: List<PlanConflict> = emptyList(),
-    ): DayRoute? {
+    ): DayRoute? = withContext(Dispatchers.Default) {
         val settings = settingsRepo.settings.first()
         // Incompatibilities are irrelevant to a pure re-time, so pass none.
         val retimed = buildPlanner(settings, emptySet())
             .retime(date, mergeAdjacentWalks(events), recomputeDwells = false, allowInfeasible = true)
             ?.copy(conflicts = conflicts)
-            ?: return null
+            ?: return@withContext null
         savedPlanDao.upsert(
             SavedPlan(date, SavedPlanCodec.encode(retimed), edited = true, updatedAt = System.currentTimeMillis()),
         )
-        return retimed
+        retimed
     }
 
     /** Constraint warnings for a (possibly hand-edited) plan — shown but not

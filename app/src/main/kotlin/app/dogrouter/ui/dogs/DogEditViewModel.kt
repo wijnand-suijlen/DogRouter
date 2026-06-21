@@ -219,6 +219,9 @@ class DogEditViewModel(
     fun setRuleAlternative(ruleId: String, value: Boolean) =
         updateRule(ruleId) { copy(isAlternative = value) }
 
+    fun setRulePrice(ruleId: String, priceCents: Int?) =
+        updateRule(ruleId) { copy(priceCents = priceCents) }
+
     fun save() {
         viewModelScope.launch {
             val s = _state.value

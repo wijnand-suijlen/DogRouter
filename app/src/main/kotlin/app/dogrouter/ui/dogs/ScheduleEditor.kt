@@ -37,6 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import app.dogrouter.domain.billing.Pricing
+import app.dogrouter.domain.billing.euroText
+import app.dogrouter.domain.billing.parseEuroToCents
 import java.time.DayOfWeek
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -64,6 +67,7 @@ fun ScheduleEditor(
     onLatestEndChange: (ruleId: String, time: LocalTime?) -> Unit,
     onDurationChange: (ruleId: String, minutes: Int) -> Unit,
     onToggleAlternative: (ruleId: String, value: Boolean) -> Unit,
+    onPriceChange: (ruleId: String, priceCents: Int?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pending: PendingTimePick? by remember { mutableStateOf(null) }
@@ -95,6 +99,7 @@ fun ScheduleEditor(
                 onLatestEndClear = { onLatestEndChange(rule.id, null) },
                 onDurationChange = { minutes -> onDurationChange(rule.id, minutes) },
                 onToggleAlternative = { value -> onToggleAlternative(rule.id, value) },
+                onPriceChange = { cents -> onPriceChange(rule.id, cents) },
             )
         }
         OutlinedButton(onClick = onAddRule, modifier = Modifier.fillMaxWidth()) {
@@ -133,6 +138,7 @@ private fun RuleCard(
     onLatestEndClear: () -> Unit,
     onDurationChange: (Int) -> Unit,
     onToggleAlternative: (Boolean) -> Unit,
+    onPriceChange: (Int?) -> Unit,
 ) {
     Card(colors = CardDefaults.outlinedCardColors()) {
         Column(
@@ -188,6 +194,25 @@ private fun RuleCard(
                     singleLine = true,
                     modifier = Modifier.width(140.dp),
                 )
+                var priceText by remember(rule.id) {
+                    mutableStateOf(
+                        euroText(rule.priceCents ?: Pricing.defaultPriceCents(rule.durationMinutes)),
+                    )
+                }
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { raw ->
+                        priceText = raw
+                        onPriceChange(parseEuroToCents(raw))
+                    },
+                    label = { Text("Price") },
+                    prefix = { Text("€") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.width(120.dp),
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onRemove) {
                     Icon(Icons.Default.Close, contentDescription = null)
                     Text(" Delete rule")

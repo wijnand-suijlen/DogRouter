@@ -49,6 +49,11 @@ data class DogScheduleRule(
     // rules per day (e.g. "end of morning OR end of afternoon"), not all of
     // them. Non-alternative rules are each walked as usual.
     val isAlternative: Boolean = false,
+    // Price charged for this walk, in euro cents. Null means "use the default
+    // tariff for [durationMinutes]" (see Pricing.defaultPriceCents). Frozen onto
+    // a BillableService when a day is committed, so later edits don't change
+    // past accounts.
+    val priceCents: Int? = null,
 )
 
 fun maskFromWeekdays(days: Set<DayOfWeek>): Int =

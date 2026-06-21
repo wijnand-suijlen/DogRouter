@@ -3,6 +3,8 @@ package app.dogrouter.data.backup
 import androidx.room.withTransaction
 import app.dogrouter.data.db.AppDatabase
 import app.dogrouter.data.db.AppointmentDao
+import app.dogrouter.data.db.BillableServiceDao
+import app.dogrouter.data.db.CommittedDayDao
 import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
@@ -28,6 +30,8 @@ class BackupRepository(
     private val incompatibilityDao: DogIncompatibilityDao,
     private val appointmentDao: AppointmentDao,
     private val ownerDao: OwnerDao,
+    private val billableServiceDao: BillableServiceDao,
+    private val committedDayDao: CommittedDayDao,
     private val settingsRepo: SettingsRepository,
     private val json: Json,
     private val now: () -> Long = { System.currentTimeMillis() },
@@ -41,6 +45,8 @@ class BackupRepository(
             incompatibilities = incompatibilityDao.getAll().map { it.toDto() },
             appointments = appointmentDao.getAll().map { it.toDto() },
             owners = ownerDao.getAll().map { it.toDto() },
+            services = billableServiceDao.getAll().map { it.toDto() },
+            committedDays = committedDayDao.getAll().map { it.toDto() },
         )
         return json.encodeToString(file)
     }
@@ -80,6 +86,16 @@ class BackupRepository(
             throw BackupException("An appointment in the backup is malformed.", e)
         }
         val owners = file.owners.map { it.toEntity() }
+        val services = try {
+            file.services.map { it.toEntity() }
+        } catch (e: Exception) {
+            throw BackupException("A billing service in the backup is malformed.", e)
+        }
+        val committedDays = try {
+            file.committedDays.map { it.toEntity() }
+        } catch (e: Exception) {
+            throw BackupException("A committed day in the backup is malformed.", e)
+        }
 
         db.withTransaction {
             ownerDao.deleteAll()
@@ -90,6 +106,10 @@ class BackupRepository(
             incompatibilityDao.insertAll(incompatibilities)
             appointmentDao.deleteAll()
             appointmentDao.insertAll(appointments)
+            billableServiceDao.deleteAll()
+            billableServiceDao.insertAll(services)
+            committedDayDao.deleteAll()
+            committedDayDao.insertAll(committedDays)
         }
         settingsRepo.replaceAll(file.settings.toAppSettings())
 

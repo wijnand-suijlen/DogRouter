@@ -7,6 +7,7 @@ import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.data.remote.BanApi
+import app.dogrouter.domain.billing.BillingService
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.dayplan.LegMode
 import app.dogrouter.domain.dayplan.PlanPhase
@@ -46,6 +47,7 @@ class TodayViewModel(
     private val dayPlanService: DayPlanService,
     settingsRepository: SettingsRepository,
     private val banApi: BanApi,
+    private val billingService: BillingService,
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
@@ -78,6 +80,17 @@ class TodayViewModel(
     val isPlanEdited: StateFlow<Boolean> = _selectedDate
         .flatMapLatest { dayPlanService.observeIsEdited(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Whether the day in view has already been committed to billing. */
+    val isDayCommitted: StateFlow<Boolean> = _selectedDate
+        .flatMapLatest { billingService.observeIsCommitted(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Commit the shown plan to the owners' running accounts (one-shot). */
+    fun commitDay() {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        viewModelScope.launch { billingService.commitDay(_selectedDate.value, route) }
+    }
 
     /** Constraint warnings for the shown plan (empty for a feasible plan).
      *  Shown but not enforced — the walker may keep an edit that bends a rule. */
@@ -256,8 +269,9 @@ class TodayViewModel(
         edit { events -> removeDogChips(events, dogId) }
     }
 
-    /** Add an extra walk of [minutes] for [dog] just before returning home. */
-    fun addWalk(dog: Dog, minutes: Int) {
+    /** Add an extra walk of [minutes] for [dog] just before returning home, at
+     *  [priceCents] (or the default tariff when null). */
+    fun addWalk(dog: Dog, minutes: Int, priceCents: Int?) {
         val lat = dog.latitude ?: return
         val lon = dog.longitude ?: return
         val loc = GeoPoint(lat, lon)
@@ -266,7 +280,7 @@ class TodayViewModel(
             id = "adhoc-${dog.id}-${System.currentTimeMillis()}",
             dogId = dog.id, weekdaysMask = 0,
             earliestStart = null, latestStart = null, latestEnd = null,
-            durationMinutes = dur, isAlternative = false,
+            durationMinutes = dur, isAlternative = false, priceCents = priceCents,
         )
         edit { events ->
             val list = events.toMutableList()

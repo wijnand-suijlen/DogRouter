@@ -74,18 +74,21 @@ private data class RuleDto(
     val latestEnd: String? = null,
     val durationMinutes: Int,
     val isAlternative: Boolean = false,
+    val priceCents: Int? = null,
 )
 
 private fun DogScheduleRule.toDto() = RuleDto(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
     earliestStart = earliestStart?.toString(), latestStart = latestStart?.toString(),
     latestEnd = latestEnd?.toString(), durationMinutes = durationMinutes, isAlternative = isAlternative,
+    priceCents = priceCents,
 )
 
 private fun RuleDto.toRule() = DogScheduleRule(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
     earliestStart = earliestStart?.let(LocalTime::parse), latestStart = latestStart?.let(LocalTime::parse),
     latestEnd = latestEnd?.let(LocalTime::parse), durationMinutes = durationMinutes, isAlternative = isAlternative,
+    priceCents = priceCents,
 )
 
 @Serializable

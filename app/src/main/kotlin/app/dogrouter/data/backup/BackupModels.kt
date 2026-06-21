@@ -1,6 +1,8 @@
 package app.dogrouter.data.backup
 
 import app.dogrouter.data.entity.Appointment
+import app.dogrouter.data.entity.BillableService
+import app.dogrouter.data.entity.CommittedDay
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
@@ -13,7 +15,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
-const val BACKUP_VERSION = 2
+const val BACKUP_VERSION = 3
 
 /**
  * Self-contained snapshot of everything the walker enters: dogs (with
@@ -34,6 +36,32 @@ data class BackupFile(
     val incompatibilities: List<IncompatibilityDto>,
     val appointments: List<AppointmentDto> = emptyList(),
     val owners: List<OwnerDto> = emptyList(),
+    val services: List<ServiceDto> = emptyList(),
+    val committedDays: List<CommittedDayDto> = emptyList(),
+)
+
+@Serializable
+data class ServiceDto(
+    val id: String,
+    val ownerId: String? = null,
+    val date: String,
+    val dogId: String? = null,
+    val description: String,
+    val amountCents: Int,
+    val durationMinutes: Int,
+    val paid: Boolean = false,
+    val paidDate: String? = null,
+    val invoiceNumber: String? = null,
+    val isManual: Boolean = false,
+    val committedAt: Long,
+)
+
+@Serializable
+data class CommittedDayDto(
+    val date: String,
+    val committedAt: Long,
+    val serviceCount: Int,
+    val totalCents: Int,
 )
 
 @Serializable
@@ -94,6 +122,7 @@ data class ScheduleRuleDto(
     val latestEnd: String? = null,
     val durationMinutes: Int,
     val isAlternative: Boolean = false,
+    val priceCents: Int? = null,
 )
 
 @Serializable
@@ -137,7 +166,7 @@ fun DogScheduleRule.toDto() = ScheduleRuleDto(
     id = id, dogId = dogId, weekdaysMask = weekdaysMask,
     earliestStart = earliestStart?.toString(), latestStart = latestStart?.toString(),
     latestEnd = latestEnd?.toString(),
-    durationMinutes = durationMinutes, isAlternative = isAlternative,
+    durationMinutes = durationMinutes, isAlternative = isAlternative, priceCents = priceCents,
 )
 
 fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
@@ -145,6 +174,17 @@ fun DogIncompatibility.toDto() = IncompatibilityDto(dogIdA, dogIdB)
 fun Owner.toDto() = OwnerDto(
     id = id, firstName = firstName, lastName = lastName, billingAddress = billingAddress,
     phone = phone, email = email, isEmployer = isEmployer, isTest = isTest, createdAt = createdAt,
+)
+
+fun BillableService.toDto() = ServiceDto(
+    id = id, ownerId = ownerId, date = date.toString(), dogId = dogId, description = description,
+    amountCents = amountCents, durationMinutes = durationMinutes, paid = paid,
+    paidDate = paidDate?.toString(), invoiceNumber = invoiceNumber, isManual = isManual,
+    committedAt = committedAt,
+)
+
+fun CommittedDay.toDto() = CommittedDayDto(
+    date = date.toString(), committedAt = committedAt, serviceCount = serviceCount, totalCents = totalCents,
 )
 
 fun Appointment.toDto() = AppointmentDto(
@@ -180,7 +220,7 @@ fun ScheduleRuleDto.toEntity() = DogScheduleRule(
     earliestStart = earliestStart?.let { LocalTime.parse(it) },
     latestStart = latestStart?.let { LocalTime.parse(it) },
     latestEnd = latestEnd?.let { LocalTime.parse(it) },
-    durationMinutes = durationMinutes, isAlternative = isAlternative,
+    durationMinutes = durationMinutes, isAlternative = isAlternative, priceCents = priceCents,
 )
 
 fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)
@@ -188,6 +228,17 @@ fun IncompatibilityDto.toEntity() = DogIncompatibility(dogIdA, dogIdB)
 fun OwnerDto.toEntity() = Owner(
     id = id, firstName = firstName, lastName = lastName, billingAddress = billingAddress,
     phone = phone, email = email, isEmployer = isEmployer, isTest = isTest, createdAt = createdAt,
+)
+
+fun ServiceDto.toEntity() = BillableService(
+    id = id, ownerId = ownerId, date = LocalDate.parse(date), dogId = dogId, description = description,
+    amountCents = amountCents, durationMinutes = durationMinutes, paid = paid,
+    paidDate = paidDate?.let { LocalDate.parse(it) }, invoiceNumber = invoiceNumber, isManual = isManual,
+    committedAt = committedAt,
+)
+
+fun CommittedDayDto.toEntity() = CommittedDay(
+    date = LocalDate.parse(date), committedAt = committedAt, serviceCount = serviceCount, totalCents = totalCents,
 )
 
 fun AppointmentDto.toEntity() = Appointment(

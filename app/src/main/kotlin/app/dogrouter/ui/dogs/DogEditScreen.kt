@@ -146,6 +146,7 @@ fun DogEditScreen(
                 onLatestEndChange = viewModel::setLatestEnd,
                 onDurationChange = viewModel::setDurationMinutes,
                 onToggleAlternative = viewModel::setRuleAlternative,
+                onRulePriceChange = viewModel::setRulePrice,
                 onAllowLongerWalkChange = viewModel::setAllowLongerWalk,
                 onToggleIncompatibility = viewModel::toggleIncompatibility,
                 modifier = Modifier
@@ -194,6 +195,7 @@ private fun DogForm(
     onLatestEndChange: (ruleId: String, time: java.time.LocalTime?) -> Unit,
     onDurationChange: (ruleId: String, minutes: Int) -> Unit,
     onToggleAlternative: (ruleId: String, value: Boolean) -> Unit,
+    onRulePriceChange: (ruleId: String, priceCents: Int?) -> Unit,
     onAllowLongerWalkChange: (Boolean) -> Unit,
     onToggleIncompatibility: (otherDogId: String) -> Unit,
     modifier: Modifier = Modifier,
@@ -306,6 +308,7 @@ private fun DogForm(
             onLatestEndChange = onLatestEndChange,
             onDurationChange = onDurationChange,
             onToggleAlternative = onToggleAlternative,
+            onPriceChange = onRulePriceChange,
         )
 
         Spacer(Modifier.height(8.dp))

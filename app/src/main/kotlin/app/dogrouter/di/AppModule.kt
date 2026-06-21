@@ -49,6 +49,8 @@ val appModule = module {
     single { get<AppDatabase>().appointmentDao() }
     single { get<AppDatabase>().savedPlanDao() }
     single { get<AppDatabase>().ownerDao() }
+    single { get<AppDatabase>().billableServiceDao() }
+    single { get<AppDatabase>().committedDayDao() }
 
     single<DataStore<Preferences>> {
         PreferenceDataStoreFactory.create(
@@ -91,9 +93,10 @@ val appModule = module {
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
     single { LegGeometryCache(get()) }
 
-    single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     single { DayPlanService(get(), get(), get(), get(), get(), get(), get()) }
+    single { app.dogrouter.domain.billing.BillingService(get(), get()) }
 
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), get(), dogId) }
@@ -102,6 +105,6 @@ val appModule = module {
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get()) }
     viewModel { PlanningViewModel(get(), get()) }
-    viewModel { TodayViewModel(get(), get(), get()) }
+    viewModel { TodayViewModel(get(), get(), get(), get()) }
     viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }
 }

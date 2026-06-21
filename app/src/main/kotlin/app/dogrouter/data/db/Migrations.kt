@@ -159,9 +159,34 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
     }
 }
 
+/**
+ * Billing fase 2: a per-rule price (`priceCents`, null = default tariff), and
+ * the `billable_services` + `committed_days` tables that a committed day plan
+ * fills.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `dog_schedule_rules` ADD COLUMN `priceCents` INTEGER")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `billable_services` (" +
+                "`id` TEXT NOT NULL, `ownerId` TEXT, `date` TEXT NOT NULL, `dogId` TEXT, " +
+                "`description` TEXT NOT NULL, `amountCents` INTEGER NOT NULL, " +
+                "`durationMinutes` INTEGER NOT NULL, `paid` INTEGER NOT NULL, " +
+                "`paidDate` TEXT, `invoiceNumber` TEXT, `isManual` INTEGER NOT NULL, " +
+                "`committedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `committed_days` (" +
+                "`date` TEXT NOT NULL, `committedAt` INTEGER NOT NULL, " +
+                "`serviceCount` INTEGER NOT NULL, `totalCents` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`date`))",
+        )
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-        MIGRATION_9_10,
+        MIGRATION_9_10, MIGRATION_10_11,
     )

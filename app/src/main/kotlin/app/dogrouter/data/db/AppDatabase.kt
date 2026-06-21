@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import app.dogrouter.data.entity.Appointment
+import app.dogrouter.data.entity.BillableService
+import app.dogrouter.data.entity.CommittedDay
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
@@ -18,8 +20,10 @@ import app.dogrouter.data.entity.SavedPlan
         Appointment::class,
         SavedPlan::class,
         Owner::class,
+        BillableService::class,
+        CommittedDay::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -30,4 +34,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appointmentDao(): AppointmentDao
     abstract fun savedPlanDao(): SavedPlanDao
     abstract fun ownerDao(): OwnerDao
+    abstract fun billableServiceDao(): BillableServiceDao
+    abstract fun committedDayDao(): CommittedDayDao
 }

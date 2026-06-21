@@ -28,11 +28,13 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
@@ -88,6 +90,9 @@ import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.dayplan.durationAtSeconds
+import app.dogrouter.domain.billing.Pricing
+import app.dogrouter.domain.billing.euroText
+import app.dogrouter.domain.billing.parseEuroToCents
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.ui.common.AddressAutocompleteField
 import org.koin.androidx.compose.koinViewModel
@@ -125,7 +130,9 @@ fun TodayScreen(
     val isApplyingEdit by viewModel.isApplyingEdit.collectAsStateWithLifecycle()
     val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
     val editItems by viewModel.editItems.collectAsStateWithLifecycle()
+    val isDayCommitted by viewModel.isDayCommitted.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
+    var showCommitConfirm by remember { mutableStateOf(false) }
     val editMode = editItems != null
     // The walk whose duration is being edited: (chip index, current minutes).
     var editingWalk by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -155,6 +162,20 @@ fun TodayScreen(
                     } else if (readyRoute?.events?.isNotEmpty() == true) {
                         IconButton(onClick = viewModel::beginEdit) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit plan")
+                        }
+                    }
+                    if (!editMode && readyRoute?.events?.isNotEmpty() == true) {
+                        if (isDayCommitted) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = "Already billed",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
+                        } else {
+                            IconButton(onClick = { showCommitConfirm = true }) {
+                                Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Commit day to billing")
+                            }
                         }
                     }
                     IconButton(onClick = viewModel::refresh) {
@@ -238,6 +259,26 @@ fun TodayScreen(
         )
     }
 
+    if (showCommitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCommitConfirm = false },
+            title = { Text("Commit this day to billing?") },
+            text = {
+                Text(
+                    "This adds today's walks to the owners' running accounts at the " +
+                        "current prices. The amounts are frozen; do this only once the " +
+                        "day is final.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showCommitConfirm = false; viewModel.commitDay() }) {
+                    Text("Commit")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showCommitConfirm = false }) { Text("Cancel") } },
+        )
+    }
+
     editingWalk?.let { (index, minutes) ->
         WalkDurationDialog(
             initialMinutes = minutes,
@@ -296,8 +337,8 @@ fun TodayScreen(
         val dogs by viewModel.addableDogs.collectAsStateWithLifecycle()
         AddWalkDialog(
             dogs = dogs,
-            onConfirm = { dog, minutes ->
-                viewModel.addWalk(dog, minutes)
+            onConfirm = { dog, minutes, priceCents ->
+                viewModel.addWalk(dog, minutes, priceCents)
                 showAddWalk = false
             },
             onDismiss = { showAddWalk = false },
@@ -638,17 +679,25 @@ private fun TimePickerDialog(
     )
 }
 
-/** Pick a dog and a duration for a hand-added walk. */
+/** Pick a dog, a duration and a price for a hand-added walk. */
 @Composable
 private fun AddWalkDialog(
     dogs: List<Dog>,
-    onConfirm: (dog: Dog, minutes: Int) -> Unit,
+    onConfirm: (dog: Dog, minutes: Int, priceCents: Int?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var selectedId by remember { mutableStateOf(dogs.firstOrNull()?.id) }
     var minutesText by remember { mutableStateOf("60") }
     val minutes = minutesText.toIntOrNull()?.takeIf { it > 0 }
     val selectedDog = dogs.firstOrNull { it.id == selectedId }
+    // Price field, pre-filled with the default tariff; the walker may override.
+    var priceEdited by remember { mutableStateOf(false) }
+    var priceText by remember { mutableStateOf(euroText(Pricing.defaultPriceCents(60))) }
+    // Keep the suggested price in sync with the duration until the walker edits it.
+    if (!priceEdited && minutes != null) {
+        priceText = euroText(Pricing.defaultPriceCents(minutes))
+    }
+    val priceCents = parseEuroToCents(priceText)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add a walk") },
@@ -671,21 +720,34 @@ private fun AddWalkDialog(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = minutesText,
-                        onValueChange = { minutesText = it },
-                        label = { Text("Minutes") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        isError = minutes == null,
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = minutesText,
+                            onValueChange = { minutesText = it },
+                            label = { Text("Minutes") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            isError = minutes == null,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = priceText,
+                            onValueChange = { priceEdited = true; priceText = it },
+                            label = { Text("Price") },
+                            prefix = { Text("€") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            isError = priceCents == null,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { selectedDog?.let { d -> minutes?.let { m -> onConfirm(d, m) } } },
-                enabled = selectedDog != null && minutes != null,
+                onClick = { selectedDog?.let { d -> minutes?.let { m -> onConfirm(d, m, priceCents) } } },
+                enabled = selectedDog != null && minutes != null && priceCents != null,
             ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

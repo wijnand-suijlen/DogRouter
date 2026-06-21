@@ -19,6 +19,8 @@ data class ScheduleRuleDraft(
     val latestEnd: LocalTime? = null,
     val durationMinutes: Int = 60,
     val isAlternative: Boolean = false,
+    // Price for this walk in cents; null = use the default tariff for the duration.
+    val priceCents: Int? = null,
 )
 
 fun DogScheduleRule.toDraft(): ScheduleRuleDraft = ScheduleRuleDraft(
@@ -29,6 +31,7 @@ fun DogScheduleRule.toDraft(): ScheduleRuleDraft = ScheduleRuleDraft(
     latestEnd = latestEnd,
     durationMinutes = durationMinutes,
     isAlternative = isAlternative,
+    priceCents = priceCents,
 )
 
 fun ScheduleRuleDraft.toEntity(dogId: String): DogScheduleRule = DogScheduleRule(
@@ -40,4 +43,5 @@ fun ScheduleRuleDraft.toEntity(dogId: String): DogScheduleRule = DogScheduleRule
     latestEnd = latestEnd,
     durationMinutes = durationMinutes,
     isAlternative = isAlternative,
+    priceCents = priceCents,
 )

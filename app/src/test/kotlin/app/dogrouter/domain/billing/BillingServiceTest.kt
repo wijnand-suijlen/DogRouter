@@ -84,11 +84,29 @@ class BillingServiceTest {
     }
 
     @Test
-    fun aDogWalkedTwiceYieldsTwoServices() {
+    fun aWalkSplitAcrossTwoWalkEventsIsBilledOnce() {
+        // Una: a 120-min walk realised as two 60-min segments in one span.
+        val una = dog("una", "owner1")
+        val events = listOf(
+            pickup(una, 120),
+            RouteEvent.Walk(0, loc, listOf(una), 3600),
+            RouteEvent.Walk(0, loc, listOf(una), 3600),
+            RouteEvent.Dropoff(0, loc, una),
+        )
+        val services = buildBillableServices(date, events, 0L)
+        assertEquals(1, services.size)
+        assertEquals(2400, services.single().amountCents) // default(120) capped at €24
+        assertEquals(120, services.single().durationMinutes)
+    }
+
+    @Test
+    fun twoSeparatePickupDropoffSpansYieldTwoServices() {
         val a = dog("a", "owner1")
         val events = listOf(
             pickup(a, 30),
             RouteEvent.Walk(0, loc, listOf(a), 1800),
+            RouteEvent.Dropoff(0, loc, a),
+            pickup(a, 30),
             RouteEvent.Walk(0, loc, listOf(a), 1800),
             RouteEvent.Dropoff(0, loc, a),
         )

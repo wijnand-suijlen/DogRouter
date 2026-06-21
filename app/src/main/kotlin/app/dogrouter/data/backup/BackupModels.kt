@@ -6,16 +6,18 @@ import app.dogrouter.data.entity.CommittedDay
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.Invoice
 import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.BreakLocation
+import app.dogrouter.data.prefs.IssuerProfile
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
-const val BACKUP_VERSION = 4
+const val BACKUP_VERSION = 5
 
 /**
  * Self-contained snapshot of everything the walker enters: dogs (with
@@ -38,6 +40,20 @@ data class BackupFile(
     val owners: List<OwnerDto> = emptyList(),
     val services: List<ServiceDto> = emptyList(),
     val committedDays: List<CommittedDayDto> = emptyList(),
+    val invoices: List<InvoiceDto> = emptyList(),
+)
+
+@Serializable
+data class InvoiceDto(
+    val number: String,
+    val ownerId: String,
+    val date: String,
+    val kind: String,
+    val isTest: Boolean = false,
+    val acquitted: Boolean = false,
+    val acquittedDate: String? = null,
+    val totalCents: Int,
+    val pdfPath: String? = null,
 )
 
 @Serializable
@@ -150,6 +166,9 @@ data class SettingsDto(
     val breakLocations: List<BreakLocation> = emptyList(),
     val homeLunchMinFreeMinutes: Int = AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
     val lnsIterations: Int = AppSettings.DEFAULTS.lnsIterations,
+    val issuer: IssuerProfile = AppSettings.DEFAULTS.issuer,
+    val nextInvoiceNumber: Int = AppSettings.DEFAULTS.nextInvoiceNumber,
+    val nextTestInvoiceNumber: Int = AppSettings.DEFAULTS.nextTestInvoiceNumber,
 )
 
 // ---- mapping: entity/domain -> DTO ----
@@ -189,6 +208,11 @@ fun CommittedDay.toDto() = CommittedDayDto(
     totalCents = totalCents, planJson = planJson,
 )
 
+fun Invoice.toDto() = InvoiceDto(
+    number = number, ownerId = ownerId, date = date.toString(), kind = kind, isTest = isTest,
+    acquitted = acquitted, acquittedDate = acquittedDate?.toString(), totalCents = totalCents, pdfPath = pdfPath,
+)
+
 fun Appointment.toDto() = AppointmentDto(
     id = id, date = date.toString(), startTime = startTime.toString(), endTime = endTime.toString(),
     label = label, address = address, latitude = latitude, longitude = longitude,
@@ -204,6 +228,7 @@ fun AppSettings.toDto() = SettingsDto(
     breakWindowStart = breakWindowStart.toString(), breakWindowEnd = breakWindowEnd.toString(),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
     homeLunchMinFreeMinutes = homeLunchMinFreeMinutes, lnsIterations = lnsIterations,
+    issuer = issuer, nextInvoiceNumber = nextInvoiceNumber, nextTestInvoiceNumber = nextTestInvoiceNumber,
 )
 
 // ---- mapping: DTO -> entity/domain ----
@@ -244,6 +269,12 @@ fun CommittedDayDto.toEntity() = CommittedDay(
     totalCents = totalCents, planJson = planJson,
 )
 
+fun InvoiceDto.toEntity() = Invoice(
+    number = number, ownerId = ownerId, date = LocalDate.parse(date), kind = kind, isTest = isTest,
+    acquitted = acquitted, acquittedDate = acquittedDate?.let { LocalDate.parse(it) },
+    totalCents = totalCents, pdfPath = pdfPath,
+)
+
 fun AppointmentDto.toEntity() = Appointment(
     id = id, date = LocalDate.parse(date),
     startTime = LocalTime.parse(startTime), endTime = LocalTime.parse(endTime),
@@ -260,6 +291,7 @@ fun SettingsDto.toAppSettings() = AppSettings(
     breakWindowStart = LocalTime.parse(breakWindowStart), breakWindowEnd = LocalTime.parse(breakWindowEnd),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
     homeLunchMinFreeMinutes = homeLunchMinFreeMinutes, lnsIterations = lnsIterations,
+    issuer = issuer, nextInvoiceNumber = nextInvoiceNumber, nextTestInvoiceNumber = nextTestInvoiceNumber,
 )
 
 private fun transportStateOf(name: String): TransportState =

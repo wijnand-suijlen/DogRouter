@@ -8,6 +8,7 @@ import app.dogrouter.data.db.CommittedDayDao
 import app.dogrouter.data.db.DogDao
 import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
+import app.dogrouter.data.db.InvoiceDao
 import app.dogrouter.data.db.OwnerDao
 import app.dogrouter.data.prefs.SettingsRepository
 import kotlinx.coroutines.flow.first
@@ -32,6 +33,7 @@ class BackupRepository(
     private val ownerDao: OwnerDao,
     private val billableServiceDao: BillableServiceDao,
     private val committedDayDao: CommittedDayDao,
+    private val invoiceDao: InvoiceDao,
     private val settingsRepo: SettingsRepository,
     private val json: Json,
     private val now: () -> Long = { System.currentTimeMillis() },
@@ -47,6 +49,7 @@ class BackupRepository(
             owners = ownerDao.getAll().map { it.toDto() },
             services = billableServiceDao.getAll().map { it.toDto() },
             committedDays = committedDayDao.getAll().map { it.toDto() },
+            invoices = invoiceDao.getAll().map { it.toDto() },
         )
         return json.encodeToString(file)
     }
@@ -96,6 +99,11 @@ class BackupRepository(
         } catch (e: Exception) {
             throw BackupException("A committed day in the backup is malformed.", e)
         }
+        val invoices = try {
+            file.invoices.map { it.toEntity() }
+        } catch (e: Exception) {
+            throw BackupException("An invoice in the backup is malformed.", e)
+        }
 
         db.withTransaction {
             ownerDao.deleteAll()
@@ -110,6 +118,8 @@ class BackupRepository(
             billableServiceDao.insertAll(services)
             committedDayDao.deleteAll()
             committedDayDao.insertAll(committedDays)
+            invoiceDao.deleteAll()
+            invoiceDao.insertAll(invoices)
         }
         settingsRepo.replaceAll(file.settings.toAppSettings())
 

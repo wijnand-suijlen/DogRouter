@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.backup.BackupRepository
 import app.dogrouter.data.backup.BackupSummary
 import app.dogrouter.data.prefs.AppSettings
+import app.dogrouter.data.prefs.IssuerProfile
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.data.remote.BanApi
@@ -103,6 +104,10 @@ class SettingsViewModel(
     private val _form = MutableStateFlow<SettingsFormState?>(null)
     val form: StateFlow<SettingsFormState?> = _form.asStateFlow()
 
+    // The invoice issuer profile, edited locally and persisted on each change.
+    private val _issuer = MutableStateFlow<IssuerProfile?>(null)
+    val issuer: StateFlow<IssuerProfile?> = _issuer.asStateFlow()
+
     val downloadState: StateFlow<SegmentDownloadState> = routingInstaller.downloadState
 
     private val _routingTestEvents = Channel<RoutingTestEvent>(Channel.BUFFERED)
@@ -124,9 +129,18 @@ class SettingsViewModel(
 
     init {
         viewModelScope.launch {
-            _form.value = SettingsFormState.from(repo.settings.first())
+            val settings = repo.settings.first()
+            _form.value = SettingsFormState.from(settings)
+            _issuer.value = settings.issuer
         }
         viewModelScope.launch { routingInstaller.installProfileIfMissing() }
+    }
+
+    /** Edit and persist the invoice issuer profile. */
+    fun updateIssuer(transform: IssuerProfile.() -> IssuerProfile) {
+        val next = (_issuer.value ?: IssuerProfile.DEFAULT).transform()
+        _issuer.value = next
+        viewModelScope.launch { repo.setIssuerProfile(next) }
     }
 
     fun onBikeCapacityTextChange(text: String) {

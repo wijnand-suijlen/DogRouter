@@ -30,6 +30,7 @@ import app.dogrouter.ui.billing.BillingScreen
 import app.dogrouter.ui.billing.CommittedDayDetailScreen
 import app.dogrouter.ui.billing.CommittedDaysScreen
 import app.dogrouter.ui.billing.OwnerAccountScreen
+import app.dogrouter.ui.billing.OwnerInvoicesScreen
 import app.dogrouter.ui.dogs.DogEditScreen
 import app.dogrouter.ui.dogs.DogListScreen
 import app.dogrouter.ui.followplan.FollowPlanScreen
@@ -89,9 +90,11 @@ object BillingRoutes {
     const val GRAPH = "billing"
     const val OVERVIEW = "billing/overview"
     const val OWNER = "billing/owner/{ownerId}"
+    const val OWNER_INVOICES = "billing/owner/{ownerId}/invoices"
     const val COMMITTED = "billing/committed"
     const val COMMITTED_DAY = "billing/committed-day/{date}"
     fun owner(ownerId: String) = "billing/owner/$ownerId"
+    fun ownerInvoices(ownerId: String) = "billing/owner/$ownerId/invoices"
     fun committedDay(date: LocalDate) = "billing/committed-day/$date"
 }
 
@@ -197,7 +200,18 @@ fun AppNavigation() {
                     route = BillingRoutes.OWNER,
                     arguments = listOf(navArgument("ownerId") { type = NavType.StringType }),
                 ) { entry ->
+                    val ownerId = entry.arguments?.getString("ownerId").orEmpty()
                     OwnerAccountScreen(
+                        ownerId = ownerId,
+                        onBack = { navController.popBackStack() },
+                        onOpenInvoices = { navController.navigate(BillingRoutes.ownerInvoices(ownerId)) },
+                    )
+                }
+                composable(
+                    route = BillingRoutes.OWNER_INVOICES,
+                    arguments = listOf(navArgument("ownerId") { type = NavType.StringType }),
+                ) { entry ->
+                    OwnerInvoicesScreen(
                         ownerId = entry.arguments?.getString("ownerId").orEmpty(),
                         onBack = { navController.popBackStack() },
                     )

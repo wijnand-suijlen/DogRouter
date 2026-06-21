@@ -51,6 +51,12 @@ data class AppSettings(
     // multi-start build. More iterations find better plans but take longer;
     // 0 disables LNS (fastest). Tunable on Settings.
     val lnsIterations: Int,
+    // The walker's own business identity, printed on invoices.
+    val issuer: IssuerProfile,
+    // Next sequential invoice numbers (real / test series kept apart so the real
+    // series stays unbroken — a French requirement).
+    val nextInvoiceNumber: Int,
+    val nextTestInvoiceNumber: Int,
 ) {
     val hasHome: Boolean
         get() = homeLatitude != null && homeLongitude != null
@@ -79,6 +85,9 @@ data class AppSettings(
             breakLocations = emptyList(),
             homeLunchMinFreeMinutes = 120,
             lnsIterations = 200,
+            issuer = IssuerProfile.DEFAULT,
+            nextInvoiceNumber = 1,
+            nextTestInvoiceNumber = 1,
         )
     }
 }

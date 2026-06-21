@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.dogrouter.data.prefs.IssuerProfile
 import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.data.routing.SegmentDownloadState
 import app.dogrouter.ui.common.AddressAutocompleteField
@@ -65,6 +66,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val form by viewModel.form.collectAsStateWithLifecycle()
+    val issuer by viewModel.issuer.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val testInProgress by viewModel.testInProgress.collectAsStateWithLifecycle()
     val homeSuggestions by viewModel.homeAddressSuggestions.collectAsStateWithLifecycle()
@@ -134,6 +136,8 @@ fun SettingsScreen(
         } else {
             SettingsForm(
                 state = state,
+                issuer = issuer,
+                onIssuerChange = viewModel::updateIssuer,
                 downloadState = downloadState,
                 testInProgress = testInProgress,
                 homeSuggestions = homeSuggestions,
@@ -199,6 +203,8 @@ fun SettingsScreen(
 @Composable
 private fun SettingsForm(
     state: SettingsFormState,
+    issuer: IssuerProfile?,
+    onIssuerChange: (IssuerProfile.() -> IssuerProfile) -> Unit,
     downloadState: SegmentDownloadState,
     testInProgress: Boolean,
     homeSuggestions: List<AddressSuggestion>,
@@ -395,6 +401,10 @@ private fun SettingsForm(
         )
 
         Spacer(Modifier.height(16.dp))
+        SectionTitle("Invoice issuer")
+        IssuerSection(issuer = issuer ?: IssuerProfile.DEFAULT, onChange = onIssuerChange)
+
+        Spacer(Modifier.height(16.dp))
         SectionTitle("Routing data")
         RoutingDataSection(
             state = downloadState,
@@ -507,6 +517,67 @@ private fun RoutingDataSection(
             }
         }
     }
+}
+
+@Composable
+private fun IssuerSection(
+    issuer: IssuerProfile,
+    onChange: (IssuerProfile.() -> IssuerProfile) -> Unit,
+) {
+    Text(
+        text = "Printed on invoices. Stays on this phone only.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+        value = issuer.name,
+        onValueChange = { v -> onChange { copy(name = v) } },
+        label = { Text("Your name incl. EI (e.g. \"Jan Jansen EI\")") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = issuer.address,
+        onValueChange = { v -> onChange { copy(address = v) } },
+        label = { Text("Address") },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = issuer.siret,
+        onValueChange = { v -> onChange { copy(siret = v) } },
+        label = { Text("SIRET") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = issuer.email,
+        onValueChange = { v -> onChange { copy(email = v) } },
+        label = { Text("Email") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = issuer.phone,
+        onValueChange = { v -> onChange { copy(phone = v) } },
+        label = { Text("Phone") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = issuer.invoiceNumberPrefix,
+        onValueChange = { v -> onChange { copy(invoiceNumberPrefix = v) } },
+        label = { Text("Invoice number prefix (e.g. \"2026-\")") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = issuer.legalMentions,
+        onValueChange = { v -> onChange { copy(legalMentions = v) } },
+        label = { Text("Legal mentions (printed at the foot)") },
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

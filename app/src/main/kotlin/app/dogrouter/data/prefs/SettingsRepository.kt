@@ -42,7 +42,31 @@ class SettingsRepository(
             homeLunchMinFreeMinutes = prefs[HOME_LUNCH_MIN_FREE_MINUTES]
                 ?: AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
             lnsIterations = prefs[LNS_ITERATIONS] ?: AppSettings.DEFAULTS.lnsIterations,
+            issuer = prefs[ISSUER_PROFILE]?.let {
+                runCatching { json.decodeFromString<IssuerProfile>(it) }.getOrNull()
+            } ?: AppSettings.DEFAULTS.issuer,
+            nextInvoiceNumber = prefs[NEXT_INVOICE_NUMBER] ?: AppSettings.DEFAULTS.nextInvoiceNumber,
+            nextTestInvoiceNumber = prefs[NEXT_TEST_INVOICE_NUMBER] ?: AppSettings.DEFAULTS.nextTestInvoiceNumber,
         )
+    }
+
+    suspend fun setIssuerProfile(profile: IssuerProfile) {
+        dataStore.edit { it[ISSUER_PROFILE] = json.encodeToString(profile) }
+    }
+
+    /**
+     * Atomically take and consume the next invoice number for the real or test
+     * series. Returns the raw counter value; the caller formats it with the
+     * issuer's prefix (and a TEST marker for the test series).
+     */
+    suspend fun takeNextInvoiceNumber(isTest: Boolean): Int {
+        val key = if (isTest) NEXT_TEST_INVOICE_NUMBER else NEXT_INVOICE_NUMBER
+        var taken = 1
+        dataStore.edit { prefs ->
+            taken = prefs[key] ?: 1
+            prefs[key] = taken + 1
+        }
+        return taken
     }
 
     suspend fun setLnsIterations(iterations: Int) {
@@ -123,6 +147,9 @@ class SettingsRepository(
             prefs[BREAK_LOCATIONS] = json.encodeToString(settings.breakLocations)
             prefs[HOME_LUNCH_MIN_FREE_MINUTES] = settings.homeLunchMinFreeMinutes
             prefs[LNS_ITERATIONS] = settings.lnsIterations
+            prefs[ISSUER_PROFILE] = json.encodeToString(settings.issuer)
+            prefs[NEXT_INVOICE_NUMBER] = settings.nextInvoiceNumber
+            prefs[NEXT_TEST_INVOICE_NUMBER] = settings.nextTestInvoiceNumber
         }
     }
 
@@ -143,5 +170,8 @@ class SettingsRepository(
         val BREAK_LOCATIONS = stringPreferencesKey("break_locations_json")
         val HOME_LUNCH_MIN_FREE_MINUTES = intPreferencesKey("home_lunch_min_free_minutes")
         val LNS_ITERATIONS = intPreferencesKey("lns_iterations")
+        val ISSUER_PROFILE = stringPreferencesKey("issuer_profile_json")
+        val NEXT_INVOICE_NUMBER = intPreferencesKey("next_invoice_number")
+        val NEXT_TEST_INVOICE_NUMBER = intPreferencesKey("next_test_invoice_number")
     }
 }

@@ -21,6 +21,7 @@ import app.dogrouter.ui.billing.BillingOverviewViewModel
 import app.dogrouter.ui.billing.CommittedDayDetailViewModel
 import app.dogrouter.ui.billing.CommittedDaysViewModel
 import app.dogrouter.ui.billing.OwnerAccountViewModel
+import app.dogrouter.ui.billing.OwnerInvoicesViewModel
 import app.dogrouter.ui.dogs.DogEditViewModel
 import app.dogrouter.ui.dogs.DogListViewModel
 import app.dogrouter.ui.followplan.FollowPlanViewModel
@@ -55,6 +56,7 @@ val appModule = module {
     single { get<AppDatabase>().ownerDao() }
     single { get<AppDatabase>().billableServiceDao() }
     single { get<AppDatabase>().committedDayDao() }
+    single { get<AppDatabase>().invoiceDao() }
 
     single<DataStore<Preferences>> {
         PreferenceDataStoreFactory.create(
@@ -97,17 +99,20 @@ val appModule = module {
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
     single { LegGeometryCache(get()) }
 
-    single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     single { DayPlanService(get(), get(), get(), get(), get(), get(), get()) }
     single { app.dogrouter.domain.billing.BillingService(get(), get()) }
+    single { app.dogrouter.domain.billing.InvoicePdfWriter(androidContext()) }
+    single { app.dogrouter.domain.billing.InvoiceService(get(), get(), get(), get(), get()) }
 
     viewModel { DogListViewModel(get()) }
     viewModel { (dogId: String?) -> DogEditViewModel(get(), get(), get(), get(), get(), dogId) }
     viewModel { OwnerListViewModel(get()) }
     viewModel { (ownerId: String?) -> OwnerEditViewModel(get(), ownerId) }
     viewModel { BillingOverviewViewModel(get(), get()) }
-    viewModel { (ownerId: String) -> OwnerAccountViewModel(get(), get(), ownerId) }
+    viewModel { (ownerId: String) -> OwnerAccountViewModel(get(), get(), get(), ownerId) }
+    viewModel { (ownerId: String) -> OwnerInvoicesViewModel(get(), ownerId) }
     viewModel { CommittedDaysViewModel(get()) }
     viewModel { (date: LocalDate) -> CommittedDayDetailViewModel(get(), get(), date) }
     viewModel { AddressPickerViewModel(get()) }

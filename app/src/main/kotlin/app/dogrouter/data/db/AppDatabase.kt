@@ -9,6 +9,7 @@ import app.dogrouter.data.entity.CommittedDay
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.Invoice
 import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.SavedPlan
 
@@ -22,8 +23,9 @@ import app.dogrouter.data.entity.SavedPlan
         Owner::class,
         BillableService::class,
         CommittedDay::class,
+        Invoice::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -36,4 +38,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ownerDao(): OwnerDao
     abstract fun billableServiceDao(): BillableServiceDao
     abstract fun committedDayDao(): CommittedDayDao
+    abstract fun invoiceDao(): InvoiceDao
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Invoice PDFs generated under filesDir/invoices, shared via FileProvider. -->
+    <files-path name="invoices" path="invoices/" />
+</paths>

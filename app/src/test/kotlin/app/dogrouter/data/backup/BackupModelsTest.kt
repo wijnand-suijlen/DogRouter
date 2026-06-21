@@ -47,6 +47,13 @@ class BackupModelsTest {
         breakLocations = listOf(app.dogrouter.data.prefs.BreakLocation("Café", 48.80, 102.22)),
         homeLunchMinFreeMinutes = 100,
         lnsIterations = 120,
+        issuer = app.dogrouter.data.prefs.IssuerProfile(
+            name = "Jane Doe EI", address = "1 rue Test",
+            siret = "12345678900012", email = "jane@example.test", phone = "0102030405",
+            invoiceNumberPrefix = "2026-",
+        ),
+        nextInvoiceNumber = 7,
+        nextTestInvoiceNumber = 3,
     )
 
     @Test

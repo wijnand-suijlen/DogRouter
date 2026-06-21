@@ -217,18 +217,21 @@ class DayPlanner(
      * produced here (empty); the caller carries any over and validates
      * separately. [recomputeDwells] = false keeps the walk durations already
      * set (so a manual duration survives a later structural edit).
+     * [allowInfeasible] = true keeps timing a plan that overruns the day's end
+     * (the editor shows it; PlanVerifier flags the overrun) instead of failing.
      */
     suspend fun retime(
         date: LocalDate,
         events: List<RouteEvent>,
         recomputeDwells: Boolean = true,
+        allowInfeasible: Boolean = false,
     ): DayRoute? {
         if (home == null || !routingProvider.isReady()) return null
         val core = events.filterNot { it is RouteEvent.FetchBike }.toMutableList()
         if (core.size < 2) return null
         val points = (core.map { it.location } + home).toSet()
         val matrix = DistanceMatrix.build(points, routingProvider)
-        val retimed = retimeAndCost(core, matrix, recomputeDwells)?.first ?: return null
+        val retimed = retimeAndCost(core, matrix, recomputeDwells, allowInfeasible)?.first ?: return null
         // withBikeFetches recomputes the cycling/walking totals.
         return DayRoute(date, retimed, 0, 0, emptyList()).withBikeFetches()
     }
@@ -816,6 +819,7 @@ class DayPlanner(
         events: MutableList<RouteEvent>,
         matrix: DistanceMatrix,
         recomputeDwells: Boolean = true,
+        allowInfeasible: Boolean = false,
     ): Pair<List<RouteEvent>, Int>? {
         val n = events.size
         val homeLocation = events.first().location
@@ -856,7 +860,16 @@ class DayPlanner(
                 val canBike = canRideBike(aboard)
                 // The day must end with the bike back home, so the final leg
                 // always fetches the parked bike rather than walking.
-                if (event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)) {
+                val auto = event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)
+                // A hand-set override wins over the automatic choice. BIKE is
+                // honoured even when a non-rideable dog is aboard (an impossible
+                // plan the editor may show; PlanVerifier flags it afterwards).
+                val goFoot = when (event.legMode) {
+                    LegMode.FOOT -> true
+                    LegMode.BIKE -> false
+                    LegMode.AUTO -> auto
+                }
+                if (goFoot) {
                     byFoot[i] = true
                     travel[i] = footTime
                     walkerPos = event.location
@@ -929,7 +942,10 @@ class DayPlanner(
                     event.copy(timeSeconds = t, arrivedByFoot = byFoot[i], incomingTravelSeconds = travel[i])
             }
             t += placed.durationAtSeconds(stopBufferSeconds)
-            if (t > dayEndSeconds) return null
+            // A hand-edited plan may legitimately run past the day's end; the
+            // editor keeps showing it (allowInfeasible) and PlanVerifier flags
+            // the overrun rather than the plan silently vanishing.
+            if (!allowInfeasible && t > dayEndSeconds) return null
             retimed.add(placed)
         }
 

@@ -3,14 +3,22 @@ package app.dogrouter.ui.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.data.remote.BanApi
 import app.dogrouter.domain.dayplan.DayPlanService
-import app.dogrouter.domain.dayplan.DayRoute
+import app.dogrouter.domain.dayplan.LegMode
 import app.dogrouter.domain.dayplan.PlanPhase
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
+import app.dogrouter.domain.dayplan.explodeForEditing
+import app.dogrouter.domain.dayplan.isValidOrder
+import app.dogrouter.domain.dayplan.mergeWalkWithNeighbor
+import app.dogrouter.domain.dayplan.removeDogChips
+import app.dogrouter.domain.dayplan.setLegMode
+import app.dogrouter.domain.dayplan.splitWalkInTwo
+import app.dogrouter.domain.routing.GeoPoint
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +34,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalTime
+
+/** A draggable chip in the editor: the event plus a stable id so the
+ *  reorderable list keeps each item's identity across a drag. */
+data class EditItem(val id: Long, val event: RouteEvent)
 
 @OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
 class TodayViewModel(
@@ -39,18 +52,14 @@ class TodayViewModel(
 
     /**
      * Per-stop buffer in seconds, used by the timeline to tell travel time
-     * apart from time spent waiting for a window to open (the wait is the gap
-     * left after the previous stop's service and the leg's travel).
+     * apart from time spent waiting for a window to open.
      */
     val stopBufferSeconds: StateFlow<Int> = settingsRepository.settings
         .map { it.stopBufferMinutes * 60 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    /**
-     * The plan for the selected date, recomputed whenever the date or any
-     * underlying data changes. flatMapLatest cancels an in-flight plan
-     * when the date changes, so we never show yesterday's events for today.
-     */
+    /** The plan for the selected date, recomputed whenever the date or any
+     *  underlying data changes. */
     val planState: StateFlow<PlanState> = _selectedDate
         .flatMapLatest { dayPlanService.observePlan(it) }
         .stateIn(
@@ -69,7 +78,7 @@ class TodayViewModel(
         .flatMapLatest { dayPlanService.observeIsEdited(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Constraint warnings for the shown plan (empty for a feasible/solver plan).
+    /** Constraint warnings for the shown plan (empty for a feasible plan).
      *  Shown but not enforced — the walker may keep an edit that bends a rule. */
     val planWarnings: StateFlow<List<String>> = planState
         .mapLatest { state ->
@@ -82,33 +91,51 @@ class TodayViewModel(
     /** True while an edit is being re-timed and saved, for a progress hint. */
     val isApplyingEdit: StateFlow<Boolean> = _isApplyingEdit.asStateFlow()
 
-    // Snapshots of the plan before each edit, so the last edit can be undone.
-    // wasEdited tells undo whether to restore a pinned plan or revert to solver.
-    private data class UndoEntry(val route: DayRoute, val wasEdited: Boolean)
-    private val _undo = MutableStateFlow<List<UndoEntry>>(emptyList())
+    // --- The drag-and-drop editor's working list ------------------------------
+
+    private var nextItemId = 0L
+    private val _editItems = MutableStateFlow<List<EditItem>?>(null)
+
+    /** The chips shown while editing (FetchBike stripped, shared walks split per
+     *  dog), or null when not in edit mode. Position = execution order. */
+    val editItems: StateFlow<List<EditItem>?> = _editItems.asStateFlow()
+
+    private fun toItems(events: List<RouteEvent>): List<EditItem> =
+        explodeForEditing(events).map { EditItem(nextItemId++, it) }
+
+    private fun currentEvents(): List<RouteEvent>? = _editItems.value?.map { it.event }
+
+    /** Enter edit mode: explode the shown plan into draggable chips. */
+    fun beginEdit() {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        _undo.value = emptyList()
+        _editItems.value = toItems(route.events)
+    }
+
+    /** Leave edit mode. The last commit already pinned the merged plan. */
+    fun endEdit() {
+        _editItems.value = null
+        _undo.value = emptyList()
+    }
+
+    // Snapshots of the chip events before each edit, for undo.
+    private val _undo = MutableStateFlow<List<List<RouteEvent>>>(emptyList())
 
     /** Whether there is an edit on this date that can be undone. */
     val canUndo: StateFlow<Boolean> = _undo
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    private fun pushUndo() {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        _undo.update { it + UndoEntry(route, isPlanEdited.value) }
+    private fun pushUndo(events: List<RouteEvent>) {
+        _undo.update { it + listOf(events) }
     }
 
-    /** Undo the last edit on this date: restore the previous plan (or the
-     *  solver plan if that was the state before the first edit). */
+    /** Undo the last edit: restore the previous chip order and re-commit it. */
     fun undo() {
-        val entry = _undo.value.lastOrNull() ?: return
+        val prev = _undo.value.lastOrNull() ?: return
         _undo.update { it.dropLast(1) }
-        applyEdit {
-            if (entry.wasEdited) {
-                dayPlanService.pinPlan(_selectedDate.value, entry.route)
-            } else {
-                dayPlanService.discardSavedPlan(_selectedDate.value)
-            }
-        }
+        _editItems.value = toItems(prev)
+        commit(prev, pushUndo = false)
     }
 
     private fun applyEdit(block: suspend () -> Unit) {
@@ -122,94 +149,160 @@ class TodayViewModel(
         }
     }
 
-    private val _removingDogIds = MutableStateFlow<Set<String>>(emptySet())
-
-    /**
-     * Dogs the walker just tapped "not today" for but that the (re-timed) plan
-     * still shows — used to strike them through and spin a button immediately,
-     * so the tap is acknowledged before the slower re-time lands. An id is
-     * pruned once the dog is gone from the plan (or the date changes).
-     */
-    val removingDogIds: StateFlow<Set<String>> = _removingDogIds.asStateFlow()
-
-    init {
-        // Drop pending ids once the dog no longer appears in the shown plan.
-        viewModelScope.launch {
-            planState.collect { state ->
-                val present = (state as? PlanState.Ready)?.route?.events.orEmpty()
-                    .filterIsInstance<RouteEvent.Pickup>().mapTo(HashSet()) { it.dog.id }
-                _removingDogIds.update { it intersect present }
-            }
+    /** Re-time + pin [events] and refresh the chips from the result. */
+    private fun commit(events: List<RouteEvent>, pushUndo: Boolean) {
+        if (pushUndo) currentEvents()?.let(::pushUndo)
+        applyEdit {
+            val retimed = dayPlanService.commitEdit(_selectedDate.value, events)
+            if (retimed != null) _editItems.value = toItems(retimed.events)
         }
     }
 
-    /** Mark a dog as not walked today: drop it from the plan and pin the rest. */
+    /** Apply a pure chip transform and commit it; no-op if [transform] returns null. */
+    private fun edit(transform: (List<RouteEvent>) -> List<RouteEvent>?) {
+        val events = currentEvents() ?: return
+        val next = transform(events) ?: return
+        pushUndo(events)
+        _editItems.value = toItems(next) // optimistic; refreshed after re-time
+        commit(next, pushUndo = false)
+    }
+
+    // --- Drag reorder ---------------------------------------------------------
+
+    /** Snapshot the order before a drag begins, so the whole drag is one undo. */
+    fun onReorderStart() {
+        currentEvents()?.let(::pushUndo)
+    }
+
+    /** Move the chip at [from] to [to], rejecting (clamping) a move that would
+     *  break the `pickup ≤ walk ≤ dropoff` invariant. Local only — snappy. */
+    fun onMove(from: Int, to: Int) {
+        _editItems.update { items ->
+            if (items == null || from !in items.indices) return@update items
+            val reordered = items.toMutableList().apply { add(to.coerceIn(0, size - 1), removeAt(from)) }
+            if (isValidOrder(reordered.map { it.event })) reordered else items
+        }
+    }
+
+    /** Re-time + pin after a drag settles. */
+    fun onReorderStop() {
+        val events = currentEvents() ?: return
+        commit(events, pushUndo = false)
+    }
+
+    // --- Tap edits ------------------------------------------------------------
+
+    /** Set the duration (minutes) of the walk chip at [index]. */
+    fun setWalkDuration(index: Int, minutes: Int) = edit { events ->
+        val walk = events.getOrNull(index) as? RouteEvent.Walk ?: return@edit null
+        events.toMutableList().also { it[index] = walk.copy(durationSeconds = minutes.coerceAtLeast(0) * 60) }
+    }
+
+    /** Pin the earliest start time (seconds) of the pickup chip at [index]. */
+    fun setStopTime(index: Int, secondsOfDay: Int) = edit { events ->
+        val pickup = events.getOrNull(index) as? RouteEvent.Pickup ?: return@edit null
+        val clamped = secondsOfDay.coerceIn(0, 24 * 3600 - 1)
+        val newRule = pickup.rule.copy(earliestStart = LocalTime.ofSecondOfDay(clamped.toLong()))
+        events.toMutableList().also { it[index] = pickup.copy(rule = newRule) }
+    }
+
+    /** Split the single-dog walk chip at [index] into two, or merge it with an
+     *  adjacent walk of the same dog if one exists. */
+    fun splitOrMergeWalk(index: Int) = edit { events ->
+        mergeWalkWithNeighbor(events, index) ?: splitWalkInTwo(events, index)
+    }
+
+    /** Toggle the leg reaching the chip at [index] between foot and bike. */
+    fun toggleLeg(index: Int) = edit { events ->
+        val e = events.getOrNull(index) ?: return@edit null
+        setLegMode(events, index, if (e.arrivedByFoot) LegMode.BIKE else LegMode.FOOT)
+    }
+
+    /** Drop a dog from today's plan (its pickup, walk(s) and dropoff). */
     fun markDogNotToday(dogId: String) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        _removingDogIds.update { it + dogId } // immediate visual feedback
-        applyEdit { dayPlanService.markDogNotToday(_selectedDate.value, route, dogId) }
+        _removingDogIds.update { it + dogId } // immediate strike-through
+        edit { events -> removeDogChips(events, dogId) }
     }
 
-    /** Set how long the walk at [eventIndex] lasts (minutes), then pin. */
-    fun setWalkDuration(eventIndex: Int, minutes: Int) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        applyEdit { dayPlanService.setWalkDuration(_selectedDate.value, route, eventIndex, minutes) }
+    /** Add an extra walk of [minutes] for [dog] just before returning home. */
+    fun addWalk(dog: Dog, minutes: Int) {
+        val lat = dog.latitude ?: return
+        val lon = dog.longitude ?: return
+        val loc = GeoPoint(lat, lon)
+        val dur = minutes.coerceAtLeast(1)
+        val rule = DogScheduleRule(
+            id = "adhoc-${dog.id}-${System.currentTimeMillis()}",
+            dogId = dog.id, weekdaysMask = 0,
+            earliestStart = null, latestStart = null, latestEnd = null,
+            durationMinutes = dur, isAlternative = false,
+        )
+        edit { events ->
+            val list = events.toMutableList()
+            val at = (list.size - 1).coerceAtLeast(1) // just before HomeEnd
+            list.add(at, RouteEvent.Dropoff(0, loc, dog))
+            list.add(at, RouteEvent.Walk(0, loc, listOf(dog), dur * 60))
+            list.add(at, RouteEvent.Pickup(0, loc, dog, rule))
+            list
+        }
     }
 
-    /** Pin the start time (seconds since midnight) of the pickup at [eventIndex]. */
-    fun setStopTime(eventIndex: Int, secondsOfDay: Int) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        applyEdit { dayPlanService.setStopTime(_selectedDate.value, route, eventIndex, secondsOfDay) }
+    /** Force a dog-free appointment (label, window) at the picked address. */
+    fun addAppointment(label: String, startSeconds: Int, endSeconds: Int) {
+        val picked = _apptPicked.value ?: return
+        edit { events ->
+            val appt = RouteEvent.Appointment(
+                timeSeconds = 0,
+                location = GeoPoint(picked.latitude, picked.longitude),
+                durationSeconds = (endSeconds - startSeconds).coerceAtLeast(0),
+                startSeconds = startSeconds,
+                label = label,
+            )
+            val list = events.toMutableList()
+            val idx = list.indexOfFirst { it !is RouteEvent.HomeStart && it.timeSeconds >= startSeconds }
+            val at = if (idx < 1) (list.size - 1).coerceAtLeast(1) else idx
+            list.add(at, appt)
+            list
+        }
+        _apptAddressQuery.value = ""
+        _apptPicked.value = null
     }
 
-    /** Move the standalone walk at [eventIndex] one step earlier/later. */
-    fun moveWalk(eventIndex: Int, earlier: Boolean) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        applyEdit { dayPlanService.moveWalk(_selectedDate.value, route, eventIndex, earlier) }
-    }
+    // --- "Not today" optimistic feedback --------------------------------------
 
-    /** Split [dogId] out of its group into its own walk. */
-    fun splitDogAlone(dogId: String) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        applyEdit { dayPlanService.splitDogAlone(_selectedDate.value, route, dogId) }
-    }
+    private val _removingDogIds = MutableStateFlow<Set<String>>(emptySet())
 
-    /** Move [dogId] into the walk at [targetWalkEventIndex] so they walk together. */
-    fun groupDogWith(dogId: String, targetWalkEventIndex: Int) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        applyEdit { dayPlanService.groupDogWith(_selectedDate.value, route, dogId, targetWalkEventIndex) }
+    /** Dogs the walker just tapped "not today" for but still shown — struck
+     *  through until the re-time drops them. */
+    val removingDogIds: StateFlow<Set<String>> = _removingDogIds.asStateFlow()
+
+    init {
+        // Drop pending ids once the dog no longer appears in the editor's chips.
+        viewModelScope.launch {
+            _editItems.collect { items ->
+                if (items == null) {
+                    _removingDogIds.value = emptySet()
+                    return@collect
+                }
+                val present = items.mapNotNull { (it.event as? RouteEvent.Pickup)?.dog?.id }.toHashSet()
+                _removingDogIds.update { it intersect present }
+            }
+        }
     }
 
     /** Active dogs with coordinates — candidates for a hand-added walk. */
     val addableDogs: StateFlow<List<Dog>> = dayPlanService.observeAddableDogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Add an extra walk of [minutes] for [dogId] on the day in view. */
-    fun addWalk(dogId: String, minutes: Int) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        pushUndo()
-        applyEdit { dayPlanService.addWalk(_selectedDate.value, route, dogId, minutes) }
-    }
-
     // --- Appointment address autocomplete (BAN) for "add appointment" ---------
     private val _apptAddressQuery = MutableStateFlow("")
     private val _apptPicked = MutableStateFlow<AddressSuggestion?>(null)
 
-    /** Current text in the appointment address field. */
     val apptAddressText: StateFlow<String> = _apptAddressQuery.asStateFlow()
 
-    /** Whether a real address (with coordinates) is picked for the appointment. */
     val apptAddressValidated: StateFlow<Boolean> = _apptPicked
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Live BAN suggestions for the appointment address field. */
     val apptAddressSuggestions: StateFlow<List<AddressSuggestion>> = _apptAddressQuery
         .debounce(300)
         .filter { it.length >= 3 }
@@ -227,24 +320,11 @@ class TodayViewModel(
         _apptPicked.value = suggestion
     }
 
-    /** Force a dog-free appointment (label, window) at the picked address. */
-    fun addAppointment(label: String, startSeconds: Int, endSeconds: Int) {
-        val route = (planState.value as? PlanState.Ready)?.route ?: return
-        val picked = _apptPicked.value ?: return
-        pushUndo()
-        applyEdit {
-            dayPlanService.addAppointment(
-                _selectedDate.value, route, label, startSeconds, endSeconds,
-                picked.latitude, picked.longitude,
-            )
-        }
-        _apptAddressQuery.value = ""
-        _apptPicked.value = null
-    }
-
     /** Discard the hand-edited plan and go back to the solver's plan. */
     fun revertPlan() {
         viewModelScope.launch { dayPlanService.discardSavedPlan(_selectedDate.value) }
+        _editItems.value = null
+        _undo.value = emptyList()
     }
 
     fun setBreakRequested(requested: Boolean) {
@@ -252,23 +332,22 @@ class TodayViewModel(
     }
 
     fun goToPreviousDay() = changeDate(_selectedDate.value.minusDays(1))
-
     fun goToNextDay() = changeDate(_selectedDate.value.plusDays(1))
-
     fun goToToday() = changeDate(LocalDate.now())
-
     fun setDate(date: LocalDate) = changeDate(date)
 
-    /** Switch the day in view and drop the (date-scoped) undo history. */
+    /** Switch the day in view; leave edit mode and drop its undo history. */
     private fun changeDate(date: LocalDate) {
+        _editItems.value = null
         _undo.value = emptyList()
         _selectedDate.value = date
     }
 
-    /** Ask the solver for a different plan for the day in view. Discards any
-     *  hand-edited plan first, so a fresh solver plan actually takes effect. */
+    /** Ask the solver for a different plan; discards any hand-edited plan first. */
     fun refresh() {
         val date = _selectedDate.value
+        _editItems.value = null
+        _undo.value = emptyList()
         viewModelScope.launch {
             dayPlanService.discardSavedPlan(date)
             dayPlanService.refresh(date)

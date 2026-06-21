@@ -28,7 +28,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import java.time.LocalDate
-import java.time.LocalTime
 
 private const val MAX_CACHED_PLANS = 32
 
@@ -124,134 +123,29 @@ class DayPlanService(
         }
 
     /**
-     * Mark a dog as not walked on [date]: drop it from [current], re-time the
-     * rest, and pin the result. The plan flow then re-emits the edited plan.
+     * Commit a hand-edited chip list for [date]: collapse adjacent walk chips
+     * back into shared walks ([mergeAdjacentWalks]), re-time (keeping manual
+     * durations; `allowInfeasible` so an overrun/impossible plan is shown and
+     * warned rather than dropped), pin it as the edited plan, and return the
+     * re-timed route. This is the single entry point for the drag-and-drop
+     * editor — reorders, splits, merges, leg toggles, add/remove all flow here.
+     * Returns null only if routing is unavailable (the caller keeps its chips).
      */
-    suspend fun markDogNotToday(date: LocalDate, current: DayRoute, dogId: String) {
-        pinEdited(date, removeDog(current, dogId))
-    }
-
-    /**
-     * Set the [minutes] a single walk lasts (the [eventIndex]-th event of
-     * [current], which must be a [RouteEvent.Walk]), re-time, and pin. The
-     * manual duration is kept by re-timing with recomputeDwells = false.
-     */
-    suspend fun setWalkDuration(date: LocalDate, current: DayRoute, eventIndex: Int, minutes: Int) {
-        val walk = current.events.getOrNull(eventIndex) as? RouteEvent.Walk ?: return
-        val events = current.events.toMutableList()
-        events[eventIndex] = walk.copy(durationSeconds = minutes.coerceAtLeast(0) * 60)
-        pinEdited(date, current.copy(events = events))
-    }
-
-    /**
-     * Add an extra walk for an existing [dogId] of [minutes] on [date]: a
-     * pickup + walk + dropoff at the dog's address, inserted at the end of the
-     * day (re-time places it), with an ad-hoc rule (no windows) stored inline
-     * in the saved plan. The walker can shorten/move it with the other edits.
-     */
-    suspend fun addWalk(date: LocalDate, current: DayRoute, dogId: String, minutes: Int) {
-        val dog = dogDao.findById(dogId) ?: return
-        val lat = dog.latitude ?: return
-        val lon = dog.longitude ?: return
-        val loc = GeoPoint(lat, lon)
-        val dur = minutes.coerceAtLeast(1)
-        val rule = DogScheduleRule(
-            id = "adhoc-$dogId-${System.currentTimeMillis()}",
-            dogId = dogId, weekdaysMask = 0,
-            earliestStart = null, latestStart = null, latestEnd = null,
-            durationMinutes = dur, isAlternative = false,
-        )
-        val events = current.events.toMutableList()
-        // Just before HomeEnd (the last event). Add in reverse so the final
-        // order is pickup -> walk -> dropoff.
-        val insertAt = (events.size - 1).coerceAtLeast(1)
-        events.add(insertAt, RouteEvent.Dropoff(0, loc, dog))
-        events.add(insertAt, RouteEvent.Walk(0, loc, listOf(dog), dur * 60))
-        events.add(insertAt, RouteEvent.Pickup(0, loc, dog, rule))
-        pinEdited(date, current.copy(events = events))
-    }
-
-    /**
-     * Force a one-off, dog-free appointment into [date]'s plan: a fixed
-     * commitment at [lat]/[lon] the walker must reach by [startSeconds] and
-     * stay at until [endSeconds] (a doctor's visit, the shop, a manual lunch).
-     * Inserted at its chronological spot and re-timed; [warningsFor] flags it
-     * if a dog would still be aboard then.
-     */
-    suspend fun addAppointment(
+    suspend fun commitEdit(
         date: LocalDate,
-        current: DayRoute,
-        label: String,
-        startSeconds: Int,
-        endSeconds: Int,
-        lat: Double,
-        lon: Double,
-    ) {
-        val appt = RouteEvent.Appointment(
-            timeSeconds = 0,
-            location = GeoPoint(lat, lon),
-            durationSeconds = (endSeconds - startSeconds).coerceAtLeast(0),
-            startSeconds = startSeconds,
-            label = label,
-        )
-        val events = current.events.toMutableList()
-        val idx = events.indexOfFirst { it !is RouteEvent.HomeStart && it.timeSeconds >= startSeconds }
-        val insertAt = if (idx < 1) events.size - 1 else idx
-        events.add(insertAt, appt)
-        pinEdited(date, current.copy(events = events))
-    }
-
-    /**
-     * Pin the start time of the pickup at [eventIndex] to [secondsOfDay] (the
-     * walker waits there until then) by setting its rule's earliestStart, then
-     * re-time and pin.
-     */
-    suspend fun setStopTime(date: LocalDate, current: DayRoute, eventIndex: Int, secondsOfDay: Int) {
-        val pickup = current.events.getOrNull(eventIndex) as? RouteEvent.Pickup ?: return
-        val clamped = secondsOfDay.coerceIn(0, 24 * 3600 - 1)
-        val newRule = pickup.rule.copy(earliestStart = LocalTime.ofSecondOfDay(clamped.toLong()))
-        val events = current.events.toMutableList()
-        events[eventIndex] = pickup.copy(rule = newRule)
-        pinEdited(date, current.copy(events = events))
-    }
-
-    /**
-     * Move the standalone walk at [walkEventIndex] one step [earlier] (or later)
-     * in the day by swapping it with the adjacent standalone walk, then re-time
-     * and pin. No-op if the walk is grouped/split or has no adjacent standalone
-     * walk to swap with (see [moveStandaloneWalk]).
-     */
-    suspend fun moveWalk(date: LocalDate, current: DayRoute, walkEventIndex: Int, earlier: Boolean) {
-        val reordered = moveStandaloneWalk(current.events, walkEventIndex, earlier) ?: return
-        pinEdited(date, current.copy(events = reordered))
-    }
-
-    /** Split [dogId] out of its group into its own walk (Fase 2b). No-op if the
-     *  dog already walks alone. */
-    suspend fun splitDogAlone(date: LocalDate, current: DayRoute, dogId: String) {
-        val reordered = splitDogOut(current.events, dogId) ?: return
-        pinEdited(date, current.copy(events = reordered))
-    }
-
-    /** Move [dogId] into the walk at [targetWalkEventIndex] so they walk
-     *  together (Fase 2b). No-op if the target is not a walk or already holds it. */
-    suspend fun groupDogWith(date: LocalDate, current: DayRoute, dogId: String, targetWalkEventIndex: Int) {
-        val reordered = groupDogInto(current.events, dogId, targetWalkEventIndex) ?: return
-        pinEdited(date, current.copy(events = reordered))
-    }
-
-    /** Re-time [edited] (keeping manual durations) and persist it as the pinned
-     *  plan for [date], carrying over its conflicts. */
-    private suspend fun pinEdited(date: LocalDate, edited: DayRoute) {
+        events: List<RouteEvent>,
+        conflicts: List<PlanConflict> = emptyList(),
+    ): DayRoute? {
         val settings = settingsRepo.settings.first()
         // Incompatibilities are irrelevant to a pure re-time, so pass none.
         val retimed = buildPlanner(settings, emptySet())
-            .retime(date, edited.events, recomputeDwells = false)
-            ?.copy(conflicts = edited.conflicts)
-            ?: edited
+            .retime(date, mergeAdjacentWalks(events), recomputeDwells = false, allowInfeasible = true)
+            ?.copy(conflicts = conflicts)
+            ?: return null
         savedPlanDao.upsert(
             SavedPlan(date, SavedPlanCodec.encode(retimed), edited = true, updatedAt = System.currentTimeMillis()),
         )
+        return retimed
     }
 
     /** Constraint warnings for a (possibly hand-edited) plan — shown but not
@@ -278,27 +172,6 @@ class DayPlanService(
 
     /** Discard a pinned/edited plan for [date], reverting to the solver. */
     suspend fun discardSavedPlan(date: LocalDate) = savedPlanDao.deleteForDate(date)
-
-    /** Remove a dog's pickups, dropoffs and walk membership (drop emptied
-     *  walks) and any conflict for it. Pure; the caller re-times the result. */
-    private fun removeDog(route: DayRoute, dogId: String): DayRoute {
-        val events = route.events.mapNotNull { e ->
-            when (e) {
-                is RouteEvent.Pickup -> e.takeIf { it.dog.id != dogId }
-                is RouteEvent.Dropoff -> e.takeIf { it.dog.id != dogId }
-                is RouteEvent.Walk -> {
-                    val remaining = e.dogs.filter { it.id != dogId }
-                    when {
-                        remaining.isEmpty() -> null
-                        remaining.size != e.dogs.size -> e.copy(dogs = remaining)
-                        else -> e
-                    }
-                }
-                else -> e
-            }
-        }
-        return route.copy(events = events, conflicts = route.conflicts.filter { it.dog.id != dogId })
-    }
 
     /** Ask for a different plan for [date] (advances its solver seed). */
     fun refresh(date: LocalDate) {

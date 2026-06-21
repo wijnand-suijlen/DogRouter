@@ -57,6 +57,23 @@ class SavedPlanCodecTest {
     }
 
     @Test
+    fun roundTripsLegModeOverrides() {
+        val withOverrides = route.copy(
+            events = route.events.map { e ->
+                when (e) {
+                    is RouteEvent.Walk -> e.withLegMode(LegMode.FOOT)
+                    is RouteEvent.HomeEnd -> e.withLegMode(LegMode.BIKE)
+                    else -> e
+                }
+            },
+        )
+        val decoded = SavedPlanCodec.decode(SavedPlanCodec.encode(withOverrides), date, listOf(alfa, bravo))
+        assertEquals(withOverrides, decoded)
+        assertEquals(LegMode.FOOT, decoded!!.events.first { it is RouteEvent.Walk }.legMode)
+        assertEquals(LegMode.BIKE, decoded.events.last().legMode)
+    }
+
+    @Test
     fun returnsNullWhenAReferencedDogIsGone() {
         val json = SavedPlanCodec.encode(route)
         // Bravo deleted since the plan was saved: rehydration must fail so the

@@ -53,6 +53,7 @@ private data class PlanEventDto(
     val arrivedByFoot: Boolean = false,
     val incomingTravelSeconds: Int = 0,
     val returnToBikeSeconds: Int = 0,
+    val legMode: String = "AUTO",
     val dogId: String? = null,
     val rule: RuleDto? = null,
     val dogIds: List<String> = emptyList(),
@@ -107,6 +108,7 @@ private fun RouteEvent.toDto(): PlanEventDto {
         arrivedByFoot = arrivedByFoot,
         incomingTravelSeconds = incomingTravelSeconds,
         returnToBikeSeconds = returnToBikeSeconds,
+        legMode = legMode.name,
     )
     return when (this) {
         is RouteEvent.HomeStart, is RouteEvent.HomeEnd, is RouteEvent.FetchBike -> base
@@ -159,30 +161,31 @@ private fun PlanEventDto.toRouteEvent(
     dogById: Map<String, Dog>,
 ): RouteEvent? {
     val loc = GeoPoint(lat, lon)
+    val mode = runCatching { LegMode.valueOf(legMode) }.getOrDefault(LegMode.AUTO)
     return when (type) {
-        "HOME_START" -> RouteEvent.HomeStart(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
-        "HOME_END" -> RouteEvent.HomeEnd(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
-        "FETCH_BIKE" -> RouteEvent.FetchBike(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
+        "HOME_START" -> RouteEvent.HomeStart(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode)
+        "HOME_END" -> RouteEvent.HomeEnd(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode)
+        "FETCH_BIKE" -> RouteEvent.FetchBike(timeSeconds, loc, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode)
         "PICKUP" -> {
             val dog = dogById[dogId] ?: return null
             val rule = rule?.toRule() ?: return null
-            RouteEvent.Pickup(timeSeconds, loc, dog, rule, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
+            RouteEvent.Pickup(timeSeconds, loc, dog, rule, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode)
         }
         "DROPOFF" -> {
             val dog = dogById[dogId] ?: return null
-            RouteEvent.Dropoff(timeSeconds, loc, dog, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
+            RouteEvent.Dropoff(timeSeconds, loc, dog, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode)
         }
         "WALK" -> {
             val dogs = dogIds.map { dogById[it] ?: return null }
-            RouteEvent.Walk(timeSeconds, loc, dogs, durationSeconds, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds)
+            RouteEvent.Walk(timeSeconds, loc, dogs, durationSeconds, arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode)
         }
         "BREAK" -> RouteEvent.Break(
             timeSeconds, loc, durationSeconds, earliestStartSeconds, atHome,
-            arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds,
+            arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode,
         )
         "APPOINTMENT" -> RouteEvent.Appointment(
             timeSeconds, loc, durationSeconds, startSeconds, label ?: "",
-            arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds,
+            arrivedByFoot, incomingTravelSeconds, returnToBikeSeconds, mode,
         )
         else -> null
     }

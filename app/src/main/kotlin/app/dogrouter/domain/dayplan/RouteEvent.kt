@@ -5,6 +5,17 @@ import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.domain.routing.GeoPoint
 
 /**
+ * Manual override for the travel mode of the leg that reaches an event.
+ *
+ * [AUTO] lets `DayPlanner.retimeAndCost` decide (foot when faster or when a
+ * non-rideable dog is aboard). [FOOT]/[BIKE] are set by hand in the plan
+ * editor and force that leg's mode — [BIKE] even when a dog aboard cannot
+ * ride, which yields a physically impossible plan that the editor shows and
+ * `PlanVerifier` flags after the fact. The solver only ever produces [AUTO].
+ */
+enum class LegMode { AUTO, FOOT, BIKE }
+
+/**
  * One moment in a planned working day. Events carry an absolute time
  * (seconds since midnight) and a physical location. Together they form a
  * [DayRoute].
@@ -29,12 +40,18 @@ sealed interface RouteEvent {
     val incomingTravelSeconds: Int
     val returnToBikeSeconds: Int
 
+    /** Hand-set override for this event's incoming leg; [LegMode.AUTO] until
+     *  the walker forces foot or bike in the plan editor. Ignored for the
+     *  first event of a day (it has no incoming leg). */
+    val legMode: LegMode
+
     data class HomeStart(
         override val timeSeconds: Int,
         override val location: GeoPoint,
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     data class HomeEnd(
@@ -43,6 +60,7 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     data class Pickup(
@@ -53,6 +71,7 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     data class Dropoff(
@@ -62,6 +81,7 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     data class Walk(
@@ -72,6 +92,7 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     /**
@@ -91,6 +112,7 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     /**
@@ -108,6 +130,7 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = false,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
 
     /**
@@ -125,7 +148,20 @@ sealed interface RouteEvent {
         override val arrivedByFoot: Boolean = true,
         override val incomingTravelSeconds: Int = 0,
         override val returnToBikeSeconds: Int = 0,
+        override val legMode: LegMode = LegMode.AUTO,
     ) : RouteEvent
+}
+
+/** Copy of this event with its incoming-leg mode override replaced. */
+fun RouteEvent.withLegMode(mode: LegMode): RouteEvent = when (this) {
+    is RouteEvent.HomeStart -> copy(legMode = mode)
+    is RouteEvent.HomeEnd -> copy(legMode = mode)
+    is RouteEvent.Pickup -> copy(legMode = mode)
+    is RouteEvent.Dropoff -> copy(legMode = mode)
+    is RouteEvent.Walk -> copy(legMode = mode)
+    is RouteEvent.Break -> copy(legMode = mode)
+    is RouteEvent.Appointment -> copy(legMode = mode)
+    is RouteEvent.FetchBike -> copy(legMode = mode)
 }
 
 /** On-foot seconds in this event's incoming leg: the whole leg when walked,

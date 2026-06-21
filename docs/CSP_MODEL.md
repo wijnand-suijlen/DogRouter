@@ -140,25 +140,37 @@ val updatedWalk = existing.copy(dogs = combinedDogs, durationSeconds = combinedD
 if (e is RouteEvent.Walk && i in pickPos until dropPos) result.add(e.copy(dogs = e.dogs + walk.dog))
 ```
 
-### V4 — Leg transport mode (derived)
+### V4 — Leg transport mode (derived, with a manual override)
 
 **English.** For every travel leg, whether the walker rides the bike (dogs in
-the box) or walks the group on foot (bike parked). Chosen by the retimer as the
-faster mode, *subject to* the transport constraint C9.
+the box) or walks the group on foot (bike parked). The **solver** always leaves
+this to the retimer, which picks the faster mode *subject to* the transport
+constraint C9. The **plan editor** may pin a leg by hand to foot or bike (an
+`AUTO`/`FOOT`/`BIKE` override stored on the event the leg reaches): a pinned
+`FOOT`/`BIKE` wins over the automatic choice, and `BIKE` is honoured even when
+C9 forbids it — the editor shows that impossible plan and `PlanVerifier` flags
+it afterwards. A leg that disappears and reappears under further editing reverts
+to `AUTO`.
 
-**Logic.** `foot : {1,…,n-1} → {true, false}`, with C9 governing which values
-are admissible. `HomeEnd` is forced to bike (the bike must end at home).
+**Logic.** `foot : {1,…,n-1} → {true, false}`. With `legMode(i) = AUTO`, C9
+governs which values are admissible and the faster mode is chosen; `HomeEnd`'s
+auto choice is bike (the bike must end at home). With `legMode(i) = FOOT`/`BIKE`,
+`foot(i)` is forced accordingly, ignoring C9 (the override is a manual,
+possibly-infeasible edit, never produced by the solver).
 
 **Code.** `domain/dayplan/DayPlanner.kt`, `retimeAndCost` phase 1 (the group
 cap is the separate hard constraint C7, not part of the mode choice):
 
 ```kotlin
 val canBike = canRideBike(aboard)
-if (event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)) {
-    byFoot[i] = true; travel[i] = footTime; …
-} else {
-    travel[i] = bikeTotal; returnToBike[i] = back; …
+val auto = event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)
+val goFoot = when (event.legMode) {     // hand-set override wins over auto
+    LegMode.FOOT -> true
+    LegMode.BIKE -> false               // honoured even when !canBike
+    LegMode.AUTO -> auto
 }
+if (goFoot) { byFoot[i] = true; travel[i] = footTime; … }
+else        { travel[i] = bikeTotal; returnToBike[i] = back; … }
 ```
 
 ### V5 — Dwell duration per walk (derived)
@@ -208,7 +220,10 @@ private fun List<PlanningConstraint>.violation(events: List<RouteEvent>): String
 ```
 
 C10–C11 are enforced inside `retimeAndCost` (a `null` return = infeasible
-candidate). The constraint set assembled per plan:
+candidate). The plan editor may bypass the day-end bail with
+`retime(allowInfeasible = true)` to keep showing a hand-edited plan that overruns
+the day; the overrun is then surfaced as a `PlanVerifier` warning instead of the
+edit being dropped. The constraint set assembled per plan:
 
 ```kotlin
 val constraints = listOf(

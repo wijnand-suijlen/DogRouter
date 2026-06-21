@@ -385,8 +385,27 @@ randomised property test asserts the solver never emits an infeasible plan;
   duration survives later edits) and pin the result. **Undo** (per-date stack)
   and Refresh/Revert. A `PlanVerifier`-backed **warnings panel** flags an edit
   that bends a constraint (kept anyway — "warn but allow"; `PlanVerifier` now
-  lives in main). Next: **Fase 2** drag-reorder / move a dog between groups;
-  then **Fase 3** the billing journal / History.
+  lives in main).
+- **Edit-modus = drag-and-drop chip editor (done)**: the old per-operation
+  buttons/menus (up/down arrows, ⋮ regroup, `PlanReorder`/`PlanRegroup`) are
+  replaced by one block/chip editor where **position = execution order**, fixing
+  the "split a dog → it lands last and its start time won't move it forward" bug
+  at the root (retime never reorders; it only waits). Tapping the pencil explodes
+  the shown plan into draggable chips (`Calvin-LL/Reorderable`, long-press the
+  drag handle): **Pickup/Dropoff/Walk/Break/Appointment** reorder freely, clamped
+  to the `pickup ≤ walk ≤ dropoff` invariant; a **leg** indicator above each chip
+  toggles foot/bike (`LegMode` override on the event); tap a **walk** to set its
+  duration, a **pickup** to pin its start time; a walk's secondary icon
+  **splits/merges**; a pickup's **✕** drops the dog for today; the FAB adds a walk
+  or a forced appointment. Adjacent walk chips (a shared walk) share a tinted
+  background. Each settle re-times (`commitEdit`: merge adjacent walks →
+  `retime(recomputeDwells=false, allowInfeasible=true)` → pin); an impossible
+  plan is shown and flagged (red time past 20:00 + the warnings panel) rather
+  than dropped. Per-date undo; Done finalises. Domain foundation: `LegMode` on
+  `RouteEvent` (honoured in `retimeAndCost` phase 1, BIKE even when C9 forbids),
+  `retime(allowInfeasible)`, and pure transforms in **`PlanEdit.kt`**; `legMode`
+  round-trips through `SavedPlanCodec`. *Next:* **Fase 3** the billing journal /
+  History.
 
 ## Architecture snapshot
 
@@ -496,11 +515,10 @@ shape a single day. Three related needs:
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an
   image loader → user OK), surface conflicts.
-- Manual override of the plan — **Fase 0–2 done** (mark a dog not-today, set a
-  walk's duration, pin a stop's time, add a walk, force an appointment, move a
-  standalone walk earlier/later, regroup a dog walk-alone / walk-together, undo,
-  persisted/pinned plans, warnings panel). Next: **Fase 3** the billing
-  journal / History screen (the goal manual editing was built for).
+- Manual override of the plan — **done**, as a drag-and-drop chip editor
+  (position = execution order; `Calvin-LL/Reorderable`, `PlanEdit` transforms,
+  `LegMode` override, `commitEdit` with `allowInfeasible`). Then **Fase 3** the
+  billing journal / History screen (the goal manual editing was built for).
 - History tab (stub; in-scope per SCOPE for invoicing).
 - Photo Picker (user deferred).
 

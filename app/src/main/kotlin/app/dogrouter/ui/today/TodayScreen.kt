@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -56,8 +57,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.dogrouter.domain.dayplan.DayRoute
@@ -87,6 +90,7 @@ fun TodayScreen(
     val breakRequested by viewModel.breakRequested.collectAsStateWithLifecycle()
     val stopBufferSeconds by viewModel.stopBufferSeconds.collectAsStateWithLifecycle()
     val isPlanEdited by viewModel.isPlanEdited.collectAsStateWithLifecycle()
+    val removingDogIds by viewModel.removingDogIds.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
     val readyRoute = (planState as? PlanState.Ready)?.route
@@ -146,6 +150,7 @@ fun TodayScreen(
                 planState, stopBufferSeconds, onOpenLegMap,
                 editMode = editMode,
                 onMarkDogNotToday = viewModel::markDogNotToday,
+                removingDogIds = removingDogIds,
             )
         }
     }
@@ -166,6 +171,7 @@ private fun DayRouteContent(
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     editMode: Boolean,
     onMarkDogNotToday: (String) -> Unit,
+    removingDogIds: Set<String>,
 ) {
     when (state) {
         is PlanState.Loading -> LoadingBox(state.fraction, state.phase)
@@ -188,7 +194,7 @@ private fun DayRouteContent(
                     }
                     val timeline = buildTimelineRows(route.events, stopBufferSeconds)
                     items(timeline) { row ->
-                        TimelineRowView(row, onOpenLegMap, editMode, onMarkDogNotToday)
+                        TimelineRowView(row, onOpenLegMap, editMode, onMarkDogNotToday, removingDogIds)
                     }
                 }
             }
@@ -387,10 +393,11 @@ private fun TimelineRowView(
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
     editMode: Boolean,
     onMarkDogNotToday: (String) -> Unit,
+    removingDogIds: Set<String>,
 ) {
     when (row) {
         is TimelineRow.Leg -> LegRow(row, onOpenLegMap)
-        is TimelineRow.Event -> EventRow(row.event, editMode, onMarkDogNotToday)
+        is TimelineRow.Event -> EventRow(row.event, editMode, onMarkDogNotToday, removingDogIds)
         is TimelineRow.Wait -> WaitRow(row)
     }
 }
@@ -450,12 +457,21 @@ private fun EventRow(
     event: RouteEvent,
     editMode: Boolean = false,
     onMarkDogNotToday: (String) -> Unit = {},
+    removingDogIds: Set<String> = emptySet(),
 ) {
     val icon = event.icon()
     val title = event.title()
     val subtitle = event.subtitle()
+    // Whether this row's dog(s) are being removed: strike it through and dim it
+    // right away, so the tap is acknowledged before the re-time lands.
+    val removing = when (event) {
+        is RouteEvent.Pickup -> event.dog.id in removingDogIds
+        is RouteEvent.Dropoff -> event.dog.id in removingDogIds
+        is RouteEvent.Walk -> event.dogs.any { it.id in removingDogIds }
+        else -> false
+    }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().alpha(if (removing) 0.4f else 1f),
         verticalAlignment = Alignment.Top,
     ) {
         Text(
@@ -475,7 +491,12 @@ private fun EventRow(
                 .weight(1f)
                 .padding(start = 8.dp),
         ) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                textDecoration = if (removing) TextDecoration.LineThrough else null,
+            )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
@@ -485,15 +506,22 @@ private fun EventRow(
             }
         }
         // In edit mode a pickup gets a "not today" action that drops the dog
-        // from the whole day (all its walks).
-        if (editMode && event is RouteEvent.Pickup) {
-            IconButton(onClick = { onMarkDogNotToday(event.dog.id) }) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Mark ${event.dog.name} not walked today",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp),
+        // from the whole day; while the re-time runs it shows a spinner.
+        if (event is RouteEvent.Pickup && (editMode || removing)) {
+            if (removing) {
+                CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.padding(12.dp).size(20.dp),
                 )
+            } else {
+                IconButton(onClick = { onMarkDogNotToday(event.dog.id) }) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Mark ${event.dog.name} not walked today",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

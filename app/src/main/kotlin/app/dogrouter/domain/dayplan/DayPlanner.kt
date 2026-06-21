@@ -769,8 +769,8 @@ class DayPlanner(
      *
      * Returns the retimed list together with the total elapsed seconds
      * (HomeStart to HomeEnd), or null if any event would land after
-     * [dayEndSeconds], or if a leg can be done by neither mode (a dog that
-     * cannot ride, with more dogs aboard than can be handled on foot).
+     * [dayEndSeconds]. The on-foot group cap is enforced separately as a hard
+     * constraint (see [canRideBike] for the transport-mode rule it pairs with).
      */
     private fun retimeAndCost(events: MutableList<RouteEvent>, matrix: DistanceMatrix): Pair<List<RouteEvent>, Int>? {
         val n = events.size
@@ -805,15 +805,14 @@ class DayPlanner(
                 val back = matrix.footSeconds(walkerPos, bikePos)
                 val bikeTotal = back + matrix.bikeSeconds(bikePos, event.location)
                 // A dog that cannot ride in the box (and is not the lone
-                // backpack dog) forces this leg on foot, whatever the times;
-                // on foot the walker can only hold maxGroupSize leashes, so a
-                // leg that can be neither ridden nor walked is infeasible.
+                // backpack dog) forces this leg on foot, whatever the times.
+                // The on-foot group cap is a separate hard constraint
+                // (GroupSizeConstraint, |aboard| <= maxGroupSize at all times),
+                // so it is not re-checked here.
                 val canBike = canRideBike(aboard)
-                val canFoot = aboard.size <= maxGroupSize
-                if (!canBike && !canFoot) return null
                 // The day must end with the bike back home, so the final leg
                 // always fetches the parked bike rather than walking.
-                if (event !is RouteEvent.HomeEnd && canFoot && (footTime <= bikeTotal || !canBike)) {
+                if (event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)) {
                     byFoot[i] = true
                     travel[i] = footTime
                     walkerPos = event.location

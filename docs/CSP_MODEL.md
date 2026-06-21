@@ -149,13 +149,12 @@ faster mode, *subject to* the transport constraint C9.
 **Logic.** `foot : {1,…,n-1} → {true, false}`, with C9 governing which values
 are admissible. `HomeEnd` is forced to bike (the bike must end at home).
 
-**Code.** `domain/dayplan/DayPlanner.kt`, `retimeAndCost` phase 1:
+**Code.** `domain/dayplan/DayPlanner.kt`, `retimeAndCost` phase 1 (the group
+cap is the separate hard constraint C7, not part of the mode choice):
 
 ```kotlin
 val canBike = canRideBike(aboard)
-val canFoot = aboard.size <= maxGroupSize
-if (!canBike && !canFoot) return null
-if (event !is RouteEvent.HomeEnd && canFoot && (footTime <= bikeTotal || !canBike)) {
+if (event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)) {
     byFoot[i] = true; travel[i] = footTime; …
 } else {
     travel[i] = bikeTotal; returnToBike[i] = back; …
@@ -322,14 +321,18 @@ if (!pickup.dog.allowLongerWalk && totalWalked > required) return "… but cap i
 
 ### C5 — Incompatibility
 
-**English.** Two dogs marked incompatible may never be in the bike at the same
-time.
+**English.** Two dogs marked incompatible may never be together at all — not in
+the box, and not on the same walk. The check is on simultaneous *aboard*-ness
+(picked up and not yet dropped), which already covers walking together: every
+walk participant is aboard (C6), so two dogs on one walk are aboard at the same
+time and are caught.
 
-**Logic.** Let `Inc ⊆ D × D` be the symmetric incompatibility set. For every
-leg `i`:
+**Logic.** Let `Inc ⊆ D × D` be the symmetric incompatibility set. At every
+point in the route (write `aboard(t)` for the dogs picked up and not yet
+dropped at time `t`):
 
 ```
-∀ g, h ∈ aboard(i):  {g, h} ∉ Inc
+∀ t. ∀ g, h ∈ aboard(t):  {g, h} ∉ Inc
 ```
 
 **Code.** `domain/dayplan/constraints/IncompatibilityConstraint.kt`:
@@ -366,20 +369,34 @@ is RouteEvent.Walk -> {
 
 ### C7 — Group size (hard ceiling)
 
-**English.** At most `maxGroupSize` (4) dogs in a single walk. The real working
-cap is 3; 4 is a forced exception (a *signal* of too many dogs that day),
-expressed as a soft penalty in the objective, not here.
+**English.** At most `maxGroupSize` (4) dogs in the walker's care at any
+moment — both in any single walk AND aboard between walks. The cap holds in
+every mode: picking another dog up or carrying some back never leaves the rest
+behind (they all come along), and a bike breakdown means the whole group must
+be walkable on foot. So the bound is not just per-walk; it holds at all times,
+which in turn bounds the on-foot walk-back to a parked bike for free. The real
+working cap is 3; 4 is a forced exception (a *signal* of too many dogs that
+day), expressed as a soft penalty in the objective, not here.
 
-**Logic.** For every `Walk` event `w`:
+**Logic.** With `aboard(t)` the dogs picked up and not yet dropped at time `t`:
 
 ```
-|dogs(w)| ≤ G_max
+( ∀ t. |aboard(t)| ≤ G_max )   ∧   ( ∀ Walk w. |dogs(w)| ≤ G_max )
 ```
+
+The aboard bound implies the per-walk bound (a walk's dogs are all aboard);
+both are checked so the message points at the right spot.
 
 **Code.** `domain/dayplan/constraints/GroupSizeConstraint.kt`:
 
 ```kotlin
-if (event is RouteEvent.Walk && event.dogs.size > maxDogs)
+is RouteEvent.Pickup -> {
+    aboard[event.dog.id] = event.dog.name
+    if (aboard.size > maxDogs)
+        return "${aboard.size} dogs aboard after picking up ${event.dog.name}, over the maximum of $maxDogs"
+}
+is RouteEvent.Dropoff -> aboard.remove(event.dog.id)
+is RouteEvent.Walk -> if (event.dogs.size > maxDogs)
     return "A walk has ${event.dogs.size} dogs, over the maximum of $maxDogs"
 ```
 
@@ -403,33 +420,31 @@ is RouteEvent.Appointment -> {
 }
 ```
 
-### C9 — Transport mode feasibility (cargo box / backpack / on-foot cap)
+### C9 — Transport mode feasibility (cargo box / backpack)
 
-**English.** Each dog's physical transport state governs how a leg may be done.
-**Cycling** is possible only when *every* aboard dog can be carried: in the
-cargo box (`inCargoBike = Yes`, total box weight bounded by C2) or in the
-backpack (`inBackpack = Yes`), and the backpack holds **at most one** dog.
-**Walking** a leg is possible only when the walker can hold the leashes — at
-most `maxGroupSize` dogs. A leg that can be done by neither mode is infeasible
-(the option cannot be placed → conflict). `No` and `NotTested` both block a
-channel (conservative).
+**English.** Each dog's physical transport state governs whether a leg may be
+**cycled**: only when *every* aboard dog can be carried — in the cargo box
+(`inCargoBike = Yes`, total box weight bounded by C2) or in the backpack
+(`inBackpack = Yes`), and the backpack holds **at most one** dog. A dog that can
+use neither forces the leg on foot (walking is always available, capped only by
+the group size C7). `No` and `NotTested` both block a channel (conservative).
+The final `HomeEnd` leg is forced to bike so the bike ends at home.
 
 **Logic.** Define, for a set `A` of aboard dogs,
 
 ```
 canBike(A) ≡ ( ∀ g ∈ A: cargo(g)=Yes ∨ pack(g)=Yes )
              ∧ |{ g ∈ A : cargo(g) ≠ Yes }| ≤ 1      // at most one backpack dog
-canFoot(A) ≡ |A| ≤ G_max
 ```
 
 Then for every leg `i`:
 
 ```
 ( foot(i)=false ⇒ canBike(aboard(i)) )           // riding ⇒ all carriable
-∧ ( foot(i)=true  ⇒ canFoot(aboard(i)) )           // walking ⇒ ≤ G_max leashes
-∧ ( canBike(aboard(i)) ∨ canFoot(aboard(i)) )      // some mode must exist
 ∧ ( e_i = HomeEnd ⇒ foot(i)=false )                // bike ends at home
 ```
+
+(Group size on any leg — foot or the walk-back of a bike leg — is C7, not here.)
 
 **Code.** `domain/dayplan/DayPlanner.kt`, `canRideBike` + `retimeAndCost`
 phase 1:
@@ -446,9 +461,7 @@ private fun canRideBike(aboard: List<Dog>): Boolean {
 }
 …
 val canBike = canRideBike(aboard)
-val canFoot = aboard.size <= maxGroupSize
-if (!canBike && !canFoot) return null
-if (event !is RouteEvent.HomeEnd && canFoot && (footTime <= bikeTotal || !canBike)) { /* foot */ }
+if (event !is RouteEvent.HomeEnd && (footTime <= bikeTotal || !canBike)) { /* foot */ }
 else { /* bike */ }
 ```
 
@@ -533,10 +546,16 @@ private fun Solution.score(): Long =
 
 These are deliberate simplifications, documented so the spec is honest:
 
-- **Capacity counts on-foot dogs as box weight** (C2). On a foot leg the dogs
-  are on leashes, not in the box, and a backpack dog (C9) is on the walker's
-  back — yet both still count against `Cap`. Conservative; see "weakness #4" in
-  `docs/STATUS.md`.
+- **Capacity counts every aboard dog as box weight** (C2), regardless of mode
+  or channel. On a foot leg every aboard dog walks on a leash (nobody is in the
+  box — not even a backpack-capable dog), yet all still count against `Cap`; and
+  on a bike leg the backpack dog is on the walker's back, not in the box, yet
+  also counts. Conservative; see "weakness #4" in `docs/STATUS.md`.
+- **The box has no count cap, only a weight cap** (C2). Physically ~3 dogs fit;
+  the model only limits weight, so light dogs could in principle exceed that.
+  The group cap C7 (`|aboard| ≤ G_max`) bounds it in practice (≤ 4 aboard
+  anywhere), so this never bites today, but a true "max 3 in the box" count is
+  not modelled.
 - **Foot distance = cycling distance** (`DistanceMatrix` reuses the BRouter
   cycling distance for walking). Good enough for the short hops where walking is
   chosen.

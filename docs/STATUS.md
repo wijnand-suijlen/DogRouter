@@ -251,12 +251,11 @@ stronger near-optimality signal; a practical LNS early-stop would be
   here** (`canRideBike`): a leg whose aboard dogs cannot all be carried —
   each needs `inCargoBike == Yes` (rides the box) OR `inBackpack == Yes` with
   at most ONE backpack dog at a time; `No`/`NotTested` for both blocks — is
-  forced on foot regardless of which is faster. On foot the walker can hold at
-  most `maxGroupSize` leashes, so a leg that can be neither ridden (a dog that
-  cannot ride) nor walked (`aboard > maxGroupSize`) makes the whole retime
-  fail → that insertion is infeasible → the dog becomes a conflict. The soft
-  ≤`preferredGroupSize` (3) preference still lives in `score()` on Walk events.
-  Box weight stays bounded by
+  forced on foot regardless of which is faster. The on-foot group cap is a
+  separate hard constraint (`GroupSizeConstraint`, `|aboard| ≤ maxGroupSize` at
+  all times, so it also bounds the on-foot walk-back to a parked bike), not part
+  of this mode choice. The soft ≤`preferredGroupSize` (3) preference still lives
+  in `score()` on Walk events. Box weight stays bounded by
   `CapacityConstraint` (which still counts a backpack dog's weight against the
   box — slightly conservative, fine while backpack dogs are small/light).
   Tracks the walker AND the parked
@@ -300,8 +299,10 @@ stronger near-optimality signal; a practical LNS early-stop would be
   each optional), `WalkDuration` (dwell walks + `footCreditSeconds` in the
   span vs required; max enforced for `allowLongerWalk=false`),
   `Incompatibility`, `NoDogLeftBehind` (every aboard dog must be in each
-  walk), `GroupSize` (hard `maxGroupSize`=4; soft preference for
-  `preferredGroupSize`=3 lives in `score()`), `Appointment` (reach each
+  walk), `GroupSize` (hard `maxGroupSize`=4 on the dogs **aboard at any moment**
+  — not just per walk, so picking up / carrying back never exceeds it and the
+  walk-back stays bounded; soft preference for `preferredGroupSize`=3 lives in
+  `score()`), `Appointment` (reach each
   fixed appointment on time, no dog aboard during it).
 - **`DayPlanService.kt`**: shared pipeline (Today + Follow plan). Builds
   `WalkOption`s from the weekday's rules, constructs `DayPlanner` from
@@ -332,9 +333,6 @@ pass, which the in-search constraints never see. It reuses the constraint
 objects for C1–C8 and re-implements C9–C11 independently (C11 pragmatic). A
 randomised property test asserts the solver never emits an infeasible plan;
 `runSolverOnRealData` now also runs it per day and fails on any violation.
-Caveat: the C9 on-foot group cap excludes `FetchBike` (the walk-back to the
-bike is part of a bike leg and is not capped by the solver — an open model
-question).
 
 ---
 

@@ -26,12 +26,9 @@ import app.dogrouter.domain.dayplan.constraints.WalkDurationConstraint
  *
  * Returns one message per violated constraint; an empty list means feasible.
  *
- * **Walk-back caveat (C9):** a `FetchBike` is on foot but is the walk-back
- * portion of a bike leg, which the solver does NOT subject to the on-foot
- * group cap (`canFoot` only governs legs chosen as foot travel). To stay a
- * faithful guard of the *implemented* model, the foot-cap check below excludes
- * `FetchBike`. Whether the walk-back should also be capped is an open model
- * question (see the report accompanying this change / `CSP_MODEL.md` §5).
+ * The on-foot group cap is NOT re-checked here: `|aboard| <= maxGroupSize` is a
+ * hard constraint at all times (GroupSizeConstraint, C7), reused above, so it
+ * already covers every leg — including a `FetchBike` walk-back.
  */
 object PlanVerifier {
 
@@ -59,7 +56,7 @@ object PlanVerifier {
         for (c in reused) c.violation(events)?.let { out.add("${c::class.simpleName}: $it") }
 
         // C9 — transport mode feasibility (independent oracle).
-        out += transportViolations(events, maxGroupSize)
+        out += transportViolations(events)
 
         // C10 — day-end cutoff.
         events.firstOrNull { it.timeSeconds > dayEndSeconds }?.let {
@@ -72,25 +69,18 @@ object PlanVerifier {
         return out
     }
 
-    /** C9: each bike leg carries only rideable dogs; each genuine foot-travel
-     *  leg stays within the on-foot group cap (FetchBike excluded; see KDoc). */
-    private fun transportViolations(events: List<RouteEvent>, maxGroupSize: Int): List<String> {
+    /** C9: each bike leg carries only rideable dogs (every aboard dog in the
+     *  box, or the lone backpack dog). The on-foot group cap is C7, not here. */
+    private fun transportViolations(events: List<RouteEvent>): List<String> {
         val out = mutableListOf<String>()
         val aboard = ArrayList<Dog>()
         for (i in events.indices) {
             val e = events[i]
-            if (i > 0 && e.incomingTravelSeconds > 0) {
-                when {
-                    !e.arrivedByFoot ->
-                        if (!canRideBike(aboard)) {
-                            out.add(
-                                "Transport: bike leg into ${label(e)} carries a dog that cannot ride " +
-                                    "(aboard: ${aboard.joinToString { it.name }})",
-                            )
-                        }
-                    e !is RouteEvent.FetchBike && aboard.size > maxGroupSize ->
-                        out.add("Transport: ${aboard.size} dogs walked on foot into ${label(e)}, over $maxGroupSize")
-                }
+            if (i > 0 && e.incomingTravelSeconds > 0 && !e.arrivedByFoot && !canRideBike(aboard)) {
+                out.add(
+                    "Transport: bike leg into ${label(e)} carries a dog that cannot ride " +
+                        "(aboard: ${aboard.joinToString { it.name }})",
+                )
             }
             when (e) {
                 is RouteEvent.Pickup -> aboard.add(e.dog)

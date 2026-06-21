@@ -387,8 +387,12 @@ ui/
 
 ## Smaller known issues (not the focus, but real)
 
-- **Waiting time shows as cycling in the timeline** — a pickup waiting for
-  its window inflates the displayed leg. Cosmetic.
+- ~~**Waiting time shows as cycling in the timeline**~~ **FIXED.** The Today
+  timeline now renders idle time (a stop waiting for its window) as its own
+  "waiting" row, so the leg shows only travel and the timestamps add up.
+  `TodayScreen.buildTimelineRows` computes the wait (gap beyond the previous
+  stop's service + this leg's travel, mirroring the harness `waitSeconds`);
+  `TodayViewModel` exposes `stopBufferSeconds` for it.
 - **`bakfiets.brf` is very conservative** (totalMass=180, bikerPower=80,
   S_C_x=0.45) → pessimistic route choice on hills. Since we override
   BRouter's time anyway, a lighter profile might pick faster routes.

@@ -2,6 +2,7 @@ package app.dogrouter.ui.today
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.dayplan.PlanPhase
 import app.dogrouter.domain.dayplan.PlanState
@@ -11,16 +12,27 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TodayViewModel(
     private val dayPlanService: DayPlanService,
+    settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
+
+    /**
+     * Per-stop buffer in seconds, used by the timeline to tell travel time
+     * apart from time spent waiting for a window to open (the wait is the gap
+     * left after the previous stop's service and the leg's travel).
+     */
+    val stopBufferSeconds: StateFlow<Int> = settingsRepository.settings
+        .map { it.stopBufferMinutes * 60 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /**
      * The plan for the selected date, recomputed whenever the date or any

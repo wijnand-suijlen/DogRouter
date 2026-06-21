@@ -96,6 +96,6 @@ val appModule = module {
     viewModel { AddressPickerViewModel(get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get()) }
     viewModel { PlanningViewModel(get(), get()) }
-    viewModel { TodayViewModel(get()) }
+    viewModel { TodayViewModel(get(), get()) }
     viewModel { (date: LocalDate) -> FollowPlanViewModel(get(), date) }
 }

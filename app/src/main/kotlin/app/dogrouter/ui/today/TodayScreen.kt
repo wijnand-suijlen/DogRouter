@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -61,6 +62,7 @@ import app.dogrouter.domain.dayplan.PlanConflict
 import app.dogrouter.domain.dayplan.PlanPhase
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
+import app.dogrouter.domain.dayplan.durationAtSeconds
 import app.dogrouter.domain.routing.GeoPoint
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
@@ -80,6 +82,7 @@ fun TodayScreen(
     val planState by viewModel.planState.collectAsStateWithLifecycle()
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val breakRequested by viewModel.breakRequested.collectAsStateWithLifecycle()
+    val stopBufferSeconds by viewModel.stopBufferSeconds.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     val readyRoute = (planState as? PlanState.Ready)?.route
 
@@ -123,7 +126,7 @@ fun TodayScreen(
                 onCheckedChange = viewModel::setBreakRequested,
             )
             HorizontalDivider()
-            DayRouteContent(planState, onOpenLegMap)
+            DayRouteContent(planState, stopBufferSeconds, onOpenLegMap)
         }
     }
 
@@ -139,6 +142,7 @@ fun TodayScreen(
 @Composable
 private fun DayRouteContent(
     state: PlanState,
+    stopBufferSeconds: Int,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
 ) {
     when (state) {
@@ -160,7 +164,7 @@ private fun DayRouteContent(
                     if (route.breakUnavailable) {
                         item { BreakUnavailablePanel() }
                     }
-                    val timeline = buildTimelineRows(route.events)
+                    val timeline = buildTimelineRows(route.events, stopBufferSeconds)
                     items(timeline) { row -> TimelineRowView(row, onOpenLegMap) }
                 }
             }
@@ -292,7 +296,7 @@ private fun BreakUnavailablePanel() {
     }
 }
 
-/** UI-only view-model rows: each is either an event row or a travel-leg row. */
+/** UI-only view-model rows: an event, a travel leg, or a wait row. */
 private sealed interface TimelineRow {
     data class Event(val event: RouteEvent) : TimelineRow
     data class Leg(
@@ -301,9 +305,12 @@ private sealed interface TimelineRow {
         val to: GeoPoint,
         val byFoot: Boolean,
     ) : TimelineRow
+
+    /** Idle time spent waiting at a stop for its window to open. */
+    data class Wait(val seconds: Int) : TimelineRow
 }
 
-private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
+private fun buildTimelineRows(events: List<RouteEvent>, stopBufferSeconds: Int): List<TimelineRow> {
     if (events.isEmpty()) return emptyList()
     val rows = mutableListOf<TimelineRow>(TimelineRow.Event(events[0]))
     for (i in 1 until events.size) {
@@ -321,6 +328,12 @@ private fun buildTimelineRows(events: List<RouteEvent>): List<TimelineRow> {
                 ),
             )
         }
+        // Any time beyond the previous stop's service and this leg's travel is
+        // spent standing still waiting for a window — show it as its own row so
+        // the timestamps add up and the leg is not read as slow travel.
+        val arrival = prev.timeSeconds + prev.durationAtSeconds(stopBufferSeconds) + current.incomingTravelSeconds
+        val wait = current.timeSeconds - arrival
+        if (wait >= 60) rows.add(TimelineRow.Wait(wait))
         rows.add(TimelineRow.Event(current))
     }
     return rows
@@ -334,6 +347,30 @@ private fun TimelineRowView(
     when (row) {
         is TimelineRow.Leg -> LegRow(row, onOpenLegMap)
         is TimelineRow.Event -> EventRow(row.event)
+        is TimelineRow.Wait -> WaitRow(row)
+    }
+}
+
+@Composable
+private fun WaitRow(wait: TimelineRow.Wait) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 28.dp, top = 2.dp, bottom = 2.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Schedule,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "${formatDuration(wait.seconds)} waiting",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

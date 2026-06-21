@@ -78,6 +78,7 @@ import app.dogrouter.data.remote.AddressSuggestion
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
 import app.dogrouter.domain.dayplan.durationAtSeconds
+import app.dogrouter.domain.dayplan.reorderInfo
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.ui.common.AddressAutocompleteField
 import org.koin.androidx.compose.koinViewModel
@@ -189,6 +190,7 @@ fun TodayScreen(
                 onMarkDogNotToday = viewModel::markDogNotToday,
                 onEditWalkDuration = { index, minutes -> editingWalk = index to minutes },
                 onEditStopTime = { index, seconds -> editingStop = index to seconds },
+                onMoveWalk = viewModel::moveWalk,
                 removingDogIds = removingDogIds,
             )
         }
@@ -501,6 +503,7 @@ private fun DayRouteContent(
     onMarkDogNotToday: (String) -> Unit,
     onEditWalkDuration: (eventIndex: Int, currentMinutes: Int) -> Unit,
     onEditStopTime: (eventIndex: Int, currentSeconds: Int) -> Unit,
+    onMoveWalk: (eventIndex: Int, earlier: Boolean) -> Unit,
     removingDogIds: Set<String>,
 ) {
     when (state) {
@@ -526,7 +529,8 @@ private fun DayRouteContent(
                     items(timeline) { row ->
                         TimelineRowView(
                             row, onOpenLegMap, editMode,
-                            onMarkDogNotToday, onEditWalkDuration, onEditStopTime, removingDogIds,
+                            onMarkDogNotToday, onEditWalkDuration, onEditStopTime, onMoveWalk,
+                            removingDogIds,
                         )
                     }
                 }
@@ -679,7 +683,12 @@ private fun BreakUnavailablePanel() {
 
 /** UI-only view-model rows: an event, a travel leg, or a wait row. */
 private sealed interface TimelineRow {
-    data class Event(val event: RouteEvent, val eventIndex: Int) : TimelineRow
+    data class Event(
+        val event: RouteEvent,
+        val eventIndex: Int,
+        val canMoveEarlier: Boolean = false,
+        val canMoveLater: Boolean = false,
+    ) : TimelineRow
     data class Leg(
         val seconds: Int,
         val from: GeoPoint,
@@ -715,7 +724,14 @@ private fun buildTimelineRows(events: List<RouteEvent>, stopBufferSeconds: Int):
         val arrival = prev.timeSeconds + prev.durationAtSeconds(stopBufferSeconds) + current.incomingTravelSeconds
         val wait = current.timeSeconds - arrival
         if (wait >= 60) rows.add(TimelineRow.Wait(wait))
-        rows.add(TimelineRow.Event(current, i))
+        val reorder = if (current is RouteEvent.Walk) reorderInfo(events, i) else null
+        rows.add(
+            TimelineRow.Event(
+                current, i,
+                canMoveEarlier = reorder?.canMoveEarlier == true,
+                canMoveLater = reorder?.canMoveLater == true,
+            ),
+        )
     }
     return rows
 }
@@ -728,6 +744,7 @@ private fun TimelineRowView(
     onMarkDogNotToday: (String) -> Unit,
     onEditWalkDuration: (eventIndex: Int, currentMinutes: Int) -> Unit,
     onEditStopTime: (eventIndex: Int, currentSeconds: Int) -> Unit,
+    onMoveWalk: (eventIndex: Int, earlier: Boolean) -> Unit,
     removingDogIds: Set<String>,
 ) {
     when (row) {
@@ -736,6 +753,10 @@ private fun TimelineRowView(
             row.event, editMode, onMarkDogNotToday, removingDogIds,
             onEditDuration = { minutes -> onEditWalkDuration(row.eventIndex, minutes) },
             onEditTime = { seconds -> onEditStopTime(row.eventIndex, seconds) },
+            canMoveEarlier = row.canMoveEarlier,
+            canMoveLater = row.canMoveLater,
+            onMoveEarlier = { onMoveWalk(row.eventIndex, true) },
+            onMoveLater = { onMoveWalk(row.eventIndex, false) },
         )
         is TimelineRow.Wait -> WaitRow(row)
     }
@@ -799,6 +820,10 @@ private fun EventRow(
     removingDogIds: Set<String> = emptySet(),
     onEditDuration: (minutes: Int) -> Unit = {},
     onEditTime: (seconds: Int) -> Unit = {},
+    canMoveEarlier: Boolean = false,
+    canMoveLater: Boolean = false,
+    onMoveEarlier: () -> Unit = {},
+    onMoveLater: () -> Unit = {},
 ) {
     val icon = event.icon()
     val title = event.title()
@@ -894,8 +919,29 @@ private fun EventRow(
             }
         }
         // A walk shows an edit affordance in edit mode (the whole row is also
-        // tappable) so it is clear the duration can be changed.
+        // tappable) so it is clear the duration can be changed, plus up/down
+        // arrows to move a standalone walk earlier/later in the day.
         if (editableWalk) {
+            if (canMoveEarlier) {
+                IconButton(onClick = onMoveEarlier) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowUpward,
+                        contentDescription = "Move walk earlier",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            if (canMoveLater) {
+                IconButton(onClick = onMoveLater) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowDownward,
+                        contentDescription = "Move walk later",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             IconButton(onClick = { onEditDuration((event as RouteEvent.Walk).durationSeconds / 60) }) {
                 Icon(
                     imageVector = Icons.Default.Edit,

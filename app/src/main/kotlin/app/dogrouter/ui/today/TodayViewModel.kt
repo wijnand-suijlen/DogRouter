@@ -165,6 +165,13 @@ class TodayViewModel(
         applyEdit { dayPlanService.setStopTime(_selectedDate.value, route, eventIndex, secondsOfDay) }
     }
 
+    /** Move the standalone walk at [eventIndex] one step earlier/later. */
+    fun moveWalk(eventIndex: Int, earlier: Boolean) {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
+        applyEdit { dayPlanService.moveWalk(_selectedDate.value, route, eventIndex, earlier) }
+    }
+
     /** Active dogs with coordinates — candidates for a hand-added walk. */
     val addableDogs: StateFlow<List<Dog>> = dayPlanService.observeAddableDogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

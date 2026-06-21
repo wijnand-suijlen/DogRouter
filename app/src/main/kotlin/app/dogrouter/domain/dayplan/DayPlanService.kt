@@ -215,6 +215,17 @@ class DayPlanService(
         pinEdited(date, current.copy(events = events))
     }
 
+    /**
+     * Move the standalone walk at [walkEventIndex] one step [earlier] (or later)
+     * in the day by swapping it with the adjacent standalone walk, then re-time
+     * and pin. No-op if the walk is grouped/split or has no adjacent standalone
+     * walk to swap with (see [moveStandaloneWalk]).
+     */
+    suspend fun moveWalk(date: LocalDate, current: DayRoute, walkEventIndex: Int, earlier: Boolean) {
+        val reordered = moveStandaloneWalk(current.events, walkEventIndex, earlier) ?: return
+        pinEdited(date, current.copy(events = reordered))
+    }
+
     /** Re-time [edited] (keeping manual durations) and persist it as the pinned
      *  plan for [date], carrying over its conflicts. */
     private suspend fun pinEdited(date: LocalDate, edited: DayRoute) {

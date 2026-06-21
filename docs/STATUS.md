@@ -375,7 +375,9 @@ randomised property test asserts the solver never emits an infeasible plan;
   duration** (tap a walk), **pin a stop's start time** (tap a pickup → sets its
   `earliestStart`), **add a walk** (FAB → pick dog + minutes; ad-hoc rule), and
   **force a dog-free appointment** (FAB → label + window + BAN address; inserted
-  as a `RouteEvent.Appointment` and re-timed — for a doctor/shop/manual lunch).
+  as a `RouteEvent.Appointment` and re-timed — for a doctor/shop/manual lunch),
+  and **move a standalone walk earlier/later** (Fase 2a: up/down arrows swap two
+  adjacent single-dog triplets — safe, no aboard/grouping change; `PlanReorder`).
   All re-time via `DayPlanner.retime` with `recomputeDwells = false` (a hand-set
   duration survives later edits) and pin the result. **Undo** (per-date stack)
   and Refresh/Revert. A `PlanVerifier`-backed **warnings panel** flags an edit
@@ -491,10 +493,11 @@ shape a single day. Three related needs:
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an
   image loader → user OK), surface conflicts.
-- Manual override of the plan — **in progress** (Fase 0–1b: mark a dog
-  not-today, set a walk's duration, pin a stop's time, add a walk, undo,
-  persisted/pinned plans, warnings panel). Next: Fase 2 drag-reorder / move a
-  dog between groups; then the billing journal/History.
+- Manual override of the plan — **in progress** (Fase 0–2a: mark a dog
+  not-today, set a walk's duration, pin a stop's time, add a walk, force an
+  appointment, move a standalone walk earlier/later, undo, persisted/pinned
+  plans, warnings panel). Next: Fase 2b regroup a dog (walk together / alone);
+  then the billing journal/History.
 - History tab (stub; in-scope per SCOPE for invoicing).
 - Photo Picker (user deferred).
 

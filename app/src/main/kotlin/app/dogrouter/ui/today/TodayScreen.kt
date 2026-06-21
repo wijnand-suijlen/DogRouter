@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
@@ -97,6 +98,7 @@ fun TodayScreen(
     val removingDogIds by viewModel.removingDogIds.collectAsStateWithLifecycle()
     val planWarnings by viewModel.planWarnings.collectAsStateWithLifecycle()
     val isApplyingEdit by viewModel.isApplyingEdit.collectAsStateWithLifecycle()
+    val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     var editMode by remember { mutableStateOf(false) }
     // The walk whose duration is being edited: (event index, current minutes).
@@ -108,6 +110,11 @@ fun TodayScreen(
             TopAppBar(
                 title = { Text("Today") },
                 actions = {
+                    if (editMode && canUndo) {
+                        IconButton(onClick = viewModel::undo) {
+                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo last edit")
+                        }
+                    }
                     if (readyRoute?.events?.isNotEmpty() == true) {
                         IconButton(onClick = { editMode = !editMode }) {
                             Icon(
@@ -628,6 +635,18 @@ private fun EventRow(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            }
+        }
+        // A walk shows an edit affordance in edit mode (the whole row is also
+        // tappable) so it is clear the duration can be changed.
+        if (editableWalk) {
+            IconButton(onClick = { onEditDuration((event as RouteEvent.Walk).durationSeconds / 60) }) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Edit walk duration",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

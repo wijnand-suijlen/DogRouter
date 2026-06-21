@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.domain.dayplan.DayPlanService
+import app.dogrouter.domain.dayplan.DayRoute
 import app.dogrouter.domain.dayplan.PlanPhase
 import app.dogrouter.domain.dayplan.PlanState
 import app.dogrouter.domain.dayplan.RouteEvent
@@ -74,6 +75,35 @@ class TodayViewModel(
     /** True while an edit is being re-timed and saved, for a progress hint. */
     val isApplyingEdit: StateFlow<Boolean> = _isApplyingEdit.asStateFlow()
 
+    // Snapshots of the plan before each edit, so the last edit can be undone.
+    // wasEdited tells undo whether to restore a pinned plan or revert to solver.
+    private data class UndoEntry(val route: DayRoute, val wasEdited: Boolean)
+    private val _undo = MutableStateFlow<List<UndoEntry>>(emptyList())
+
+    /** Whether there is an edit on this date that can be undone. */
+    val canUndo: StateFlow<Boolean> = _undo
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    private fun pushUndo() {
+        val route = (planState.value as? PlanState.Ready)?.route ?: return
+        _undo.update { it + UndoEntry(route, isPlanEdited.value) }
+    }
+
+    /** Undo the last edit on this date: restore the previous plan (or the
+     *  solver plan if that was the state before the first edit). */
+    fun undo() {
+        val entry = _undo.value.lastOrNull() ?: return
+        _undo.update { it.dropLast(1) }
+        applyEdit {
+            if (entry.wasEdited) {
+                dayPlanService.pinPlan(_selectedDate.value, entry.route)
+            } else {
+                dayPlanService.discardSavedPlan(_selectedDate.value)
+            }
+        }
+    }
+
     private fun applyEdit(block: suspend () -> Unit) {
         _isApplyingEdit.value = true
         viewModelScope.launch {
@@ -109,6 +139,7 @@ class TodayViewModel(
     /** Mark a dog as not walked today: drop it from the plan and pin the rest. */
     fun markDogNotToday(dogId: String) {
         val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
         _removingDogIds.update { it + dogId } // immediate visual feedback
         applyEdit { dayPlanService.markDogNotToday(_selectedDate.value, route, dogId) }
     }
@@ -116,6 +147,7 @@ class TodayViewModel(
     /** Set how long the walk at [eventIndex] lasts (minutes), then pin. */
     fun setWalkDuration(eventIndex: Int, minutes: Int) {
         val route = (planState.value as? PlanState.Ready)?.route ?: return
+        pushUndo()
         applyEdit { dayPlanService.setWalkDuration(_selectedDate.value, route, eventIndex, minutes) }
     }
 
@@ -128,19 +160,17 @@ class TodayViewModel(
         dayPlanService.setBreakRequested(_selectedDate.value, requested)
     }
 
-    fun goToPreviousDay() {
-        _selectedDate.value = _selectedDate.value.minusDays(1)
-    }
+    fun goToPreviousDay() = changeDate(_selectedDate.value.minusDays(1))
 
-    fun goToNextDay() {
-        _selectedDate.value = _selectedDate.value.plusDays(1)
-    }
+    fun goToNextDay() = changeDate(_selectedDate.value.plusDays(1))
 
-    fun goToToday() {
-        _selectedDate.value = LocalDate.now()
-    }
+    fun goToToday() = changeDate(LocalDate.now())
 
-    fun setDate(date: LocalDate) {
+    fun setDate(date: LocalDate) = changeDate(date)
+
+    /** Switch the day in view and drop the (date-scoped) undo history. */
+    private fun changeDate(date: LocalDate) {
+        _undo.value = emptyList()
         _selectedDate.value = date
     }
 

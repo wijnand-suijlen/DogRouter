@@ -164,6 +164,14 @@ class DayPlanService(
         )
     }
 
+    /** Pin an already-timed [route] as the saved plan for [date] as-is (no
+     *  re-time) — used by undo to restore a previous edit state. */
+    suspend fun pinPlan(date: LocalDate, route: DayRoute) {
+        savedPlanDao.upsert(
+            SavedPlan(date, SavedPlanCodec.encode(route), edited = true, updatedAt = System.currentTimeMillis()),
+        )
+    }
+
     /** Discard a pinned/edited plan for [date], reverting to the solver. */
     suspend fun discardSavedPlan(date: LocalDate) = savedPlanDao.deleteForDate(date)
 

@@ -1,5 +1,7 @@
 package app.dogrouter.domain.dayplan
 
+import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.entity.TransportState
 import app.dogrouter.domain.dayplan.constraints.AppointmentConstraint
 import app.dogrouter.domain.dayplan.constraints.CapacityConstraint
 import app.dogrouter.domain.dayplan.constraints.GroupSizeConstraint
@@ -734,6 +736,27 @@ class DayPlanner(
     }
 
     /**
+     * Whether the dogs currently [aboard] can be carried on a bike leg, given
+     * each dog's transport state. A dog rides in the cargo box only with
+     * `inCargoBike == Yes`; a dog that cannot use the box may ride in the
+     * backpack with `inBackpack == Yes`, but the backpack holds at most one
+     * dog. A dog that can use neither (No or NotTested for both) makes a bike
+     * leg impossible, so the leg falls back to walking. The box weight against
+     * the configured capacity is enforced separately by [CapacityConstraint].
+     */
+    private fun canRideBike(aboard: List<Dog>): Boolean {
+        var backpackDogs = 0
+        for (dog in aboard) {
+            when {
+                dog.inCargoBike == TransportState.Yes -> Unit // rides in the box
+                dog.inBackpack == TransportState.Yes -> backpackDogs++
+                else -> return false
+            }
+        }
+        return backpackDogs <= 1
+    }
+
+    /**
      * Walk through [events] forward, filling in [RouteEvent.timeSeconds]
      * for each based on cycling time from the previous location and the
      * time spent at the previous event.
@@ -746,7 +769,8 @@ class DayPlanner(
      *
      * Returns the retimed list together with the total elapsed seconds
      * (HomeStart to HomeEnd), or null if any event would land after
-     * [dayEndSeconds].
+     * [dayEndSeconds], or if a leg can be done by neither mode (a dog that
+     * cannot ride, with more dogs aboard than can be handled on foot).
      */
     private fun retimeAndCost(events: MutableList<RouteEvent>, matrix: DistanceMatrix): Pair<List<RouteEvent>, Int>? {
         val n = events.size
@@ -766,6 +790,11 @@ class DayPlanner(
         val walkLoc = arrayOfNulls<GeoPoint>(n)
         var walkerPos = homeLocation
         var bikePos = homeLocation
+        // Dogs in transit during the current leg, used to honour each dog's
+        // transport state: a dog that cannot ride the cargo bike forces its
+        // legs on foot. A pickup's dog is not aboard on the leg that fetches
+        // it; a dropoff's dog still is on the leg that delivers it, then leaves.
+        val aboard = ArrayList<Dog>()
         for (i in 1 until n) {
             val event = events[i]
             if (event is RouteEvent.Walk) {
@@ -775,9 +804,16 @@ class DayPlanner(
                 val footTime = matrix.footSeconds(walkerPos, event.location)
                 val back = matrix.footSeconds(walkerPos, bikePos)
                 val bikeTotal = back + matrix.bikeSeconds(bikePos, event.location)
+                // A dog that cannot ride in the box (and is not the lone
+                // backpack dog) forces this leg on foot, whatever the times;
+                // on foot the walker can only hold maxGroupSize leashes, so a
+                // leg that can be neither ridden nor walked is infeasible.
+                val canBike = canRideBike(aboard)
+                val canFoot = aboard.size <= maxGroupSize
+                if (!canBike && !canFoot) return null
                 // The day must end with the bike back home, so the final leg
                 // always fetches the parked bike rather than walking.
-                if (event !is RouteEvent.HomeEnd && footTime <= bikeTotal) {
+                if (event !is RouteEvent.HomeEnd && canFoot && (footTime <= bikeTotal || !canBike)) {
                     byFoot[i] = true
                     travel[i] = footTime
                     walkerPos = event.location
@@ -787,6 +823,11 @@ class DayPlanner(
                     walkerPos = event.location
                     bikePos = event.location
                 }
+            }
+            when (event) {
+                is RouteEvent.Pickup -> aboard.add(event.dog)
+                is RouteEvent.Dropoff -> aboard.removeAll { it.id == event.dog.id }
+                else -> Unit
             }
         }
 

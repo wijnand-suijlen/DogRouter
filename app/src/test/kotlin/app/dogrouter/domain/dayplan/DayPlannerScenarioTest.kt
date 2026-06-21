@@ -2,6 +2,7 @@ package app.dogrouter.domain.dayplan
 
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.TransportState
 import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RouteEstimate
@@ -56,10 +57,18 @@ class DayPlannerScenarioTest {
         }
     }
 
-    private fun dog(id: String, name: String, weight: Float, lat: Double, lon: Double) = Dog(
+    private fun dog(
+        id: String,
+        name: String,
+        weight: Float,
+        lat: Double,
+        lon: Double,
+        inCargoBike: TransportState = TransportState.Yes,
+        inBackpack: TransportState = TransportState.NotTested,
+    ) = Dog(
         id = id, name = name, breed = null, weightKg = weight, photoUri = null,
         ownerName = "", ownerPhone = null, address = "", latitude = lat, longitude = lon,
-        stopNotes = null, notes = null,
+        stopNotes = null, notes = null, inCargoBike = inCargoBike, inBackpack = inBackpack,
     )
 
     private fun rule(id: String, dogId: String, start: String, end: String, minutes: Int) =
@@ -560,6 +569,86 @@ class DayPlannerScenarioTest {
             }
         }
         assertTrue("plan stays feasible", route.conflicts.isEmpty())
+    }
+
+    /**
+     * For each travelling leg in [route], whether it was on foot and which dog
+     * ids were aboard. A dog is aboard on the leg that delivers it (its
+     * dropoff) but not on the leg that fetches it (its pickup), mirroring the
+     * planner's own bookkeeping.
+     */
+    private fun legsWithAboard(route: DayRoute): List<Triple<Boolean, Int, Set<String>>> {
+        val aboard = LinkedHashSet<String>()
+        val out = mutableListOf<Triple<Boolean, Int, Set<String>>>()
+        for (e in route.events) {
+            if (e.incomingTravelSeconds > 0) out.add(Triple(e.arrivedByFoot, e.incomingTravelSeconds, aboard.toSet()))
+            when (e) {
+                is RouteEvent.Pickup -> aboard.add(e.dog.id)
+                is RouteEvent.Dropoff -> aboard.remove(e.dog.id)
+                else -> Unit
+            }
+        }
+        return out
+    }
+
+    private fun transportScenario(apple: Dog): app.dogrouter.domain.dayplan.DayRoute {
+        val bo = dog("bo", "Bo", 5f, 48.8120, 102.2340)
+        val cy = dog("cy", "Cy", 5f, 48.8150, 102.2370)
+        val walks = listOf(
+            PlannedWalk(apple, rule("apple1", "apple", "08:00", "14:00", 120)),
+            PlannedWalk(bo, rule("bo1", "bo", "09:00", "10:30", 60)),
+            PlannedWalk(cy, rule("cy1", "cy", "11:00", "12:30", 60)),
+        )
+        val planner = DayPlanner(
+            routingProvider = FakeRouting(), home = home, capacityKg = 70f,
+            stopBufferSeconds = 0, cyclingSpeedKmh = 15f, incompatibilities = emptySet(),
+            lnsIterations = 0, // pin: construction + constraints, not LNS
+        )
+        return runBlocking { planner.plan(LocalDate.of(2026, 6, 22), walks.asOptions()) }
+    }
+
+    /**
+     * A dog whose inCargoBike is No (and that has no backpack) cannot ride in
+     * the box, so the planner must carry it on foot — it may never be aboard
+     * on a bike leg. The control run (the same dog allowed in the box) proves
+     * the scenario really does transport Apple by bike when permitted, so the
+     * restricted run is a genuine behaviour change, not a vacuous pass.
+     */
+    @Test
+    fun aDogThatCannotRideIsNeverCarriedOnABikeLeg() = runBlocking {
+        val control = transportScenario(
+            dog("apple", "Apple", 5f, 48.8140, 102.2360, inCargoBike = TransportState.Yes),
+        )
+        val restricted = transportScenario(
+            dog("apple", "Apple", 5f, 48.8140, 102.2360,
+                inCargoBike = TransportState.No, inBackpack = TransportState.No),
+        )
+        assertTrue(
+            "Control: Apple should be carried by bike when allowed in the box",
+            legsWithAboard(control).any { (foot, _, dogs) -> !foot && "apple" in dogs },
+        )
+        assertTrue("Restricted plan stays feasible", restricted.conflicts.isEmpty())
+        assertFalse(
+            "Apple cannot ride in the box, so no bike leg may carry it",
+            legsWithAboard(restricted).any { (foot, _, dogs) -> !foot && "apple" in dogs },
+        )
+    }
+
+    /**
+     * A dog that cannot use the box but fits the backpack (inBackpack = Yes)
+     * may ride — it is the lone backpack dog while Bo and Cy travel in the box.
+     */
+    @Test
+    fun aBackpackDogMayRideInTheBackpack() = runBlocking {
+        val route = transportScenario(
+            dog("apple", "Apple", 5f, 48.8140, 102.2360,
+                inCargoBike = TransportState.No, inBackpack = TransportState.Yes),
+        )
+        assertTrue("Plan stays feasible", route.conflicts.isEmpty())
+        assertTrue(
+            "Apple should be allowed to ride along in the backpack",
+            legsWithAboard(route).any { (foot, _, dogs) -> !foot && "apple" in dogs },
+        )
     }
 
     private fun describe(e: RouteEvent): String = when (e) {

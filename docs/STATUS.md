@@ -247,7 +247,19 @@ stronger near-optimality signal; a practical LNS early-stop would be
 - **`retimeAndCost`** (inside DayPlanner): three phases. **(1) legs** —
   per leg choose **bike** (metres/cyclingSpeed + fixed `bikeOverheadSeconds`)
   vs **on foot** (metres/walkingSpeed), whichever is faster; position-only,
-  so it does not depend on dwell durations. Tracks the walker AND the parked
+  so it does not depend on dwell durations. **Transport state is respected
+  here** (`canRideBike`): a leg whose aboard dogs cannot all be carried —
+  each needs `inCargoBike == Yes` (rides the box) OR `inBackpack == Yes` with
+  at most ONE backpack dog at a time; `No`/`NotTested` for both blocks — is
+  forced on foot regardless of which is faster. On foot the walker can hold at
+  most `maxGroupSize` leashes, so a leg that can be neither ridden (a dog that
+  cannot ride) nor walked (`aboard > maxGroupSize`) makes the whole retime
+  fail → that insertion is infeasible → the dog becomes a conflict. The soft
+  ≤`preferredGroupSize` (3) preference still lives in `score()` on Walk events.
+  Box weight stays bounded by
+  `CapacityConstraint` (which still counts a backpack dog's weight against the
+  box — slightly conservative, fine while backpack dogs are small/light).
+  Tracks the walker AND the parked
   bike: a foot leg leaves the bike put; a bike leg first walks back to it
   (recorded as `returnToBikeSeconds`); the final HomeEnd leg is forced to
   bike so the bike ends home. **(2) dwell** (`effectiveDwells`) — set each

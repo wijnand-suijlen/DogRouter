@@ -2,6 +2,7 @@ package app.dogrouter.domain.dayplan
 
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.TransportState
 import app.dogrouter.domain.dayplan.constraints.CapacityConstraint
 import app.dogrouter.domain.dayplan.constraints.GroupSizeConstraint
 import app.dogrouter.domain.dayplan.constraints.IncompatibilityConstraint
@@ -59,7 +60,7 @@ class RemoveOperatorTest {
     private fun dog(id: String, name: String, lat: Double, lon: Double) = Dog(
         id = id, name = name, breed = null, weightKg = 12f, photoUri = null,
         ownerName = "", ownerPhone = null, address = "", latitude = lat, longitude = lon,
-        stopNotes = null, notes = null,
+        stopNotes = null, notes = null, inCargoBike = TransportState.Yes,
     )
 
     private fun option(dog: Dog, minutes: Int) = WalkOption(

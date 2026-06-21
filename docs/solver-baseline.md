@@ -9,13 +9,13 @@ Data: 10 dogs, 15 schedule rules. Settings: cycling 15.0km/h, walking 3.0km/h, b
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 6h30m | 6h31m | 6h35m | 6h54m |
-| cycling | 45m | 45m | 55m | 1h18m |
-| on-foot | 3h15m | 3h55m | 3h59m | 4h50m |
-| bike mounts | 2 | 2.0 | 2.6 | 4 |
-| dwell walk | 56m | 1h34m | 1h35m | 2h30m |
-| idle | 0m | 0m | 5m | 15m |
-| over-walk | 1h18m | 2h35m | 2h44m | 4h17m |
+| day length | 6h30m | 6h30m | 6h34m | 6h54m |
+| cycling | 45m | 45m | 50m | 1h18m |
+| on-foot | 3h15m | 4h25m | 4h11m | 4h50m |
+| bike mounts | 2 | 2.0 | 2.3 | 4 |
+| dwell walk | 53m | 1h07m | 1h25m | 2h30m |
+| idle | 0m | 5m | 7m | 26m |
+| over-walk | 1h18m | 2h35m | 2h40m | 4h17m |
 
 ## Tuesday — 8 walk options
 
@@ -48,13 +48,13 @@ Data: 10 dogs, 15 schedule rules. Settings: cycling 15.0km/h, walking 3.0km/h, b
 | metric | min | median | mean | max |
 |---|---|---|---|---|
 | conflicts | 0 | 0.0 | 0.0 | 0 |
-| day length | 5h47m | 6h32m | 6h35m | 7h17m |
-| cycling | 47m | 1h20m | 1h18m | 1h48m |
-| on-foot | 1h44m | 2h21m | 2h32m | 3h41m |
-| bike mounts | 2 | 4.0 | 3.9 | 6 |
-| dwell walk | 1h00m | 2h49m | 2h40m | 3h33m |
+| day length | 6h20m | 6h32m | 6h38m | 7h17m |
+| cycling | 47m | 1h20m | 1h24m | 2h02m |
+| on-foot | 1h07m | 2h19m | 2h17m | 2h45m |
+| bike mounts | 2 | 4.0 | 4.3 | 7 |
+| dwell walk | 2h28m | 2h49m | 2h53m | 3h33m |
 | idle | 0m | 0m | 4m | 42m |
-| over-walk | 32m | 1h05m | 1h34m | 3h05m |
+| over-walk | 32m | 1h07m | 1h35m | 3h05m |
 
 ## Friday — 8 walk options
 

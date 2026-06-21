@@ -52,3 +52,20 @@ fun WalkSpan.footCreditSeconds(events: List<RouteEvent>): Int {
         .filter { it !== pickup && it.timeSeconds in pickup.timeSeconds..drop.timeSeconds }
         .sumOf { it.onFootSeconds }
 }
+
+/**
+ * Total seconds the dog actually walks in this span: the in-place [RouteEvent.Walk]
+ * dwells it joins, plus its on-foot travel ([footCreditSeconds]). This is the
+ * single definition of "walked" shared by the [WalkDuration] constraint and the
+ * objective's over-walk term, so the two never drift apart. 0 for an open span.
+ */
+fun WalkSpan.walkedSeconds(events: List<RouteEvent>): Int {
+    val drop = dropoff ?: return 0
+    val dogId = pickup.dog.id
+    val range = pickup.timeSeconds..drop.timeSeconds
+    val dwell = events
+        .filterIsInstance<RouteEvent.Walk>()
+        .filter { it.timeSeconds in range && it.dogs.any { d -> d.id == dogId } }
+        .sumOf { it.durationSeconds }
+    return dwell + footCreditSeconds(events)
+}

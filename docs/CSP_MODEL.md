@@ -523,12 +523,17 @@ unplaced options (conflicts), then (2) lower `score()`:
 
 ```
 score = elapsed_seconds
-      + cyclingWeight · cycling_seconds
+      + cyclingWeight  · cycling_seconds
+      + overWalkWeight · Σ_span max(0, walked(span) − required(span))
       + OVERSIZE_PENALTY · Σ_w max(0, |dogs(w)| − G_pref)
 ```
 
-The oversize term is how the soft "prefer at most 3 per walk" preference is expressed
-(C7 is only the hard ceiling of 4). `domain/dayplan/DayPlanner.kt`:
+The over-walk term lightly discourages walking a dog longer than its rule asks
+(`overWalkWeight` default 0.1 — a minute of over-walk costs a tenth of a minute
+of day, so a longer walk is readily accepted to shorten the day, but free
+over-walk is trimmed). `walked(span)` is the shared `WalkSpan.walkedSeconds`
+(C4). The oversize term is how the soft "prefer at most 3 per walk" preference
+is expressed (C7 is only the hard ceiling of 4). `domain/dayplan/DayPlanner.kt`:
 
 ```kotlin
 private fun Solution.isBetterThan(other: Solution): Boolean = when {
@@ -537,6 +542,7 @@ private fun Solution.isBetterThan(other: Solution): Boolean = when {
 }
 private fun Solution.score(): Long =
     elapsedSeconds().toLong() + (cyclingWeight * cyclingSeconds()).toLong() +
+        (overWalkWeight * overWalkSeconds()).toLong() +
         dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
 ```
 

@@ -148,6 +148,7 @@ class DayPlanService(
             cyclingSpeedKmh = inputs.settings.cyclingSpeedKmh,
             incompatibilities = pairs,
             cyclingWeight = inputs.settings.cyclingWeight,
+            overWalkWeight = inputs.settings.overWalkWeight,
             walkingSpeedKmh = inputs.settings.walkingSpeedKmh,
             bikeOverheadSeconds = inputs.settings.bikeOverheadMinutes * 60,
             lnsIterations = inputs.settings.lnsIterations,

@@ -303,6 +303,7 @@ class SolverHarness {
         cyclingSpeedKmh = settings.cyclingSpeedKmh,
         incompatibilities = pairs,
         cyclingWeight = settings.cyclingWeight,
+        overWalkWeight = settings.overWalkWeight,
         walkingSpeedKmh = settings.walkingSpeedKmh,
         bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
         restarts = restarts,

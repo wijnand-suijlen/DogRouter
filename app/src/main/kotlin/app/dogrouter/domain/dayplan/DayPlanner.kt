@@ -72,6 +72,10 @@ class DayPlanner(
     // Weight of cycling time in the objective, relative to day length (1.0 =
     // a minute saved cycling is worth a minute longer day). See AppSettings.
     private val cyclingWeight: Float = 1f,
+    // Weight of over-walk (minutes walked beyond a dog's required duration) in
+    // the objective, relative to day length. Light by design; 0 = ignore. The
+    // default is 0 so existing tests/harness see the old objective unless set.
+    private val overWalkWeight: Float = 0f,
     // On-foot group pace, and the fixed overhead added to every bike ride
     // (load dogs in the box, unlock, helmet, and the reverse on arrival).
     private val walkingSpeedKmh: Float = 3f,
@@ -483,11 +487,20 @@ class DayPlanner(
     private fun Solution.score(): Long =
         elapsedSeconds().toLong() +
             (cyclingWeight * cyclingSeconds()).toLong() +
+            (overWalkWeight * overWalkSeconds()).toLong() +
             dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
 
     /** Pure ride time (excludes the on-foot walk-back folded into a bike leg). */
     private fun Solution.cyclingSeconds(): Int =
         events.sumOf { if (it.arrivedByFoot) 0 else it.incomingTravelSeconds - it.returnToBikeSeconds }
+
+    /** Seconds walked beyond what each dog's rule required, summed over every
+     *  pickup→dropoff span (the over-walk the objective lightly discourages). */
+    private fun Solution.overWalkSeconds(): Int =
+        events.walkSpans().sumOf { span ->
+            val required = span.pickup.rule.durationMinutes * 60
+            (span.walkedSeconds(events) - required).coerceAtLeast(0)
+        }
 
     private fun Solution.dogsOverPreferred(): Int =
         events.filterIsInstance<RouteEvent.Walk>()

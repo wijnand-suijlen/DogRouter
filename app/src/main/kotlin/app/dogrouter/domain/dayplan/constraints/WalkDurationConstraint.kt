@@ -2,8 +2,8 @@ package app.dogrouter.domain.dayplan.constraints
 
 import app.dogrouter.domain.dayplan.PlanningConstraint
 import app.dogrouter.domain.dayplan.RouteEvent
-import app.dogrouter.domain.dayplan.footCreditSeconds
 import app.dogrouter.domain.dayplan.walkSpans
+import app.dogrouter.domain.dayplan.walkedSeconds
 
 /**
  * For every pickup→dropoff occurrence (see [walkSpans]):
@@ -19,20 +19,13 @@ import app.dogrouter.domain.dayplan.walkSpans
  */
 class WalkDurationConstraint : PlanningConstraint {
     override fun violation(events: List<RouteEvent>): String? {
-        val walks = events.filterIsInstance<RouteEvent.Walk>()
-
         for (span in events.walkSpans()) {
             val pickup = span.pickup
-            val dropoff = span.dropoff ?: return "${pickup.dog.name} has no dropoff"
-            val dogId = pickup.dog.id
-            val range = pickup.timeSeconds..dropoff.timeSeconds
+            span.dropoff ?: return "${pickup.dog.name} has no dropoff"
 
             // Dwell-walk events the dog takes part in, plus on-foot travel
             // legs in its span (while aboard the dog walks with the group).
-            val dwellWalked = walks
-                .filter { walk -> walk.timeSeconds in range && walk.dogs.any { it.id == dogId } }
-                .sumOf { it.durationSeconds }
-            val totalWalked = dwellWalked + span.footCreditSeconds(events)
+            val totalWalked = span.walkedSeconds(events)
 
             val required = pickup.rule.durationMinutes * 60
             if (totalWalked < required) {

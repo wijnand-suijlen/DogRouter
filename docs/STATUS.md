@@ -76,19 +76,21 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
    and cut median day length materially. Still greedy *within* a repair, and
    no SA / group moves / 2-opt yet (#4/#3/#5), but the "never reconsiders"
    plateau is broken.
-2. **Cost function — day length plus a cycling term (partly redesigned).**
+2. **Cost function — day length + cycling + over-walk (redesigned).**
    `isBetterThan` → `score()` = elapsed seconds + **`cyclingWeight` ×
-   ride-seconds** + a big per-dog-over-`preferredGroupSize` penalty.
+   ride-seconds** + **`overWalkWeight` × over-walk-seconds** + a big
+   per-dog-over-`preferredGroupSize` penalty.
    The cycling term (added 2026-06-20, `AppSettings.cyclingWeight`, default
    1.0, tunable on Settings) fixed the makespan-only flatness that wasted
-   cycling hidden in idle (the "weird Tuesday" detour + needlessly early
-   start): median cycling dropped 30–53 min/day on the baseline for 0–17 min
-   more day length. **Still NOT penalised: over-walking and idle/waiting.**
-   Over-walk remains uncontrolled — with the on-foot model done (#3), foot
-   legs are "free" walk time, so the objective still over-uses them (foot
-   overshoot) and groups a short-requirement dog into a longer dog's walk.
-   A light, tunable **over-walk** term alongside day length + cycling is the
-   remaining objective work (was deferred; the cycling half is now done).
+   cycling hidden in idle: median cycling dropped 30–53 min/day on the baseline
+   for 0–17 min more day length. The **over-walk term** (added 2026-06-21,
+   `AppSettings.overWalkWeight`, default **0.1**, tunable on Settings; light by
+   design per the walker — a dog may walk ~30 min longer to save ~5 min of day)
+   cut median over-walk substantially (e.g. Mon 2h40→1h26, Wed 3h13→1h48) with
+   day-length medians flat or better (Thu 6h47→6h28), conflicts still 0 — only
+   a worst-seed tail on Monday got longer (heuristic). Over-walk uses the shared
+   `WalkSpan.walkedSeconds` (same accounting as the `WalkDuration` constraint).
+   **Still NOT penalised: idle/waiting.**
 3. ~~**On-foot model is half-done.**~~ **DONE (2026-06-20).** `retimeAndCost`
    is now three phases — **legs** (foot vs bike, position-only, dwell-
    independent), **dwell** (`effectiveDwells`), **times**. The in-place
@@ -180,9 +182,9 @@ baseline: over-walk is mixed / slightly up.)
 
 ## Other directions (later)
 
-- **Objective redesign** (#2): cycling term DONE (`cyclingWeight`); the
-  remaining piece is a light, tunable **over-walk** term alongside day length
-  + cycling, weights tuned against the baseline.
+- **Objective redesign** (#2): DONE — cycling term (`cyclingWeight`) and a
+  light over-walk term (`overWalkWeight`, default 0.1). Remaining objective
+  idea: an idle/waiting term (still unpenalised).
 - **Capacity bike-leg-only** (#4 in the weakness list): on a foot phase dogs
   are on leashes, not in the box — adjacent to the finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
@@ -312,7 +314,8 @@ stronger near-optimality signal; a practical LNS early-stop would be
 Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
 `stopBufferMinutes`, `cyclingSpeedKmh`, **`walkingSpeedKmh`** (3),
 **`bikeOverheadMinutes`** (3), **`cyclingWeight`** (1.0, objective term),
-**`lnsIterations`** (200, user slider 0–500), the break window/duration/
+**`overWalkWeight`** (0.1, objective term), **`lnsIterations`** (200, user
+slider 0–500), the break window/duration/
 locations + `homeLunchMinFreeMinutes`, and home coordinates.
 
 Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
@@ -344,9 +347,9 @@ randomised property test asserts the solver never emits an infeasible plan;
   incompatibility chips, and schedule rules (weekdays; start-from /
   start-by / home-by; duration; "either/or" flag).
 - **Settings**: home picker, cycling speed, **walking speed**, bike
-  capacity, stop buffer, **bike mount/dismount overhead**, BRouter map
-  download + self-test, and **data export/import** (SAF; import replaces
-  all, behind a confirm dialog).
+  capacity, stop buffer, **bike mount/dismount overhead**, cycling weight,
+  **over-walk weight**, search effort, BRouter map download + self-test, and
+  **data export/import** (SAF; import replaces all, behind a confirm dialog).
 - **Today**: PDPTW timeline with date picker, summary (on-the-clock /
   cycling / walking), conflict panel, **refresh** (new seed → alternative
   plan), "Start trip" FAB, per-leg "on foot"/"cycling" label + tap-to-open
@@ -373,7 +376,7 @@ data/
            DogIncompatibility, TransportState
   db/      AppDatabase (v8), DogDao, DogScheduleDao,
            DogIncompatibilityDao, AppointmentDao, Migrations, Converters
-  prefs/   AppSettings (incl. cyclingWeight, lnsIterations, break fields),
+  prefs/   AppSettings (incl. cyclingWeight, overWalkWeight, lnsIterations, break fields),
            BreakLocation, SettingsRepository (DataStore)
   backup/  BackupModels (JSON DTOs), BackupRepository (export/import)
   remote/  AddressSuggestion, BanApi

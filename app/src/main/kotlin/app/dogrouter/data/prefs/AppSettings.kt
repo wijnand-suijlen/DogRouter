@@ -28,6 +28,11 @@ data class AppSettings(
     // the planner's objective. 1.0 = equal (a minute saved cycling is worth a
     // minute longer day); higher avoids cycling more; 0 = only day length.
     val cyclingWeight: Float,
+    // How much a minute walked beyond a dog's required duration counts against
+    // a minute of day length. Kept light (default 0.1): an extra half hour of
+    // walking is fine to save a few minutes of day, but free over-walk is
+    // trimmed. 0 = ignore over-walk entirely.
+    val overWalkWeight: Float,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -64,6 +69,7 @@ data class AppSettings(
             walkingSpeedKmh = 3f,
             bikeOverheadMinutes = 3,
             cyclingWeight = 1f,
+            overWalkWeight = 0.1f,
             homeAddress = "",
             homeLatitude = null,
             homeLongitude = null,

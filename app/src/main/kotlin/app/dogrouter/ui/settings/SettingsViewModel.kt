@@ -49,6 +49,8 @@ data class SettingsFormState(
     val bikeOverheadValid: Boolean,
     val cyclingWeightText: String,
     val cyclingWeightValid: Boolean,
+    val overWalkWeightText: String,
+    val overWalkWeightValid: Boolean,
     val lnsIterations: Int,
     val homeAddress: String,
     val homeLatitude: Double?,
@@ -68,6 +70,8 @@ data class SettingsFormState(
             bikeOverheadValid = true,
             cyclingWeightText = settings.cyclingWeight.formatLight(),
             cyclingWeightValid = true,
+            overWalkWeightText = settings.overWalkWeight.formatLight(),
+            overWalkWeightValid = true,
             lnsIterations = settings.lnsIterations,
             homeAddress = settings.homeAddress,
             homeLatitude = settings.homeLatitude,
@@ -153,6 +157,12 @@ class SettingsViewModel(
         val parsed = text.replace(',', '.').toFloatOrNull()?.takeIf { it >= 0f }
         _form.update { it?.copy(cyclingWeightText = text, cyclingWeightValid = parsed != null) }
         parsed?.let { weight -> viewModelScope.launch { repo.setCyclingWeight(weight) } }
+    }
+
+    fun onOverWalkWeightTextChange(text: String) {
+        val parsed = text.replace(',', '.').toFloatOrNull()?.takeIf { it >= 0f }
+        _form.update { it?.copy(overWalkWeightText = text, overWalkWeightValid = parsed != null) }
+        parsed?.let { weight -> viewModelScope.launch { repo.setOverWalkWeight(weight) } }
     }
 
     fun onLnsIterationsChange(iterations: Int) {

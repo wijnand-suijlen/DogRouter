@@ -143,6 +143,7 @@ fun SettingsScreen(
                 onWalkingSpeedChange = viewModel::onWalkingSpeedTextChange,
                 onBikeOverheadChange = viewModel::onBikeOverheadTextChange,
                 onCyclingWeightChange = viewModel::onCyclingWeightTextChange,
+                onOverWalkWeightChange = viewModel::onOverWalkWeightTextChange,
                 onLnsIterationsChange = viewModel::onLnsIterationsChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
@@ -207,6 +208,7 @@ private fun SettingsForm(
     onWalkingSpeedChange: (String) -> Unit,
     onBikeOverheadChange: (String) -> Unit,
     onCyclingWeightChange: (String) -> Unit,
+    onOverWalkWeightChange: (String) -> Unit,
     onLnsIterationsChange: (Int) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
@@ -351,6 +353,23 @@ private fun SettingsForm(
                     if (!state.cyclingWeightValid) "Enter zero or a positive number"
                     else "How much a minute of cycling counts against a minute of " +
                         "day length. 1 = equal; higher avoids cycling more; 0 = only day length.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = state.overWalkWeightText,
+            onValueChange = onOverWalkWeightChange,
+            label = { Text("Over-walk weight") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            isError = !state.overWalkWeightValid,
+            supportingText = {
+                Text(
+                    if (!state.overWalkWeightValid) "Enter zero or a positive number"
+                    else "How much a minute walked beyond a dog's required time counts " +
+                        "against a minute of day length. Keep it light (e.g. 0.1); 0 = ignore.",
                 )
             },
             modifier = Modifier.fillMaxWidth(),

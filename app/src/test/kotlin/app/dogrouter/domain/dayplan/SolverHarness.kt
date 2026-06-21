@@ -74,6 +74,10 @@ class SolverHarness {
         val pairs = incompatibilities.map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
         val days = onlyDay?.let { listOf(it) } ?: daysWithRules(rules)
 
+        // Every produced plan is checked against the full CSP (docs/CSP_MODEL.md)
+        // via PlanVerifier; any violation on the real data fails the run loudly.
+        val allViolations = mutableListOf<String>()
+
         for (dow in days) {
             val date = monday.plusDays((dow.value - 1).toLong())
             val options = buildOptions(date, dogs, rules)
@@ -88,6 +92,20 @@ class SolverHarness {
             appendTimeline(report, route, settings)
             report.appendLine()
             appendMetrics(report, route, settings, nanos)
+
+            val violations = PlanVerifier.violations(
+                route = route,
+                capacityKg = settings.bikeCapacityKg,
+                stopBufferSeconds = settings.stopBufferMinutes * 60,
+                incompatibilities = pairs,
+            )
+            if (violations.isEmpty()) {
+                report.appendLine("  CSP check: OK")
+            } else {
+                report.appendLine("  CSP check: ${violations.size} VIOLATION(S)")
+                violations.forEach { report.appendLine("    ✗ $it") }
+                allViolations += violations.map { "${dayName(dow)}: $it" }
+            }
             report.appendLine()
         }
 
@@ -98,6 +116,13 @@ class SolverHarness {
         out.parentFile?.mkdirs()
         out.writeText(text)
         println("Full report written to ${out.absolutePath}")
+
+        // The solver must never hand back an infeasible plan; surface it loudly
+        // after the report so the full timeline is still available to inspect.
+        check(allViolations.isEmpty()) {
+            "PlanVerifier found ${allViolations.size} CSP violation(s) on the real data:\n" +
+                allViolations.joinToString("\n")
+        }
     }
 
     /**

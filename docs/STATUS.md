@@ -326,6 +326,16 @@ off-device `SolverHarness.kt` (the laptop harness above — not an assertion
 test; `runSolverOnRealData` prints, `baselineAcrossSeeds` regenerates the
 baseline; both honour `-Dsolver.lns=N`).
 
+`PlanVerifier.kt` (+ `PlanVerifierTest.kt`) is an executable check of the CSP
+(`docs/CSP_MODEL.md`) on a FINAL `DayRoute` — the plan after the presentation
+pass, which the in-search constraints never see. It reuses the constraint
+objects for C1–C8 and re-implements C9–C11 independently (C11 pragmatic). A
+randomised property test asserts the solver never emits an infeasible plan;
+`runSolverOnRealData` now also runs it per day and fails on any violation.
+Caveat: the C9 on-foot group cap excludes `FetchBike` (the walk-back to the
+bike is part of a bike leg and is not capped by the solver — an open model
+question).
+
 ---
 
 # What works today (app surface — reference)

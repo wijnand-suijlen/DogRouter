@@ -121,10 +121,19 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 6. **Single continuous tour.** One HomeStart→…→HomeEnd tour; no notion of
    multiple home-returning trips. Interleaving pickups/dropoffs under
    capacity is the only structure available.
-7. **Distance matrix rebuilt per plan; no cross-date cache.**
-   `DistanceMatrix.build` calls BRouter once per point-pair on every
-   uncached plan. Fine for ≤10 dogs but it is the slow part and is
-   on-device only — the reason iterating on the phone is painful.
+7. ~~**Distance matrix rebuilt per plan; no cross-date cache.**~~ **DONE
+   (2026-06-22).** `RouteDistanceCache` (`domain/routing/`, a DI `single`)
+   memoises BRouter distances per **unordered point-pair**, persisted to a JSON
+   file in `filesDir` (lazy load, debounced atomic save). Road distance depends
+   only on the endpoints, so the same pair is reused across every weekday and
+   across app restarts; one new/moved address routes only its own ~N pairs, not
+   a full N² rebuild. Mirrors `LegGeometryCache`: keyed on exact coords, a
+   routing failure is NOT cached (straight-line fallback, retried). Invalidated
+   when the installed BRouter data fingerprint (segment + profile file
+   sizes/mtimes) changes. No eviction (stays well under ~1 MB for years).
+   `DistanceMatrix.build(..., routeCache)` uses it; `null` = no cache
+   (tests/harness). Wired through `DayPlanner` (ctor `routeCache`) and
+   `DayPlanService`.
 8. **dayStart/dayEnd hardcoded 08:00–20:00** in the `DayPlanner` ctor.
 
 ## ►► ACTIVE: solver algorithm — LNS roadmap ◄◄
@@ -143,10 +152,12 @@ makespan gain:
    `rand^bias` pick) — and greedily re-inserts them (plus any unplaced, so a
    freed slot can rescue a conflict) with `tryInsertOption`, hill-climbing on
    `score()`. One `Random(seed)` drives it all, so plans stay deterministic /
-   cacheable. `lnsIterations` defaults to `DEFAULT_LNS_ITERATIONS = 200`
-   (tuned: day length plateaus by ~200, identical at 500/1k/3k; ~2 s/plan,
-   ~5 s heaviest day, haversine) and is now **user-tunable on Settings**
-   (`AppSettings.lnsIterations`, a 0–500 slider) to trade quality for speed. Measured gain vs the old multi-start:
+   cacheable. `lnsIterations` defaults to `DEFAULT_LNS_ITERATIONS = 25`
+   (re-tuned 2026-06-22 by the restarts × LNS sweep on the true `score()`
+   objective; was 200, well past the plateau) and is **user-tunable on
+   Settings** (`AppSettings.lnsIterations`, a 0–100 slider) to trade quality
+   for speed. (The search is now multi-start LNS — see the design section —
+   so total LNS work is restarts × lnsIterations.) Measured gain vs the old multi-start:
    median day length **Mon 7h16→6h30, Thu 7h25→6h35, Wed 7h49→7h28, Fri
    7h21→7h15**, Tue ~unchanged, and the per-seed spread collapses (every
    seed now reaches essentially the same near-optimum). `docs/solver-
@@ -228,16 +239,22 @@ stronger near-optimality signal; a practical LNS early-stop would be
 
 `domain/dayplan/` — all JVM-pure:
 
-- **`DayPlanner.kt`**: **multi-start greedy seeding an LNS pass.**
+- **`DayPlanner.kt`**: **multi-start LNS.**
   `plan(date, options: List<WalkOption>, seed)` builds a `DistanceMatrix`
-  once, runs `restarts` (default 60) greedy builds — restart 0 deadline-
-  sorted, the rest `Random(seed)` shuffles — to get an incumbent `Solution`,
-  then runs `lnsIterations` (default 200) of **ruin-and-recreate**
-  (`ruinAndRecreate`: random / `worstOptions` removal → `remove` → `repair`),
-  hill-climbing on `isBetterThan` (fewest conflicts, then lowest `score()` =
-  elapsed + `cyclingWeight`×ride-seconds + group-oversize penalty). One
-  `Random(seed)` drives multi-start,
-  ruin and repair, so plans are deterministic / cacheable. A **`Solution`**
+  once, then runs `restarts` (default 8) restarts — restart 0 deadline-
+  sorted, the rest `Random(seed)` shuffles. **Each restart builds one greedy
+  seed and then runs its OWN LNS pass** of `lnsIterations` (default 25)
+  **ruin-and-recreate** iterations (`ruinAndRecreate`: random / `worstOptions`
+  removal → `remove` → `repair`), hill-climbing on `isBetterThan` (fewest
+  conflicts, then lowest `score()` = elapsed + `cyclingWeight`×ride-seconds +
+  `overWalkWeight`×over-walk + group-oversize penalty); the global best across
+  restarts wins. Total LNS work = restarts × lnsIterations. One `Random(seed)`
+  drives every shuffle, ruin and repair in sequence, so plans are
+  deterministic / cacheable. **Both knobs are user-tunable on Settings**
+  (`AppSettings.restarts` 1–10, `lnsIterations` 0–100). Defaults set by the
+  restarts × LNS sweep (`SolverHarness.sweepRestartsAndLns`, `-Dsolver.sweep`):
+  the objective's big gains come by ~8 restarts / ~25 iterations, small past
+  them; pure multi-start (lns=0) gets stuck on oversize groups. A **`Solution`**
   (events + placed/unplaced options) is the working unit; `toDayRoute` makes
   the public result. `buildOnce` / `repair` insert each option via
   `tryInsertOption` → `tryInsert`: **Mode A** new pickup-walk-dropoff
@@ -314,9 +331,9 @@ stronger near-optimality signal; a practical LNS early-stop would be
 Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
 `stopBufferMinutes`, `cyclingSpeedKmh`, **`walkingSpeedKmh`** (3),
 **`bikeOverheadMinutes`** (3), **`cyclingWeight`** (1.0, objective term),
-**`overWalkWeight`** (0.1, objective term), **`lnsIterations`** (200, user
-slider 0–500), the break window/duration/
-locations + `homeLunchMinFreeMinutes`, and home coordinates.
+**`overWalkWeight`** (0.1, objective term), **`restarts`** (8, user slider
+1–10) and **`lnsIterations`** (25, user slider 0–100), the break
+window/duration/locations + `homeLunchMinFreeMinutes`, and home coordinates.
 
 Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
 router; covers the 19-June report, two-rule dogs, splitting, determinism,

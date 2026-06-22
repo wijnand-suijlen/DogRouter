@@ -66,7 +66,7 @@ class SolverHarness {
         report.appendLine()
 
         val onlyDay = System.getProperty("solver.day")?.let { DayOfWeek.valueOf(it.uppercase()) }
-        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: 60
+        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: DayPlanner.DEFAULT_RESTARTS
         val seed = System.getProperty("solver.seed")?.toLongOrNull() ?: 0L
 
         // A reference week: 2026-06-22 is a Monday, so day N is +N days.
@@ -92,6 +92,7 @@ class SolverHarness {
             appendTimeline(report, route, settings)
             report.appendLine()
             appendMetrics(report, route, settings, nanos)
+            if (SolverProfile.enabled) report.appendLine(SolverProfile.dump())
 
             val violations = PlanVerifier.violations(
                 route = route,
@@ -149,7 +150,7 @@ class SolverHarness {
             .map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
 
         val seedCount = System.getProperty("solver.baselineSeeds")?.toIntOrNull() ?: 10
-        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: 60
+        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: DayPlanner.DEFAULT_RESTARTS
         val monday = LocalDate.of(2026, 6, 22)
         val days = daysWithRules(rules)
 
@@ -188,6 +189,133 @@ class SolverHarness {
         println(md.toString())
         println(solveTimes.toString())
         println("Baseline written to ${out.absolutePath}")
+    }
+
+    /**
+     * Sweep over the restarts × LNS grid to see which is the bigger quality
+     * lever and where each plateaus — the data that sets the Settings slider
+     * ranges. Gated behind -Dsolver.sweep. Runs one day (default WEDNESDAY) over
+     * several seeds per cell and prints a median-day-length matrix and a
+     * mean-solve-time matrix. Knobs:
+     *
+     *   -Dsolver.sweep            enable
+     *   -Dsolver.day=WEDNESDAY    which weekday (default WEDNESDAY)
+     *   -Dsolver.sweepSeeds=3     seeds per cell (median over them)
+     *   -Dsolver.sweepRestarts=1,2,4,8,16
+     *   -Dsolver.sweepLns=0,10,25,50,100
+     */
+    @Test
+    fun sweepRestartsAndLns() = runBlocking {
+        Assume.assumeTrue("set -Dsolver.sweep", System.getProperty("solver.sweep") != null)
+        val backup = loadBackup()
+        val settings = backup.settings.toAppSettings()
+        val dogs = backup.dogs.map { it.toEntity() }
+        val rules = backup.scheduleRules.map { it.toEntity() }
+        val pairs = backup.incompatibilities.map { it.toEntity() }
+            .map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
+
+        fun grid(prop: String, default: List<Int>) =
+            System.getProperty(prop)?.split(",")?.mapNotNull { it.trim().toIntOrNull() }
+                ?.takeIf { it.isNotEmpty() } ?: default
+        val restartsGrid = grid("solver.sweepRestarts", listOf(1, 2, 4, 8, 16))
+        val lnsGrid = grid("solver.sweepLns", listOf(0, 10, 25, 50, 100))
+        val seeds = System.getProperty("solver.sweepSeeds")?.toIntOrNull() ?: 3
+
+        val dow = System.getProperty("solver.day")?.let { DayOfWeek.valueOf(it.uppercase()) }
+            ?: DayOfWeek.WEDNESDAY
+        val date = LocalDate.of(2026, 6, 22).plusDays((dow.value - 1).toLong())
+        val options = buildOptions(date, dogs, rules)
+
+        // cell -> medians across seeds. The objective is the EXACT score the
+        // solver minimised (SolverProfile.lastScoreSec, set inside plan()), not
+        // a post-presentation proxy — the latter diverges from it (cycling /
+        // over-walk are accounted differently after the bike-fetch split).
+        data class Cell(val medianObjSec: Int, val medianDaySec: Int, val meanMs: Int, val maxConflicts: Int)
+        val cells = HashMap<Pair<Int, Int>, Cell>()
+        val totalStart = System.nanoTime()
+        for (r in restartsGrid) {
+            for (lns in lnsGrid) {
+                val objs = ArrayList<Int>(seeds)
+                val dayLens = ArrayList<Int>(seeds)
+                val times = ArrayList<Int>(seeds)
+                var maxConf = 0
+                for (seed in 0 until seeds) {
+                    val planner = plannerFor(settings, pairs, restarts = r, lns = lns)
+                    lateinit var route: DayRoute
+                    val nanos = measureNanoTime { route = planner.plan(date, options, seed.toLong()) }
+                    val m = computeMetrics(route, settings, nanos)
+                    objs += SolverProfile.lastScoreSec.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    dayLens += m.dayLengthSec
+                    times += (m.solveMs).roundToInt()
+                    maxConf = maxOf(maxConf, m.conflicts)
+                }
+                cells[r to lns] = Cell(
+                    medianObjSec = statsOf(objs).median.roundToInt(),
+                    medianDaySec = statsOf(dayLens).median.roundToInt(),
+                    meanMs = statsOf(times).mean.roundToInt(),
+                    maxConflicts = maxConf,
+                )
+            }
+        }
+        val totalSec = (System.nanoTime() - totalStart) / 1_000_000_000.0
+
+        val sb = StringBuilder()
+        sb.appendLine("=".repeat(72))
+        sb.appendLine("RESTARTS × LNS SWEEP — ${dayName(dow)} ($date), ${options.size} walk options")
+        sb.appendLine("Medians over $seeds seeds (haversine). Lower = better.")
+        sb.appendLine("Architecture: multi-start LNS (each restart runs its own LNS pass).")
+        sb.appendLine("Objective = day length + ${settings.cyclingWeight}×cycling + " +
+            "${settings.overWalkWeight}×over-walk (what the solver minimises).")
+        sb.appendLine("=".repeat(72))
+
+        fun header() = "restarts \\ lns | " + lnsGrid.joinToString(" | ") { it.toString().padStart(7) }
+        sb.appendLine()
+        // Decode the group-oversize penalty baked into score() so a cell with a
+        // 4-dog walk reads "Nx" (N dogs over preferred) instead of a ~277h blob.
+        val oversizePenalty = 1_000_000 // OVERSIZE_PENALTY_SECONDS in DayPlanner
+        fun objCell(c: Cell): String {
+            val over = c.medianObjSec / oversizePenalty
+            val base = c.medianObjSec % oversizePenalty
+            val conf = if (c.maxConflicts > 0) "!" else ""
+            val os = if (over > 0) "+${over}x" else ""
+            return (minutesOf(base) + os + conf)
+        }
+        sb.appendLine("OBJECTIVE (median, the real quality axis; +Nx = N dogs over group pref):")
+        sb.appendLine(header())
+        for (r in restartsGrid) {
+            val row = lnsGrid.joinToString(" | ") { lns -> objCell(cells[r to lns]!!).padStart(7) }
+            sb.appendLine("${r.toString().padStart(14)} | $row")
+        }
+
+        sb.appendLine()
+        sb.appendLine("DAY LENGTH (median, user's primary criterion):")
+        sb.appendLine(header())
+        for (r in restartsGrid) {
+            val row = lnsGrid.joinToString(" | ") { lns ->
+                minutesOf(cells[r to lns]!!.medianDaySec).padStart(7)
+            }
+            sb.appendLine("${r.toString().padStart(14)} | $row")
+        }
+
+        sb.appendLine()
+        sb.appendLine("SOLVE TIME (mean ms):")
+        sb.appendLine(header())
+        for (r in restartsGrid) {
+            val row = lnsGrid.joinToString(" | ") { lns ->
+                cells[r to lns]!!.meanMs.toString().padStart(7)
+            }
+            sb.appendLine("${r.toString().padStart(14)} | $row")
+        }
+        sb.appendLine()
+        sb.appendLine("(! = at least one seed had unplaced-dog conflicts)")
+        sb.appendLine("Total sweep wall-clock: ${"%.1f".format(totalSec)} s")
+
+        val text = sb.toString()
+        println(text)
+        val out = File("build/solver-sweep.txt")
+        out.parentFile?.mkdirs()
+        out.writeText(text)
+        println("Sweep written to ${out.absolutePath}")
     }
 
     /** Print raw routing distances (BRouter vs straight line) for a weekday's
@@ -295,6 +423,9 @@ class SolverHarness {
         settings: AppSettings,
         pairs: Set<Pair<String, String>>,
         restarts: Int,
+        // Explicit LNS count for the sweep; null falls back to -Dsolver.lns or
+        // the planner's adopted default (used by the other harness entry points).
+        lns: Int? = null,
     ) = DayPlanner(
         routingProvider = harnessRouting(),
         home = settings.homeGeoPoint(),
@@ -309,7 +440,8 @@ class SolverHarness {
         restarts = restarts,
         // -Dsolver.lns=N to experiment with the LNS pass (0 = pure multi-start);
         // defaults to the planner's adopted value so the baseline reflects it.
-        lnsIterations = System.getProperty("solver.lns")?.toIntOrNull()
+        lnsIterations = lns
+            ?: System.getProperty("solver.lns")?.toIntOrNull()
             ?: DayPlanner.DEFAULT_LNS_ITERATIONS,
     )
 

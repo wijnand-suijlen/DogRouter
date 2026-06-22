@@ -11,6 +11,7 @@ import app.dogrouter.domain.dayplan.constraints.TimeWindowConstraint
 import app.dogrouter.domain.dayplan.constraints.WalkDurationConstraint
 import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
+import app.dogrouter.domain.routing.RouteDistanceCache
 import app.dogrouter.domain.routing.RoutingProvider
 import java.time.LocalDate
 import kotlin.math.ceil
@@ -64,6 +65,9 @@ private const val MATRIX_PROGRESS_FRACTION = 0.6f
  */
 class DayPlanner(
     private val routingProvider: RoutingProvider,
+    // Optional cross-day / cross-launch distance cache (see RouteDistanceCache).
+    // Null = build every matrix from scratch (the default for tests/harness).
+    private val routeCache: RouteDistanceCache? = null,
     private val home: GeoPoint?,
     private val capacityKg: Float,
     private val stopBufferSeconds: Int,
@@ -82,12 +86,12 @@ class DayPlanner(
     private val bikeOverheadSeconds: Int = 0,
     private val dayStartSeconds: Int = 8 * 3600,
     private val dayEndSeconds: Int = 20 * 3600,
-    private val restarts: Int = 60,
-    // Large-neighbourhood search after the multi-start: each iteration ruins
-    // a few placed walks and greedily re-inserts them, keeping the result if
-    // it scores better. 0 disables LNS (pure multi-start, the old behaviour).
-    // Default tuned against the seed sweep: day length plateaus by ~200
-    // iterations (see docs/STATUS.md / docs/solver-baseline.md).
+    private val restarts: Int = DEFAULT_RESTARTS,
+    // Large-neighbourhood search run per restart: each iteration ruins a few
+    // placed walks and greedily re-inserts them, keeping the result if it
+    // scores better. 0 disables LNS (pure multi-start). Default tuned against
+    // the restarts × LNS sweep: the objective's big gains come by ~25
+    // iterations, small past it (see docs/STATUS.md).
     private val lnsIterations: Int = DEFAULT_LNS_ITERATIONS,
     private val lnsRemoveMin: Int = 1,
     private val lnsRemoveMax: Int = 3,
@@ -98,8 +102,11 @@ class DayPlanner(
     private val preferredGroupSize: Int = 3,
 ) {
     companion object {
-        /** LNS iterations the planner runs by default; see the ctor note. */
-        const val DEFAULT_LNS_ITERATIONS = 200
+        /** Multi-start seeds the planner builds by default; see the ctor note. */
+        const val DEFAULT_RESTARTS = 8
+
+        /** LNS iterations per restart the planner runs by default; see the ctor note. */
+        const val DEFAULT_LNS_ITERATIONS = 25
     }
 
     /**
@@ -152,9 +159,14 @@ class DayPlanner(
                 home + (breakSpec?.locations ?: emptyList()) +
                 sortedAppointments.map { it.location }
             ).toSet()
-        val matrix = DistanceMatrix.build(points, routingProvider) { done, total ->
-            onProgress(MATRIX_PROGRESS_FRACTION * done / total, PlanPhase.ROUTING)
-        }
+        val matrix = DistanceMatrix.build(
+            points,
+            routingProvider,
+            onPair = { done, total ->
+                onProgress(MATRIX_PROGRESS_FRACTION * done / total, PlanPhase.ROUTING)
+            },
+            routeCache = routeCache,
+        )
         val constraints = listOf(
             CapacityConstraint(capacityKg),
             TimeWindowConstraint(),
@@ -172,8 +184,10 @@ class DayPlanner(
         val rng = Random(seed)
         val deadlineOrder = routable.sortedBy { it.deadlineSeconds() }
         // The solver phase fills the bar from MATRIX_PROGRESS_FRACTION to 1
-        // across every multi-start build and every LNS iteration.
-        val solverSteps = restarts.coerceAtLeast(1) + lnsIterations.coerceAtLeast(0)
+        // across every multi-start build and every LNS iteration. Each restart
+        // does one greedy build plus its own LNS pass (multi-start LNS), so the
+        // step count is restarts × (1 build + lnsIterations).
+        val solverSteps = restarts.coerceAtLeast(1) * (1 + lnsIterations.coerceAtLeast(0))
         var solverDone = 0
         fun reportSolver() {
             solverDone++
@@ -183,22 +197,35 @@ class DayPlanner(
             )
         }
 
+        SolverProfile.enabled = System.getProperty("solver.profile").toBoolean()
+        if (SolverProfile.enabled) SolverProfile.reset()
+
+        // Multi-start LNS: each restart builds one greedy seed (restart 0 uses
+        // the deterministic deadline order, the rest random shuffles) and then
+        // runs its OWN LNS pass — ruin-and-recreate hill-climbing on score — on
+        // that seed. The global best across all restarts wins. Restarts escape
+        // local optima the single LNS would be stuck in; the LNS reconsiders
+        // structure within each. One Random(seed) drives every shuffle, ruin
+        // and repair in sequence, so the whole search stays deterministic.
         var best: Solution? = null
         repeat(restarts.coerceAtLeast(1)) { iteration ->
             val order = if (iteration == 0) deadlineOrder else routable.shuffled(rng)
-            val candidate = buildOnce(order, matrix, constraints, baseEvents)
-            if (best == null || candidate.isBetterThan(best!!)) best = candidate
+            val buildStart = if (SolverProfile.enabled) System.nanoTime() else 0L
+            var current = buildOnce(order, matrix, constraints, baseEvents)
+            if (SolverProfile.enabled) SolverProfile.restartNanos += System.nanoTime() - buildStart
             reportSolver()
-        }
 
-        // LNS: ruin-and-recreate around the incumbent, hill-climbing on score.
-        var current = best!!
-        repeat(lnsIterations.coerceAtLeast(0)) {
-            val candidate = ruinAndRecreate(current, matrix, constraints, rng)
-            if (candidate.isBetterThan(current)) current = candidate
-            if (current.isBetterThan(best!!)) best = current
-            reportSolver()
+            val lnsStart = if (SolverProfile.enabled) System.nanoTime() else 0L
+            repeat(lnsIterations.coerceAtLeast(0)) {
+                val candidate = ruinAndRecreate(current, matrix, constraints, rng)
+                if (candidate.isBetterThan(current)) current = candidate
+                reportSolver()
+            }
+            if (SolverProfile.enabled) SolverProfile.lnsNanos += System.nanoTime() - lnsStart
+
+            if (best == null || current.isBetterThan(best!!)) best = current
         }
+        SolverProfile.lastScoreSec = best!!.score()
 
         val withBreak = if (breakSpec != null) insertBreak(best!!, breakSpec, matrix, constraints) else null
         val solution = withBreak ?: best!!
@@ -230,7 +257,7 @@ class DayPlanner(
         val core = events.filterNot { it is RouteEvent.FetchBike }.toMutableList()
         if (core.size < 2) return null
         val points = (core.map { it.location } + home).toSet()
-        val matrix = DistanceMatrix.build(points, routingProvider)
+        val matrix = DistanceMatrix.build(points, routingProvider, routeCache = routeCache)
         val retimed = retimeAndCost(core, matrix, recomputeDwells, allowInfeasible)?.first ?: return null
         // withBikeFetches recomputes the cycling/walking totals.
         return DayRoute(date, retimed, 0, 0, emptyList()).withBikeFetches()
@@ -659,6 +686,7 @@ class DayPlanner(
         for (pickPos in 1 until events.size) {
             for (walkPos in pickPos + 1..events.size) {
                 for (dropPos in walkPos + 1..events.size + 1) {
+                    if (SolverProfile.enabled) SolverProfile.modeA++
                     val candidate = insertNewTriplet(events, walk, pickPos, walkPos, dropPos, matrix)
                     val (eventList, cost) = candidate ?: continue
                     if (cost >= bestCost) continue
@@ -677,6 +705,7 @@ class DayPlanner(
             if (existing !is RouteEvent.Walk) continue
             for (pickPos in 1..walkIdx) {
                 for (dropPos in walkIdx + 1 until events.size) {
+                    if (SolverProfile.enabled) SolverProfile.modeB++
                     val candidate = insertJoinWalk(events, walk, pickPos, walkIdx, dropPos, matrix)
                     val (eventList, cost) = candidate ?: continue
                     if (cost >= bestCost) continue
@@ -696,6 +725,7 @@ class DayPlanner(
             for (dropPos in pickPos + 1 until events.size) {
                 val spannedWalks = (pickPos until dropPos).count { events[it] is RouteEvent.Walk }
                 if (spannedWalks == 0) continue
+                if (SolverProfile.enabled) SolverProfile.modeC++
                 val candidate = insertRideAlong(events, walk, pickPos, dropPos, matrix)
                 val (eventList, cost) = candidate ?: continue
                 if (cost >= bestCost) continue
@@ -816,6 +846,21 @@ class DayPlanner(
      * constraint (see [canRideBike] for the transport-mode rule it pairs with).
      */
     private fun retimeAndCost(
+        events: MutableList<RouteEvent>,
+        matrix: DistanceMatrix,
+        recomputeDwells: Boolean = true,
+        allowInfeasible: Boolean = false,
+    ): Pair<List<RouteEvent>, Int>? {
+        if (!SolverProfile.enabled) {
+            return retimeAndCostImpl(events, matrix, recomputeDwells, allowInfeasible)
+        }
+        SolverProfile.retimeCalls++
+        return SolverProfile.measure({ SolverProfile.retimeNanos += it }) {
+            retimeAndCostImpl(events, matrix, recomputeDwells, allowInfeasible)
+        }
+    }
+
+    private fun retimeAndCostImpl(
         events: MutableList<RouteEvent>,
         matrix: DistanceMatrix,
         recomputeDwells: Boolean = true,
@@ -1035,10 +1080,15 @@ class DayPlanner(
     }
 
     private fun List<PlanningConstraint>.violation(events: List<RouteEvent>): String? {
-        for (c in this) {
-            c.violation(events)?.let { return it }
+        if (!SolverProfile.enabled) {
+            for (c in this) c.violation(events)?.let { return it }
+            return null
         }
-        return null
+        SolverProfile.constraintCalls++
+        return SolverProfile.measure({ SolverProfile.constraintNanos += it }) {
+            for (c in this) c.violation(events)?.let { return@measure it }
+            null
+        }
     }
 
     private fun homeStart() = RouteEvent.HomeStart(dayStartSeconds, home!!)

@@ -47,9 +47,14 @@ data class AppSettings(
     // When the mid-day free gap is at least this long, the planner prefers a
     // lunch at home (staying there until just in time) over a break location.
     val homeLunchMinFreeMinutes: Int,
-    // Large-neighbourhood-search iterations the solver runs after the
-    // multi-start build. More iterations find better plans but take longer;
-    // 0 disables LNS (fastest). Tunable on Settings.
+    // Multi-start count: how many independent greedy seeds the solver builds,
+    // each refined by its own LNS pass; the best across them wins. More escapes
+    // local optima but costs linearly. Quality plateaus by ~8 (see the sweep in
+    // docs/STATUS.md), so the slider tops out low. Tunable on Settings.
+    val restarts: Int,
+    // Large-neighbourhood-search iterations the solver runs per restart. More
+    // iterations find better plans but take longer; 0 disables LNS (fastest).
+    // Big gains by ~25, small past it (see the sweep). Tunable on Settings.
     val lnsIterations: Int,
     // The walker's own business identity, printed on invoices.
     val issuer: IssuerProfile,
@@ -84,7 +89,8 @@ data class AppSettings(
             breakDurationMinutes = 30,
             breakLocations = emptyList(),
             homeLunchMinFreeMinutes = 120,
-            lnsIterations = 200,
+            restarts = 8,
+            lnsIterations = 25,
             issuer = IssuerProfile.DEFAULT,
             nextInvoiceNumber = 1,
             nextTestInvoiceNumber = 1,

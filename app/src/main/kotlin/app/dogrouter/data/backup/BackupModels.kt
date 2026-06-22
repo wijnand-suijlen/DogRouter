@@ -166,6 +166,7 @@ data class SettingsDto(
     val breakDurationMinutes: Int = AppSettings.DEFAULTS.breakDurationMinutes,
     val breakLocations: List<BreakLocation> = emptyList(),
     val homeLunchMinFreeMinutes: Int = AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
+    val restarts: Int = AppSettings.DEFAULTS.restarts,
     val lnsIterations: Int = AppSettings.DEFAULTS.lnsIterations,
     val issuer: IssuerProfile = AppSettings.DEFAULTS.issuer,
     val nextInvoiceNumber: Int = AppSettings.DEFAULTS.nextInvoiceNumber,
@@ -229,7 +230,8 @@ fun AppSettings.toDto() = SettingsDto(
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
     breakWindowStart = breakWindowStart.toString(), breakWindowEnd = breakWindowEnd.toString(),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
-    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes, lnsIterations = lnsIterations,
+    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes,
+    restarts = restarts, lnsIterations = lnsIterations,
     issuer = issuer, nextInvoiceNumber = nextInvoiceNumber, nextTestInvoiceNumber = nextTestInvoiceNumber,
 )
 
@@ -292,7 +294,8 @@ fun SettingsDto.toAppSettings() = AppSettings(
     homeLatitude = homeLatitude, homeLongitude = homeLongitude,
     breakWindowStart = LocalTime.parse(breakWindowStart), breakWindowEnd = LocalTime.parse(breakWindowEnd),
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
-    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes, lnsIterations = lnsIterations,
+    homeLunchMinFreeMinutes = homeLunchMinFreeMinutes,
+    restarts = restarts, lnsIterations = lnsIterations,
     issuer = issuer, nextInvoiceNumber = nextInvoiceNumber, nextTestInvoiceNumber = nextTestInvoiceNumber,
 )
 

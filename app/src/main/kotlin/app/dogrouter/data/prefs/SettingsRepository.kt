@@ -41,6 +41,7 @@ class SettingsRepository(
             } ?: AppSettings.DEFAULTS.breakLocations,
             homeLunchMinFreeMinutes = prefs[HOME_LUNCH_MIN_FREE_MINUTES]
                 ?: AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
+            restarts = prefs[RESTARTS] ?: AppSettings.DEFAULTS.restarts,
             lnsIterations = prefs[LNS_ITERATIONS] ?: AppSettings.DEFAULTS.lnsIterations,
             issuer = prefs[ISSUER_PROFILE]?.let {
                 runCatching { json.decodeFromString<IssuerProfile>(it) }.getOrNull()
@@ -69,8 +70,12 @@ class SettingsRepository(
         return taken
     }
 
+    suspend fun setRestarts(restarts: Int) {
+        dataStore.edit { it[RESTARTS] = restarts.coerceIn(1, 10) }
+    }
+
     suspend fun setLnsIterations(iterations: Int) {
-        dataStore.edit { it[LNS_ITERATIONS] = iterations.coerceIn(0, 500) }
+        dataStore.edit { it[LNS_ITERATIONS] = iterations.coerceIn(0, 100) }
     }
 
     suspend fun setHomeLunchMinFreeMinutes(minutes: Int) {
@@ -146,6 +151,7 @@ class SettingsRepository(
             prefs[BREAK_DURATION_MINUTES] = settings.breakDurationMinutes
             prefs[BREAK_LOCATIONS] = json.encodeToString(settings.breakLocations)
             prefs[HOME_LUNCH_MIN_FREE_MINUTES] = settings.homeLunchMinFreeMinutes
+            prefs[RESTARTS] = settings.restarts
             prefs[LNS_ITERATIONS] = settings.lnsIterations
             prefs[ISSUER_PROFILE] = json.encodeToString(settings.issuer)
             prefs[NEXT_INVOICE_NUMBER] = settings.nextInvoiceNumber
@@ -169,6 +175,7 @@ class SettingsRepository(
         val BREAK_DURATION_MINUTES = intPreferencesKey("break_duration_minutes")
         val BREAK_LOCATIONS = stringPreferencesKey("break_locations_json")
         val HOME_LUNCH_MIN_FREE_MINUTES = intPreferencesKey("home_lunch_min_free_minutes")
+        val RESTARTS = intPreferencesKey("restarts")
         val LNS_ITERATIONS = intPreferencesKey("lns_iterations")
         val ISSUER_PROFILE = stringPreferencesKey("issuer_profile_json")
         val NEXT_INVOICE_NUMBER = intPreferencesKey("next_invoice_number")

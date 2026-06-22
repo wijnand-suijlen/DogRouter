@@ -1,6 +1,7 @@
 package app.dogrouter.domain.dayplan
 
 import app.dogrouter.domain.routing.GeoPoint
+import app.dogrouter.domain.routing.RouteDistanceCache
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -42,6 +43,10 @@ class DistanceMatrix(
             // Reports routing progress as (pairs done, total pairs) — building
             // the matrix is the slow part on-device, so the UI tracks it.
             onPair: (done: Int, total: Int) -> Unit = { _, _ -> },
+            // Cross-day / cross-launch distance cache. When supplied, an
+            // already-known pair is a cache hit (no routing call); a new or moved
+            // address routes only its own pairs. Null = no caching (tests).
+            routeCache: RouteDistanceCache? = null,
         ): DistanceMatrix {
             val cache = mutableMapOf<Pair<GeoPoint, GeoPoint>, Int>()
             val list = points.toList()
@@ -51,8 +56,12 @@ class DistanceMatrix(
                 for (j in i + 1 until list.size) {
                     val a = list[i]
                     val b = list[j]
-                    val estimate = routing.route(a.latitude, a.longitude, b.latitude, b.longitude)
-                    cache[a to b] = estimate?.distanceMeters ?: fallbackMeters(a, b)
+                    cache[a to b] = if (routeCache != null) {
+                        routeCache.distance(a, b, routing)
+                    } else {
+                        routing.route(a.latitude, a.longitude, b.latitude, b.longitude)
+                            ?.distanceMeters ?: fallbackMeters(a, b)
+                    }
                     onPair(++done, total)
                 }
             }
@@ -60,8 +69,9 @@ class DistanceMatrix(
         }
 
         /** Straight-line distance plus a road detour — the fallback when a
-         *  routing engine cannot answer for a pair. */
-        private fun fallbackMeters(from: GeoPoint, to: GeoPoint): Int {
+         *  routing engine cannot answer for a pair. Shared with
+         *  [RouteDistanceCache] so an uncached failure estimates identically. */
+        internal fun fallbackMeters(from: GeoPoint, to: GeoPoint): Int {
             val r = 6_371_000.0
             val dLat = Math.toRadians(to.latitude - from.latitude)
             val dLon = Math.toRadians(to.longitude - from.longitude)

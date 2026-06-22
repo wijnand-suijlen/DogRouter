@@ -14,6 +14,7 @@ import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
 import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
+import app.dogrouter.domain.routing.RouteDistanceCache
 import app.dogrouter.domain.routing.RoutingProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,6 +53,7 @@ class DayPlanService(
     private val savedPlanDao: SavedPlanDao,
     private val settingsRepo: SettingsRepository,
     private val routingProvider: RoutingProvider,
+    private val routeCache: RouteDistanceCache,
 ) {
     private val seeds = MutableStateFlow<Map<LocalDate, Long>>(emptyMap())
     private val breaks = MutableStateFlow<Map<LocalDate, Boolean>>(emptyMap())
@@ -249,6 +251,7 @@ class DayPlanService(
 
     private fun buildPlanner(settings: AppSettings, pairs: Set<Pair<String, String>>) = DayPlanner(
         routingProvider = routingProvider,
+        routeCache = routeCache,
         home = settings.homeGeoPoint(),
         capacityKg = settings.bikeCapacityKg,
         stopBufferSeconds = settings.stopBufferMinutes * 60,
@@ -258,6 +261,7 @@ class DayPlanService(
         overWalkWeight = settings.overWalkWeight,
         walkingSpeedKmh = settings.walkingSpeedKmh,
         bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
+        restarts = settings.restarts,
         lnsIterations = settings.lnsIterations,
     )
 

@@ -15,6 +15,7 @@ import app.dogrouter.data.backup.BackupRepository
 import app.dogrouter.data.routing.RoutingDataPaths
 import app.dogrouter.domain.dayplan.DayPlanService
 import app.dogrouter.domain.routing.LegGeometryCache
+import app.dogrouter.domain.routing.RouteDistanceCache
 import app.dogrouter.domain.routing.RoutingProvider
 import app.dogrouter.ui.addresspicker.AddressPickerViewModel
 import app.dogrouter.ui.billing.AvoirWizardViewModel
@@ -99,11 +100,23 @@ val appModule = module {
     }
     single<RoutingProvider> { BRouterRoutingProvider(get()) }
     single { LegGeometryCache(get()) }
+    single {
+        val paths: RoutingDataPaths = get()
+        RouteDistanceCache(
+            cacheFile = RouteDistanceCache.fileIn(androidContext().filesDir),
+            json = get(),
+            fingerprint = {
+                RouteDistanceCache.fingerprintOf(
+                    listOf(paths.ileDeFranceSegment, paths.cargoProfile, paths.lookupsFile),
+                )
+            },
+        )
+    }
 
     single { BackupRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     single { app.dogrouter.data.backup.BillingExportRepository(get(), get(), get(), get()) }
 
-    single { DayPlanService(get(), get(), get(), get(), get(), get(), get()) }
+    single { DayPlanService(get(), get(), get(), get(), get(), get(), get(), get()) }
     single { app.dogrouter.domain.billing.BillingService(get(), get()) }
     single { app.dogrouter.domain.billing.InvoicePdfWriter(androidContext()) }
     single { app.dogrouter.domain.billing.InvoiceService(get(), get(), get(), get(), get()) }

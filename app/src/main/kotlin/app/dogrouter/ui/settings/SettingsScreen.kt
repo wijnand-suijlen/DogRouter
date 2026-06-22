@@ -160,6 +160,7 @@ fun SettingsScreen(
                 onBikeOverheadChange = viewModel::onBikeOverheadTextChange,
                 onCyclingWeightChange = viewModel::onCyclingWeightTextChange,
                 onOverWalkWeightChange = viewModel::onOverWalkWeightTextChange,
+                onRestartsChange = viewModel::onRestartsChange,
                 onLnsIterationsChange = viewModel::onLnsIterationsChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
@@ -228,6 +229,7 @@ private fun SettingsForm(
     onBikeOverheadChange: (String) -> Unit,
     onCyclingWeightChange: (String) -> Unit,
     onOverWalkWeightChange: (String) -> Unit,
+    onRestartsChange: (Int) -> Unit,
     onLnsIterationsChange: (Int) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
@@ -397,19 +399,38 @@ private fun SettingsForm(
 
         Spacer(Modifier.height(8.dp))
         Text(
+            "Restarts: ${state.restarts}",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Slider(
+            value = state.restarts.toFloat(),
+            onValueChange = { onRestartsChange(it.roundToInt()) },
+            valueRange = 1f..10f,
+            steps = 8,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "Independent attempts the planner makes (it keeps the best). More " +
+                "escapes bad starts but costs time. Default 8.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(8.dp))
+        Text(
             "Search effort: ${state.lnsIterations} iterations",
             style = MaterialTheme.typography.bodyLarge,
         )
         Slider(
             value = state.lnsIterations.toFloat(),
             onValueChange = { onLnsIterationsChange(it.roundToInt()) },
-            valueRange = 0f..500f,
+            valueRange = 0f..100f,
             steps = 19,
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            "More iterations find better plans but take longer to compute. " +
-                "Default 200; 0 is fastest (multi-start only, no fine-tuning).",
+            "Fine-tuning passes per restart: more find better plans but take " +
+                "longer. Default 25; 0 is fastest (multi-start only, no fine-tuning).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

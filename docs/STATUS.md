@@ -200,15 +200,37 @@ baseline: over-walk is mixed / slightly up.)
   are on leashes, not in the box — adjacent to the finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
 
-## Parked: solver-speed options D-G (retimeAndCost was ~80% of solve time)
+## Solver-speed work — progress + parked options D-G
 
-Profiling showed `retimeAndCost` dominated, driven by how OFTEN it runs (the
-O(n³) position enumeration in `tryInsert`) plus heavy per-call allocation.
-Brainstormed alternatives, ranked by effort/reward. **Adopted now (pure Kotlin,
-quality-neutral):** B = cheap time-independent constraint pre-filter before
-retime (DONE — skips ~96% of retimes, baseline byte-identical), then C =
-allocation-free data-oriented kernel, then A = incremental (suffix-only)
-retiming. The rest are **parked** here for later:
+Profiling showed `retimeAndCost` dominated (~80% of solve time), driven by how
+OFTEN it runs (the O(n³) position enumeration in `tryInsert`) plus heavy
+per-call allocation. Brainstormed alternatives, ranked by effort/reward.
+
+**Done so far (pure Kotlin, all baseline byte-identical):**
+- **B — structural pre-filter.** Check the time-independent constraints
+  (capacity, group size, incompatibility, no-dog-left-behind) on the un-retimed
+  candidate before retime; a structurally infeasible insertion skips retime.
+  Skips ~96% of retimes (retime 80% → ~21% of solve time).
+- **Allocation-free structural check** (`structurallyFeasible`). Replaces those
+  four constraint objects' per-call maps with one pass over a reused scratch
+  array (capacity as a multiset, the rest a presence-set by dog id). Structural
+  check 57% → ~8%. Cross-checked vs the real constraints by `StructuralFilterTest`.
+- **Candidate-list reuse.** `tryInsert` builds each candidate into one reused
+  scratch list instead of a fresh `toMutableList()` per candidate. **Marginal on
+  wall-clock (~1.5%)** — the list *object* was not the bottleneck — but it cuts
+  GC pressure, which helps more on-device than the laptop profiler shows.
+
+**Result:** Wednesday/lns=25 went ~2.52s → **~0.66s** (~3.8×). `retimeAndCost`
+is now ~38% of solve time (was ~80%).
+
+**STOPPED here (2026-06-22, walker's call — fast enough on-device).** The
+remaining cost is split between retime (~38%, 58k calls) and the sheer
+**candidate count** (~1.4M per plan, each still built + structurally scanned).
+The list-OBJECT allocation was not the lever; the per-candidate WORK × count is.
+Genuine next levers if needed: **D** (fewer candidates — quality trade) or **A**
+(incremental retime — quality-neutral, ~38% ceiling) or full **C** (avoid
+materialising/scanning every candidate via a virtual index-based structural
+check). **C (further) and A were NOT done.** Parked options:
 
 - **D — Smaller/smarter neighborhood (candidate lists).** Only try insertion
   positions near a dog's k nearest stops (from the matrix) and inside feasible

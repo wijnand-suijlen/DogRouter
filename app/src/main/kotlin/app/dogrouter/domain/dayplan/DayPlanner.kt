@@ -681,6 +681,13 @@ class DayPlanner(
     ): List<RouteEvent>? {
         var best: List<RouteEvent>? = null
         var bestCost = Int.MAX_VALUE
+        // One reused scratch list for the candidate structure: every insertion
+        // is built into this same buffer (cleared + refilled) instead of
+        // allocating a fresh list per candidate (~millions per plan). Safe
+        // because retimeAndCost reads it and returns its own new list, and the
+        // search is single-threaded; `best` only ever holds a retimed result,
+        // never the scratch.
+        val cand = ArrayList<RouteEvent>(events.size + 3)
 
         // Evaluate one structural candidate. The time-independent constraints
         // (capacity, group size, incompatibility, no-dog-left-behind) are
@@ -705,7 +712,7 @@ class DayPlanner(
             for (walkPos in pickPos + 1..events.size) {
                 for (dropPos in walkPos + 1..events.size + 1) {
                     if (SolverProfile.enabled) SolverProfile.modeA++
-                    consider(buildNewTriplet(events, walk, pickPos, walkPos, dropPos))
+                    consider(buildNewTriplet(cand, events, walk, pickPos, walkPos, dropPos))
                 }
             }
         }
@@ -719,7 +726,7 @@ class DayPlanner(
             for (pickPos in 1..walkIdx) {
                 for (dropPos in walkIdx + 1 until events.size) {
                     if (SolverProfile.enabled) SolverProfile.modeB++
-                    consider(buildJoinWalk(events, walk, pickPos, walkIdx, dropPos))
+                    consider(buildJoinWalk(cand, events, walk, pickPos, walkIdx, dropPos))
                 }
             }
         }
@@ -734,41 +741,43 @@ class DayPlanner(
                 val spannedWalks = (pickPos until dropPos).count { events[it] is RouteEvent.Walk }
                 if (spannedWalks == 0) continue
                 if (SolverProfile.enabled) SolverProfile.modeC++
-                consider(buildRideAlong(events, walk, pickPos, dropPos))
+                consider(buildRideAlong(cand, events, walk, pickPos, dropPos))
             }
         }
 
         return best
     }
 
-    /** Build the un-retimed event list for a Mode C ride-along (no retime). */
+    /** Build the un-retimed Mode C ride-along into [out] (cleared + refilled). */
     private fun buildRideAlong(
+        out: MutableList<RouteEvent>,
         events: List<RouteEvent>,
         walk: PlannedWalk,
         pickPos: Int,
         dropPos: Int,
     ): MutableList<RouteEvent> {
         val loc = walk.geoPoint()
-        val result = mutableListOf<RouteEvent>()
+        out.clear()
         for (i in 0..events.size) {
-            if (i == pickPos) result.add(RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
-            if (i == dropPos) result.add(RouteEvent.Dropoff(0, loc, walk.dog))
+            if (i == pickPos) out.add(RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
+            if (i == dropPos) out.add(RouteEvent.Dropoff(0, loc, walk.dog))
             if (i < events.size) {
                 val e = events[i]
                 // Add the dog to every existing walk inside the carry span;
                 // their durations stay unchanged (the dog only rides along).
                 if (e is RouteEvent.Walk && i in pickPos until dropPos) {
-                    result.add(e.copy(dogs = e.dogs + walk.dog))
+                    out.add(e.copy(dogs = e.dogs + walk.dog))
                 } else {
-                    result.add(e)
+                    out.add(e)
                 }
             }
         }
-        return result
+        return out
     }
 
-    /** Build the un-retimed Mode A triplet (pickup + own walk + dropoff). */
+    /** Build the un-retimed Mode A triplet into [out] (cleared + refilled). */
     private fun buildNewTriplet(
+        out: MutableList<RouteEvent>,
         events: List<RouteEvent>,
         walk: PlannedWalk,
         pickPos: Int,
@@ -776,17 +785,19 @@ class DayPlanner(
         dropPos: Int,
     ): MutableList<RouteEvent> {
         val loc = walk.geoPoint()
-        val mutable = events.toMutableList()
+        out.clear()
+        out.addAll(events)
         // Insert markers; times re-derived by retime.
-        mutable.add(pickPos, RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
-        mutable.add(walkPos, RouteEvent.Walk(0, loc, listOf(walk.dog), walk.rule.durationMinutes * 60))
-        mutable.add(dropPos, RouteEvent.Dropoff(0, loc, walk.dog))
-        return mutable
+        out.add(pickPos, RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
+        out.add(walkPos, RouteEvent.Walk(0, loc, listOf(walk.dog), walk.rule.durationMinutes * 60))
+        out.add(dropPos, RouteEvent.Dropoff(0, loc, walk.dog))
+        return out
     }
 
-    /** Build the un-retimed Mode B join (extend an existing walk). Null when the
-     *  dropoff position would fall past the list end. */
+    /** Build the un-retimed Mode B join into [out] (cleared + refilled). Null
+     *  when the dropoff position would fall past the list end. */
     private fun buildJoinWalk(
+        out: MutableList<RouteEvent>,
         events: List<RouteEvent>,
         walk: PlannedWalk,
         pickPos: Int,
@@ -799,17 +810,18 @@ class DayPlanner(
         val combinedDogs = existing.dogs + walk.dog
         val updatedWalk = existing.copy(dogs = combinedDogs, durationSeconds = combinedDuration)
 
-        val mutable = events.toMutableList()
-        mutable[existingWalkIdx] = updatedWalk
+        out.clear()
+        out.addAll(events)
+        out[existingWalkIdx] = updatedWalk
         // Insert pickup (shifts existing indices ≥ pickPos by 1).
-        mutable.add(pickPos, RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
+        out.add(pickPos, RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
         // Dropoff position relative to original was `dropPos`; after pickup
         // insertion all indices ≥ pickPos moved by 1, so dropoff lands at
         // dropPos + 1 in the new list.
         val adjustedDrop = dropPos + 1
-        if (adjustedDrop > mutable.size) return null
-        mutable.add(adjustedDrop, RouteEvent.Dropoff(0, loc, walk.dog))
-        return mutable
+        if (adjustedDrop > out.size) return null
+        out.add(adjustedDrop, RouteEvent.Dropoff(0, loc, walk.dog))
+        return out
     }
 
     /**

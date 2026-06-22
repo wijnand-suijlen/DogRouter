@@ -682,17 +682,30 @@ class DayPlanner(
         var best: List<RouteEvent>? = null
         var bestCost = Int.MAX_VALUE
 
+        // Evaluate one structural candidate. The time-independent constraints
+        // (capacity, group size, incompatibility, no-dog-left-behind) are
+        // checked allocation-free on the un-retimed structure FIRST
+        // ([structurallyFeasible]), so a structurally infeasible insertion skips
+        // the expensive retime entirely. That check is exact, and the accepted
+        // set is identical to checking the full constraints after retime
+        // (structural ⊆ full), so this only saves work — it never changes which
+        // plan wins.
+        fun consider(structural: MutableList<RouteEvent>?) {
+            if (structural == null) return
+            if (!structurallyFeasible(structural)) return
+            val (eventList, cost) = retimeAndCost(structural, matrix) ?: return
+            if (cost >= bestCost) return
+            if (constraints.violation(eventList) != null) return
+            best = eventList
+            bestCost = cost
+        }
+
         // Mode A: new walk for this dog only.
         for (pickPos in 1 until events.size) {
             for (walkPos in pickPos + 1..events.size) {
                 for (dropPos in walkPos + 1..events.size + 1) {
                     if (SolverProfile.enabled) SolverProfile.modeA++
-                    val candidate = insertNewTriplet(events, walk, pickPos, walkPos, dropPos, matrix)
-                    val (eventList, cost) = candidate ?: continue
-                    if (cost >= bestCost) continue
-                    if (constraints.violation(eventList) != null) continue
-                    best = eventList
-                    bestCost = cost
+                    consider(buildNewTriplet(events, walk, pickPos, walkPos, dropPos))
                 }
             }
         }
@@ -706,12 +719,7 @@ class DayPlanner(
             for (pickPos in 1..walkIdx) {
                 for (dropPos in walkIdx + 1 until events.size) {
                     if (SolverProfile.enabled) SolverProfile.modeB++
-                    val candidate = insertJoinWalk(events, walk, pickPos, walkIdx, dropPos, matrix)
-                    val (eventList, cost) = candidate ?: continue
-                    if (cost >= bestCost) continue
-                    if (constraints.violation(eventList) != null) continue
-                    best = eventList
-                    bestCost = cost
+                    consider(buildJoinWalk(events, walk, pickPos, walkIdx, dropPos))
                 }
             }
         }
@@ -726,25 +734,20 @@ class DayPlanner(
                 val spannedWalks = (pickPos until dropPos).count { events[it] is RouteEvent.Walk }
                 if (spannedWalks == 0) continue
                 if (SolverProfile.enabled) SolverProfile.modeC++
-                val candidate = insertRideAlong(events, walk, pickPos, dropPos, matrix)
-                val (eventList, cost) = candidate ?: continue
-                if (cost >= bestCost) continue
-                if (constraints.violation(eventList) != null) continue
-                best = eventList
-                bestCost = cost
+                consider(buildRideAlong(events, walk, pickPos, dropPos))
             }
         }
 
         return best
     }
 
-    private fun insertRideAlong(
+    /** Build the un-retimed event list for a Mode C ride-along (no retime). */
+    private fun buildRideAlong(
         events: List<RouteEvent>,
         walk: PlannedWalk,
         pickPos: Int,
         dropPos: Int,
-        matrix: DistanceMatrix,
-    ): Pair<List<RouteEvent>, Int>? {
+    ): MutableList<RouteEvent> {
         val loc = walk.geoPoint()
         val result = mutableListOf<RouteEvent>()
         for (i in 0..events.size) {
@@ -761,34 +764,35 @@ class DayPlanner(
                 }
             }
         }
-        return retimeAndCost(result, matrix)
+        return result
     }
 
-    private fun insertNewTriplet(
+    /** Build the un-retimed Mode A triplet (pickup + own walk + dropoff). */
+    private fun buildNewTriplet(
         events: List<RouteEvent>,
         walk: PlannedWalk,
         pickPos: Int,
         walkPos: Int,
         dropPos: Int,
-        matrix: DistanceMatrix,
-    ): Pair<List<RouteEvent>, Int>? {
+    ): MutableList<RouteEvent> {
         val loc = walk.geoPoint()
         val mutable = events.toMutableList()
-        // Insert markers; times re-derived after.
+        // Insert markers; times re-derived by retime.
         mutable.add(pickPos, RouteEvent.Pickup(0, loc, walk.dog, walk.rule))
         mutable.add(walkPos, RouteEvent.Walk(0, loc, listOf(walk.dog), walk.rule.durationMinutes * 60))
         mutable.add(dropPos, RouteEvent.Dropoff(0, loc, walk.dog))
-        return retimeAndCost(mutable, matrix)
+        return mutable
     }
 
-    private fun insertJoinWalk(
+    /** Build the un-retimed Mode B join (extend an existing walk). Null when the
+     *  dropoff position would fall past the list end. */
+    private fun buildJoinWalk(
         events: List<RouteEvent>,
         walk: PlannedWalk,
         pickPos: Int,
         existingWalkIdx: Int,
         dropPos: Int,
-        matrix: DistanceMatrix,
-    ): Pair<List<RouteEvent>, Int>? {
+    ): MutableList<RouteEvent>? {
         val loc = walk.geoPoint()
         val existing = events[existingWalkIdx] as RouteEvent.Walk
         val combinedDuration = maxOf(existing.durationSeconds, walk.rule.durationMinutes * 60)
@@ -805,7 +809,7 @@ class DayPlanner(
         val adjustedDrop = dropPos + 1
         if (adjustedDrop > mutable.size) return null
         mutable.add(adjustedDrop, RouteEvent.Dropoff(0, loc, walk.dog))
-        return retimeAndCost(mutable, matrix)
+        return mutable
     }
 
     /**
@@ -1090,6 +1094,84 @@ class DayPlanner(
             null
         }
     }
+
+    /**
+     * Allocation-free, EXACT equivalent of the four time-independent
+     * constraints — capacity, group size, incompatibility, no-dog-left-behind —
+     * evaluated on the un-retimed [events]. Returns true iff all four would pass
+     * (`CapacityConstraint` ∧ `GroupSizeConstraint` ∧ `IncompatibilityConstraint`
+     * ∧ `NoDogLeftBehindConstraint`). Used as the insertion pre-filter so a
+     * structurally infeasible candidate skips the expensive retime; being exact
+     * (not just sound) keeps the plan byte-identical (cross-checked by
+     * [StructuralFilterTest] and the unchanged baseline).
+     *
+     * Replaces those constraints' per-call maps/sets with a tiny reused scratch
+     * array: the aboard set is bounded by `maxGroupSize`. Capacity is a multiset
+     * (weight added per pickup, removed per dropoff); the other three are a
+     * presence-set keyed by dog id (a second pickup of an aboard dog is a no-op,
+     * a dropoff removes the id) — exactly the semantics of the map-based
+     * constraints, including a dog briefly aboard twice. The solver runs one
+     * plan() single-threaded, so the instance scratch needs no synchronisation.
+     */
+    internal fun structurallyFeasible(events: List<RouteEvent>): Boolean {
+        val present = presentScratch
+        var n = 0
+        var weight = 0f
+        for (e in events) {
+            when (e) {
+                is RouteEvent.Pickup -> {
+                    val id = e.dog.id
+                    incompatibleWith[id]?.let { foes ->
+                        for (i in 0 until n) if (present[i]!! in foes) return false
+                    }
+                    weight += e.dog.weightKg
+                    if (weight > capacityKg) return false
+                    var seen = false
+                    for (i in 0 until n) if (present[i] == id) { seen = true; break }
+                    if (!seen) {
+                        present[n++] = id
+                        if (n > maxGroupSize) return false
+                    }
+                }
+                is RouteEvent.Dropoff -> {
+                    weight -= e.dog.weightKg
+                    val id = e.dog.id
+                    for (i in 0 until n) if (present[i] == id) {
+                        present[i] = present[--n]
+                        present[n] = null
+                        break
+                    }
+                }
+                is RouteEvent.Walk -> {
+                    if (e.dogs.size > maxGroupSize) return false
+                    for (i in 0 until n) {
+                        val pid = present[i]
+                        var found = false
+                        for (d in e.dogs) if (d.id == pid) { found = true; break }
+                        if (!found) return false
+                    }
+                }
+                else -> Unit
+            }
+        }
+        return true
+    }
+
+    // Reused across the single-threaded insertion search of one plan() call so
+    // the structural pre-filter allocates nothing per candidate. Sized
+    // maxGroupSize + 1: the group-size check rejects once one over the cap is
+    // aboard, so the index never runs past this slot.
+    private val presentScratch = arrayOfNulls<String>(maxGroupSize + 1)
+
+    // dog id -> ids it may never share the bike with (symmetric), from
+    // [incompatibilities]. O(1) membership, no Pair allocation per check.
+    private val incompatibleWith: Map<String, Set<String>> =
+        buildMap<String, MutableSet<String>> {
+            for ((a, b) in incompatibilities) {
+                getOrPut(a) { HashSet() }.add(b)
+                getOrPut(b) { HashSet() }.add(a)
+            }
+        }
 
     private fun homeStart() = RouteEvent.HomeStart(dayStartSeconds, home!!)
     private fun homeEnd(t: Int) = RouteEvent.HomeEnd(t, home!!)

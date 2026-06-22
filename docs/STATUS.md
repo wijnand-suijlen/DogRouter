@@ -200,6 +200,45 @@ baseline: over-walk is mixed / slightly up.)
   are on leashes, not in the box — adjacent to the finished on-foot model.
 - Reconsider single-tour vs **multi-trip**.
 
+## Parked: solver-speed options D-G (retimeAndCost was ~80% of solve time)
+
+Profiling showed `retimeAndCost` dominated, driven by how OFTEN it runs (the
+O(n³) position enumeration in `tryInsert`) plus heavy per-call allocation.
+Brainstormed alternatives, ranked by effort/reward. **Adopted now (pure Kotlin,
+quality-neutral):** B = cheap time-independent constraint pre-filter before
+retime (DONE — skips ~96% of retimes, baseline byte-identical), then C =
+allocation-free data-oriented kernel, then A = incremental (suffix-only)
+retiming. The rest are **parked** here for later:
+
+- **D — Smaller/smarter neighborhood (candidate lists).** Only try insertion
+  positions near a dog's k nearest stops (from the matrix) and inside feasible
+  time windows; cap the pickup→dropoff span. O(n³) → ~O(n·k). Big call-count
+  cut, but a *light quality trade* (may miss a good non-local insertion). Medium
+  effort.
+- **E — Parallel candidate evaluation.** The per-candidate evaluations are
+  independent; fan out over cores (coroutines on Dispatchers.Default). Phone has
+  6-8 cores ⇒ ~4-6× wall-clock. Quality-neutral if the argmin is a stable
+  tie-break (by candidate index) to keep determinism. Does not reduce total work
+  (more battery/heat). Medium effort.
+- **F — Native C++ kernel (NDK/JNI or Kotlin/Native).** Port the hot kernel
+  (retime + cost + constraints) to C++ over flat arrays; call per insertion
+  batch to amortise JNI. 5-20× on arithmetic, but NDK build, JNI marshalling
+  (needs the data-oriented form from C first), two implementations to keep in
+  sync, harder debugging, and the off-device JVM harness no longer covers the
+  real path. High effort. Best as a follow-on AFTER C.
+- **G — Dedicated solver (Google OR-Tools CP-SAT / Routing-VRP).** Model the
+  PDPTW for a mature engine; `retimeAndCost` disappears. Highest ceiling
+  (possibly better plans AND faster), highest effort/risk: a several-MB native
+  dependency per ABI, Android integration, and our unusual on-foot-double-duty /
+  walk-back-credit / dwell-sharing semantics do not map cleanly onto the
+  standard routing model (likely CP-SAT with custom constraints = large
+  modelling effort). Apache-2 license is fine, but CLAUDE.md requires checking
+  before adding a vendor/framework.
+
+Honourable mention (combinable, not a separate track): two-tier cost — rank
+candidates with a cheap approximation and run exact retime only on the few best;
+and/or memoise retime results on a hash of the event structure.
+
 ## Domain facts on grouping (from the walker)
 
 - **The real walk-group cap is 3, not 4.** A group of 4 is an exception that
@@ -260,7 +299,12 @@ stronger near-optimality signal; a practical LNS early-stop would be
   `tryInsertOption` → `tryInsert`: **Mode A** new pickup-walk-dropoff
   triplet; **Mode B** join an existing walk and extend its duration; **Mode
   C** ride along several existing walks without extending (splits one
-  duration). `remove` extracts a placed option's span (drop pickup/dropoff,
+  duration). Each candidate is first checked against the **time-independent
+  constraints** (capacity, group size, incompatibility, no-dog-left-behind —
+  `ConstraintSet.structural`) on the un-retimed structure, so a structurally
+  infeasible insertion skips the expensive `retimeAndCost` entirely (the
+  accepted set is identical, since structural ⊆ full — ~96% of retimes are
+  skipped, baseline byte-identical). `remove` extracts a placed option's span (drop pickup/dropoff,
   take the dog out of that span's walks) and retimes — removal is *not*
   monotonic on makespan, which is fine (accept only after repair).
 - **`retimeAndCost`** (inside DayPlanner): three phases. **(1) legs** —

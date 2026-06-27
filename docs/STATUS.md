@@ -3,19 +3,31 @@
 Internal hand-off document so a fresh Claude session can pick up where we
 left off. English only (internal design doc, not user-facing).
 
-Last touched: 2026-06-20. 73 commits on `main`.
+Last touched: 2026-06-27. 110 commits on `main`.
+
+> **Recently built (2026-06-25→27): the sleepover/boarding ("oppashond")
+> feature** — a per-dog day status (Dutch UI labels → `DogStatus` enum: UIT=OFF,
+> WANDEL=WALK, OPHAAL=BOARD_ARRIVE, LOGEER=BOARD_STAY, BRENG=BOARD_LEAVE)
+> replacing `Dog.active`, an all-day passenger solver, conflict-driven depot
+> parking, and the Settings/Dogs/Today UI. It is *largely built* (see wishlist #2
+> below and `docs/SLEEPOVER_DESIGN.md`); `docs/CSP_MODEL.md` is in sync.
+> Remaining: the per-dog `shortWalksOverride` field, its UI, and the boarding
+> soft-cap path all exist — only its hook for plain WALK dogs in the solver is
+> still pending; plus the "is there room?" acceptance check (shares wishlist #1's
+> capacity/advice model).
 
 ---
 
 # ►► CURRENT FOCUS: optimise the solver and the model ◄◄
 
 The **input model is now nearly complete** — dogs, owners, addresses with
-coordinates, stop quirks, transport state, incompatibilities, and rich
-schedule rules (weekday sets; independent start-from / start-by / home-by
-bounds; per-rule duration; an `isAlternative` "morning OR afternoon"
-flag). Import/export of all this works. **The weak link now is plan
-QUALITY**: the solver finds *a* feasible plan but rarely a *good* one. This
-is the next big push, and it is what STATUS should be organised around.
+coordinates, stop quirks, transport state, incompatibilities, rich schedule
+rules (weekday sets; independent start-from / start-by / home-by bounds;
+per-rule duration; an `isAlternative` "morning OR afternoon" flag), and now a
+per-dog day **status** (boarding/sleepover). Import/export of all this works.
+**The weak link now is plan QUALITY**: the solver finds *a* feasible plan but
+rarely a *good* one. This is the next big push, and it is what STATUS should be
+organised around.
 
 ## The enabler: run the solver on the laptop (BUILT)
 
@@ -48,7 +60,8 @@ quality in seconds instead of rebuilding the APK. The harness is a JUnit
   segment, gitignored). That reproduces on-device plans on the laptop;
   `-Dsolver.dump` prints the pairwise matrix (BRouter vs straight line). The
   baseline still uses haversine for determinism. The harness mirrors the app:
-  it skips inactive (paused) dogs.
+  it schedules only `WALK`-status dogs (OFF dogs skipped; boarding-status dogs
+  are passengers, set up separately in the boarding spikes).
 
 Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 
@@ -71,11 +84,11 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 ## Where plan quality is lost today (the weaknesses to attack)
 
 1. ~~**Greedy insertion, no backtracking.**~~ **LARGELY ADDRESSED.** The
-   multi-start now seeds an **LNS** pass (ruin-and-recreate, default 200
-   iterations — see the ACTIVE roadmap above) that reconsiders the structure
+   multi-start now seeds an **LNS** pass (ruin-and-recreate, default 25
+   iterations — see the ACTIVE roadmap below) that reconsiders the structure
    and cut median day length materially. Still greedy *within* a repair, and
-   no SA / group moves / 2-opt yet (#4/#3/#5), but the "never reconsiders"
-   plateau is broken.
+   no SA / group moves / 2-opt yet (roadmap items #4/#3/#5 below), but the
+   "never reconsiders" plateau is broken.
 2. **Cost function — day length + cycling + over-walk (redesigned).**
    `isBetterThan` → `score()` = elapsed seconds + **`cyclingWeight` ×
    ride-seconds** + **`overWalkWeight` × over-walk-seconds** + a big
@@ -107,7 +120,7 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
    `WalkDuration` constraint and the harness alike. Result on the seed
    sweep: day length down every weekday, dwell ~halved, conflicts still 0,
    every placed dog walks ≥ its required (exact for single walks). The
-   over-walk that remains is structural → #2 / #5, not the dwell logic.
+   over-walk that remains is structural → weaknesses #2 / #5, not the dwell logic.
    Still open: the foot-vs-bike choice itself is **greedy per leg** with no
    lookahead at the return-to-bike cost.
 4. **Capacity counts on-foot dogs as box weight.** `CapacityConstraint`
@@ -138,9 +151,11 @@ Use the Android Studio JBR for `JAVA_HOME` (see Build conventions).
 
 ## ►► ACTIVE: solver algorithm — LNS roadmap ◄◄
 
-Replacing the weak multi-start (weakness #1) with local search. Objective
-stays day length (`score()`) for now — the over-walk term (#2) is still
-deferred. **Biggest makespan headroom is structural**: walk-sharing via
+Replacing the weak multi-start (weakness #1) with local search. (This section
+was written when the objective was pure day length; the cycling and over-walk
+terms — weakness #2 — have **since landed** in `score()`, so LNS now optimises
+the full objective, not just makespan.) **Biggest makespan headroom is
+structural**: walk-sharing via
 grouping, and bike-mount overhead (~70–100 min/day at 10 min each), both
 currently set by the luck of the greedy insertion order. So structure-
 reconsidering search wins most. Five proposals, ranked by expected
@@ -186,10 +201,10 @@ acceptance is the cheapest way to push past the plateau further, then group
 moves (#3), then full ALNS (#2: regret-k repair + Shaw removal + adaptive
 weights, of which worst removal is a first taste).
 
-Caveat: LNS optimises pure day length, so it trades more over-walk for a
-shorter day until the #2 over-walk term lands — consistent with "day length
-primary", but it makes that term the natural follow-up. (Seen in the new
-baseline: over-walk is mixed / slightly up.)
+Historical caveat (now resolved): when LNS optimised pure day length it traded
+more over-walk for a shorter day — which is why the over-walk term (weakness #2,
+`overWalkWeight`) was added to `score()`. It is now live, so LNS already weighs
+over-walk against day length.
 
 ## Other directions (later)
 
@@ -379,18 +394,42 @@ stronger near-optimality signal; a practical LNS early-stop would be
   on-foot walk time a span's dog accrues while aboard (full foot legs + bike
   legs' walk-back), excluding the leg that fetches it. Shared by the
   retimer's dwell phase, the `WalkDuration` constraint and the harness.
-- **`constraints/`** (7, `PlanningConstraint`): `Capacity`,
+- **`constraints/`** (8, `PlanningConstraint`): `Capacity`,
   `TimeWindow` (earliest pickup / latest **walk-start** / latest dropoff,
   each optional), `WalkDuration` (dwell walks + `footCreditSeconds` in the
-  span vs required; max enforced for `allowLongerWalk=false`),
+  span vs required; max enforced for `allowLongerWalk=false`; **skips
+  boarding dogs** — keyed on `dog.status.isBoarding`, so they may end aboard
+  with no dropoff and PlanVerifier does not false-flag the open span),
   `Incompatibility`, `NoDogLeftBehind` (every aboard dog must be in each
   walk), `GroupSize` (hard `maxGroupSize`=4 on the dogs **aboard at any moment**
   — not just per walk, so picking up / carrying back never exceeds it and the
   walk-back stays bounded; soft preference for `preferredGroupSize`=3 lives in
-  `score()`), `Appointment` (reach each
-  fixed appointment on time, no dog aboard during it).
+  `score()`), `Appointment` (reach each fixed appointment on time, no dog aboard
+  during it), and **`MaxGap`** (boarding only, added to the set only when the day
+  has boarding dogs: ≥1 qualifying walk and no gap > the configured max — the
+  CSP's C12). See `docs/CSP_MODEL.md` and the boarding block below.
+- **Boarding (sleepover) — `BoardingPassenger.kt`, `MaxGapConstraint.kt`,
+  parking in `DayPlanner`.** A boarding dog (`Dog.status.isBoarding`) is not a
+  `WalkOption` but an **all-day passenger**: `plan` seeds a `Pickup` at its start
+  anchor (kept outermost via `boardingPinned`) and — only for an owner-home end
+  anchor (`BOARD_LEAVE`) — a `Dropoff`; otherwise it stays aboard to `HomeEnd`.
+  `includeAboardPassengers` folds it into every nested group walk so
+  `NoDogLeftBehind` makes it ride along; `MaxGapConstraint` bounds the gap
+  between its walks; a soft over-cap term (`boardingCapWeight`) backs
+  `shortWalksOverride`. **Conflict-driven parking** (`parkingRepair` →
+  `parkAndReinsert` / `tryPlaceSolo`, default ON via `DayPlanService`) rescues a
+  regular dog the passenger would block (incompatibility / capacity / group) by
+  dropping it at the **nearest depot** (`BoardingPassenger.allowedDepots`) over a
+  run of walks and re-inserting the blocked dogs — only ever *adds* a rescue,
+  never drops/delays another dog. `cleanBoarding` strips the at-home seeded
+  pickup and empty 0-min walks from the presented plan; the "leave just in time"
+  pass now defers the whole leading no-window chain (HomeStart + boarding
+  pickups) so an Ophaal dog is collected just before the first walk, not at dawn.
+  Full design + spikes: `docs/SLEEPOVER_DESIGN.md`; CSP: C1/C4 exceptions + C12
+  in `docs/CSP_MODEL.md`.
 - **`DayPlanService.kt`**: shared pipeline (Today + Follow plan). Builds
-  `WalkOption`s from the weekday's rules, constructs `DayPlanner` from
+  `WalkOption`s from the weekday's rules (only `WALK`-status dogs) and
+  `BoardingPassenger`s from boarding-status dogs, constructs `DayPlanner` from
   `AppSettings`, **caches** plans by `(inputs, seed)` in an LRU; `refresh`
   bumps a date's seed to ask for an alternative plan.
 
@@ -399,7 +438,10 @@ Settings feeding the solver (`AppSettings`): `bikeCapacityKg`,
 **`bikeOverheadMinutes`** (3), **`cyclingWeight`** (1.0, objective term),
 **`overWalkWeight`** (0.1, objective term), **`restarts`** (8, user slider
 1–10) and **`lnsIterations`** (25, user slider 0–100), the break
-window/duration/locations + `homeLunchMinFreeMinutes`, and home coordinates.
+window/duration/locations + `homeLunchMinFreeMinutes`, the **boarding** knobs
+**`boardingMaxGapMinutes`** (180), **`boardingMinWalkMinutes`** (15),
+**`boardingShortWalkMinutes`** (30) — all three user-editable on Settings — and
+**`boardingCapWeight`** (30, internal, no UI), and home coordinates.
 
 Tests: `app/src/test/.../DayPlannerScenarioTest.kt` (fake straight-line
 router; covers the 19-June report, two-rule dogs, splitting, determinism,
@@ -425,13 +467,17 @@ randomised property test asserts the solver never emits an infeasible plan;
 # What works today (app surface — reference)
 
 - **Dogs tab**: full CRUD. Per dog: name, breed, weight, photo URI (no
-  Photo Picker), owner + phone, BAN-autocomplete/map-picker address, stop
-  notes + time adjustment, transport state, `allowLongerWalk` +
+  Photo Picker), owner + phone, BAN-autocomplete/map-picker address (+ a
+  **"I have the key"** flag for boarding depots), stop notes + time adjustment,
+  transport state, `allowLongerWalk` + **`shortWalksOverride`** +
   incompatibility chips, and schedule rules (weekdays; start-from /
-  start-by / home-by; duration; "either/or" flag).
+  start-by / home-by; duration; "either/or" flag). The list row has a per-dog
+  **day-status selector** (Uit/Wandel/Ophaal/Logeer/Breng) replacing the old
+  active toggle.
 - **Settings**: home picker, cycling speed, **walking speed**, bike
   capacity, stop buffer, **bike mount/dismount overhead**, cycling weight,
-  **over-walk weight**, search effort, BRouter map download + self-test, and
+  **over-walk weight**, search effort, a **Boarding (sleepover)** section
+  (max gap / min walk / short-walk cap), BRouter map download + self-test, and
   **data export/import** (SAF; import replaces all, behind a confirm dialog).
 - **Today**: PDPTW timeline with date picker, summary (on-the-clock /
   cycling / walking), conflict panel, **refresh** (new seed → alternative
@@ -447,9 +493,11 @@ randomised property test asserts the solver never emits an infeasible plan;
 - **BRouter** embedded on-device (`org.btools:brouter-core`), `bakfiets.brf`
   profile. Distance from BRouter, time from the user's cycling speed (we do
   NOT use BRouter's kinematic time).
-- **Schema** at v9 (migrations 1→2 … 8→9; 4→5 adds `isAlternative`, 5→6
-  adds `latestStart`, 6→7 adds `Dog.active`, 7→8 adds the `appointments`
-  table, 8→9 adds the `saved_plans` table).
+- **Schema** at v15 (migrations 1→2 … 14→15; highlights: 4→5 `isAlternative`,
+  5→6 `latestStart`, 6→7 `Dog.active`, 7→8 `appointments`, 8→9 `saved_plans`,
+  9→10 `owners` + billing tables follow, 14→15 **replaces `Dog.active` with a
+  `DogStatus` enum** (table recreate) and adds `keyAvailable` /
+  `shortWalksOverride`).
 - **Manual plan edit (Fase 0–1b)**: a plan can be pinned/hand-edited per date
   (`SavedPlan`, JSON via `SavedPlanCodec`; dogs by id rehydrated against the
   current dogs, each pickup's **rule stored inline** so a plan is a snapshot
@@ -493,24 +541,26 @@ randomised property test asserts the solver never emits an infeasible plan;
 
 ```
 data/
-  entity/  Dog, DogScheduleRule (incl. latestStart, isAlternative),
-           DogIncompatibility, TransportState
-  db/      AppDatabase (v9), DogDao, DogScheduleDao,
+  entity/  Dog (incl. status: DogStatus, keyAvailable, shortWalksOverride),
+           DogStatus (OFF/WALK/BOARD_ARRIVE/BOARD_STAY/BOARD_LEAVE),
+           DogScheduleRule (incl. latestStart, isAlternative),
+           DogIncompatibility, TransportState, SavedPlan (pinned plan JSON)
+  db/      AppDatabase (v15), DogDao, DogScheduleDao,
            DogIncompatibilityDao, AppointmentDao, SavedPlanDao, Migrations, Converters
-  entity/  ... SavedPlan (pinned/edited day plan, JSON)
-  prefs/   AppSettings (incl. cyclingWeight, overWalkWeight, lnsIterations, break fields),
-           BreakLocation, SettingsRepository (DataStore)
-  backup/  BackupModels (JSON DTOs), BackupRepository (export/import)
+  prefs/   AppSettings (incl. cyclingWeight, overWalkWeight, lnsIterations,
+           break + boarding fields), BreakLocation, SettingsRepository (DataStore)
+  backup/  BackupModels (JSON DTOs, v7), BackupRepository (export/import)
   remote/  AddressSuggestion, BanApi
   routing/ RoutingDataPaths, RoutingDataInstaller, BRouterRoutingProvider
 domain/
   planner/  PlannedWalk
   dayplan/  RouteEvent, DayRoute, PlanConflict, PlanningConstraint,
-            WalkOption, WalkSpans, DistanceMatrix, BreakSpec,
-            DayPlanner, DayPlanService, SavedPlanCodec
+            WalkOption, WalkSpans, DistanceMatrix, BreakSpec, BoardingPassenger,
+            DayPlanner, DayPlanService, SavedPlanCodec, PlanVerifier, PlanEdit
             constraints/  Capacity, TimeWindow, WalkDuration, Incompatibility,
-                          NoDogLeftBehind, GroupSize, Appointment
-  routing/  RouteEstimate, RoutingProvider, GeoPoint, LegGeometryCache
+                          NoDogLeftBehind, GroupSize, Appointment, MaxGap
+  routing/  RouteEstimate, RoutingProvider, GeoPoint, LegGeometryCache,
+            RouteDistanceCache
 ui/
   common/  AddressAutocompleteField, AddressMapPreview, CyclingLegMap,
            RouteLegMap + LegMapScreen
@@ -545,8 +595,10 @@ Walker-requested day-shaping features beyond the dogs' own schedules.
   window, **prefers a lunch at home** when the free gap is long (default
   ≥120 min, staying home until just in time), red panel when none fits;
   per-date toggle on Today.
-- **Temporarily pause a dog** — `Dog.active`; paused dogs are kept but
-  skipped by the planner; toggle on the Dogs list.
+- **Temporarily pause a dog** — now the `DogStatus.OFF` ("Uit") value of the
+  per-dog status enum (was the `Dog.active` boolean, replaced in v15); OFF dogs
+  are kept but skipped by the planner; set via the status selector on the Dogs
+  list.
 - **Incidental appointments** — one-off, per-date `Appointment` (date + exact
   window + label + address; Room v8 + backup). Pre-placed as a fixed
   `RouteEvent.Appointment`; `AppointmentConstraint` keeps the walker on time
@@ -697,7 +749,9 @@ sleepover (which is being done **without** a calendar first, §2).
   laptop (headless Chrome, else print-from-HTML). **URSSAF export**: a ZIP with
   `wandelingen.csv` + `ontvangsten.csv` (test owners excluded, quarter column) +
   a full `backup.json`. **Credit notes** (facture d'avoir) via a step-by-step
-  wizard. All new entities round-trip through the backup (version 6).
+  wizard. All new entities round-trip through the backup (version 7 — bumped
+  for the boarding `DogStatus` / `keyAvailable` / `shortWalksOverride` fields and
+  the boarding settings).
 - Photo Picker (user deferred).
 
 ## Project conventions
@@ -727,8 +781,11 @@ sleepover (which is being done **without** a calendar first, §2).
 1. `CLAUDE.md` — global project rules.
 2. **This file** — start here; the focus is the solver/model.
 3. `SCOPE.md` — what v1 does / does not do.
-4. `docs/SCREENS.md` — screen inventory and rationale.
-5. `docs/ROUTING_ENGINES.md` — why BRouter.
-6. `dogrouter-backup.json` (repo root) — the real test data for the harness.
-7. `docs/solver-baseline.md` — current quality metrics per weekday; the
+4. `docs/CSP_MODEL.md` — the authoritative CSP (variables + constraints); keep
+   it in sync when changing `domain/dayplan/`.
+5. `docs/SLEEPOVER_DESIGN.md` — the boarding/sleepover feature design + spikes.
+6. `docs/SCREENS.md` — screen inventory and rationale.
+7. `docs/ROUTING_ENGINES.md` — why BRouter.
+8. `dogrouter-backup.json` (repo root) — the real test data for the harness.
+9. `docs/solver-baseline.md` — current quality metrics per weekday; the
    reference to beat. Regenerate with `./run_baseline.sh`.

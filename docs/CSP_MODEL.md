@@ -53,6 +53,7 @@ candidate tour is **feasible**; infeasible-to-place options become *conflicts*.
   yet dropped off, i.e. the dogs in transit *during* leg `i`. A dog is **not**
   aboard on the leg that fetches it (its pickup) but **is** aboard on the leg
   that delivers it (its dropoff).
+- `D` — the set of all dogs in play on the day.
 - For a dog `g`: `w(g)` weight (kg), `cargo(g) = inCargoBike(g)` and
   `pack(g) = inBackpack(g)`, each in `{Yes, No, NotTested}`; `long(g) =
   allowLongerWalk(g)`.
@@ -77,10 +78,11 @@ candidate tour is **feasible**; infeasible-to-place options become *conflicts*.
 
 ## 2. Decision variables
 
-The search makes only three *free* choices (V1–V3). Everything else (V4–V6) is
-a **derived** variable: `DayPlanner.retimeAndCost` computes it deterministically
-from V1–V3, so a candidate is fully defined once the placements and grouping are
-fixed.
+The **solver** makes only three *free* choices (V1–V3). Everything else (V4–V6)
+is a **derived** variable: `DayPlanner.retimeAndCost` computes it
+deterministically from V1–V3, so a candidate is fully defined once the placements
+and grouping are fixed. (The one exception is the plan editor, which may pin V4 —
+a leg's transport mode — by hand; the solver never does. See V4.)
 
 The **fixed frame** is not variable: `HomeStart`/`HomeEnd` are pinned at the
 day's ends, and any `Appointment` is pre-placed at its given time; the solver
@@ -370,7 +372,8 @@ so the exemption holds wherever the constraint runs — in the solver, in
 
 ```kotlin
 if (pickup.dog.status.isBoarding) continue   // C12 governs it, and it may end aboard
-val totalWalked = dwellWalked + span.footCreditSeconds(events)
+span.dropoff ?: return "${pickup.dog.name} has no dropoff"
+val totalWalked = span.walkedSeconds(events)   // dwell walks joined + footCredit
 val required = pickup.rule.durationMinutes * 60
 if (totalWalked < required) return "${pickup.dog.name} walked … needs …"
 if (!pickup.dog.allowLongerWalk && totalWalked > required) return "… but cap is …"
@@ -575,8 +578,9 @@ private fun DistanceMatrix.footSeconds(from, to) = (metersBetween(from, to) / wa
 
 **English.** A boarding dog must be walked often enough. It takes part in at
 least one **qualifying** walk (one it joins lasting at least its minimum walk
-length), and no gap longer than its configured maximum (`tussenpoos`) passes
-without one: not between its presence start (its first pickup) and its first
+length), and no gap longer than its configured maximum (`tussenpoos`, Dutch for
+the gap between walks) passes without one: not between its presence start (its
+first pickup) and its first
 qualifying walk, nor between two consecutive qualifying walks. This **replaces**
 the fixed-duration rule (C4) for boarding dogs and is the only coverage demand
 they carry. Added to the constraint set only when the day has boarding dogs.

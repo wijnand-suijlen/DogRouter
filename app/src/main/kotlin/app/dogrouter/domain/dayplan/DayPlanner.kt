@@ -1,11 +1,13 @@
 package app.dogrouter.domain.dayplan
 
 import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.entity.DogScheduleRule
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.domain.dayplan.constraints.AppointmentConstraint
 import app.dogrouter.domain.dayplan.constraints.CapacityConstraint
 import app.dogrouter.domain.dayplan.constraints.GroupSizeConstraint
 import app.dogrouter.domain.dayplan.constraints.IncompatibilityConstraint
+import app.dogrouter.domain.dayplan.constraints.MaxGapConstraint
 import app.dogrouter.domain.dayplan.constraints.NoDogLeftBehindConstraint
 import app.dogrouter.domain.dayplan.constraints.TimeWindowConstraint
 import app.dogrouter.domain.dayplan.constraints.WalkDurationConstraint
@@ -100,6 +102,16 @@ class DayPlanner(
     // planning-cost penalty so bigger groups are used only when needed).
     private val maxGroupSize: Int = 4,
     private val preferredGroupSize: Int = 3,
+    // Boarding ("sleepover") dogs present across the day as passengers, seeded
+    // aboard from their start anchor to their end anchor (see BoardingPassenger
+    // and docs/SLEEPOVER_DESIGN.md). Empty by default — inert unless boarding
+    // dogs are supplied, so regular plans are byte-identical.
+    private val boardingPassengers: List<BoardingPassenger> = emptyList(),
+    // Weight of the SOFT max-walk-duration penalty for a capped boarding dog:
+    // per joined Walk over its cap, score adds boardingCapWeight × overshoot²
+    // (overshoot in minutes). 0 = ignore the cap (pure meenemen). Far below
+    // OVERSIZE_PENALTY_SECONDS. Drives the park-vs-ride-along trade (stage 2).
+    private val boardingCapWeight: Float = 0f,
 ) {
     companion object {
         /** Multi-start seeds the planner builds by default; see the ctor note. */
@@ -131,7 +143,7 @@ class DayPlanner(
         if (home == null) {
             return DayRoute(date, emptyList(), 0, 0, options.map { PlanConflict(it.dog, "Home address not set") })
         }
-        if (options.isEmpty() && appointments.isEmpty()) {
+        if (options.isEmpty() && appointments.isEmpty() && boardingPassengers.isEmpty()) {
             return DayRoute(date, listOf(homeStart(), homeEnd(dayStartSeconds)), 0, 0, emptyList())
         }
         val routable = options.filter { it.dog.latitude != null && it.dog.longitude != null }
@@ -151,13 +163,34 @@ class DayPlanner(
         // The fixed events the day is built around: home, the appointments (in
         // time order), home.
         val sortedAppointments = appointments.sortedBy { it.startSeconds }
+        // Boarding ("sleepover") passengers: seed each aboard for the day so it
+        // rides along (includeAboardPassengers + NoDogLeftBehind). A Pickup at
+        // the start anchor makes it aboard; regular options nest inside.
+        //   - A pickup at the OWNER's home (BOARD_ARRIVE) is a real morning
+        //     collect and is shown. A pickup at the walker's home (BOARD_STAY /
+        //     BOARD_LEAVE) is just "the dog is already here" — seeded at zero
+        //     cost and stripped from the final plan (see cleanBoarding).
+        //   - A Dropoff is seeded ONLY for an OWNER-home end anchor (BOARD_LEAVE,
+        //     a real evening return). For a walker-home end anchor the dog simply
+        //     stays aboard through HomeEnd (it lives here while boarding) — so no
+        //     spurious evening dropoff, and HomeEnd stays the bike-home final leg.
+        // The LNS never ruins this backbone (the synthetic rule id is not a
+        // placed WalkOption). See docs/SLEEPOVER_DESIGN.md.
+        val passengerPickups = boardingPassengers.map {
+            RouteEvent.Pickup(0, it.startLocation(), it.dog, boardingRule(it.dog.id))
+        }
+        val passengerDropoffs = boardingPassengers
+            .filter { it.endAnchor == BoardingAnchor.OWNER_HOME }
+            .map { RouteEvent.Dropoff(0, it.endLocation(), it.dog) }
         val baseEvents: List<RouteEvent> =
-            listOf(homeStart()) + sortedAppointments + homeEnd(dayStartSeconds)
+            listOf(homeStart()) + passengerPickups + sortedAppointments +
+                passengerDropoffs + homeEnd(dayStartSeconds)
 
         val points = (
             routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } +
                 home + (breakSpec?.locations ?: emptyList()) +
-                sortedAppointments.map { it.location }
+                sortedAppointments.map { it.location } +
+                boardingPassengers.flatMap { listOf(it.startLocation(), it.endLocation(), it.depot) }
             ).toSet()
         val matrix = DistanceMatrix.build(
             points,
@@ -170,12 +203,12 @@ class DayPlanner(
         val constraints = listOf(
             CapacityConstraint(capacityKg),
             TimeWindowConstraint(),
-            WalkDurationConstraint(),
+            WalkDurationConstraint(boardingDogIds),
             IncompatibilityConstraint(incompatibilities),
             NoDogLeftBehindConstraint(),
             GroupSizeConstraint(maxGroupSize),
             AppointmentConstraint(),
-        )
+        ) + if (boardingPassengers.isNotEmpty()) listOf(MaxGapConstraint(boardingPassengers)) else emptyList()
 
         // Multi-start: build several plans from different insertion orders
         // and keep the best. The deterministic deadline order is always one
@@ -229,7 +262,7 @@ class DayPlanner(
 
         val withBreak = if (breakSpec != null) insertBreak(best!!, breakSpec, matrix, constraints) else null
         val solution = withBreak ?: best!!
-        return solution.toDayRoute(date, unroutable).withBikeFetches()
+        return solution.toDayRoute(date, unroutable).cleanBoarding().withBikeFetches()
             .copy(breakUnavailable = breakSpec != null && withBreak == null)
     }
 
@@ -480,6 +513,35 @@ class DayPlanner(
      * With `bikeOverheadSeconds == 0` walking is never faster, so no foot legs
      * occur, no ride ever starts away from the bike, and this pass is a no-op.
      */
+    /**
+     * Presentation cleanup for boarding plans, run before [withBikeFetches]:
+     *
+     *  - **Strip a boarding dog's pickup at the walker's home.** While boarding,
+     *    the dog lives at the walker's home, so a home "pickup" is not a real
+     *    collect — it only anchors the passenger during the search. It is seeded
+     *    at zero travel right after HomeStart, so dropping it shifts nothing; the
+     *    dog simply appears in the day's walks. A pickup at the OWNER's home
+     *    (BOARD_ARRIVE) is a real collect and is kept.
+     *  - **Drop empty 0-minute walks.** A split span can leave a walk with no
+     *    in-place dwell (its dog's time is covered by other walks / on-foot
+     *    legs); with an all-day passenger these placeholders multiply and clutter
+     *    the timeline. They carry no time and no travel, so removing them is
+     *    purely cosmetic.
+     *
+     * The solver keeps both while searching (the pickup anchors the passenger,
+     * the walks split durations); this only tidies the final plan. Totals are
+     * recomputed by the following [withBikeFetches]. No-op without boarding dogs.
+     */
+    private fun DayRoute.cleanBoarding(): DayRoute {
+        if (boardingDogIds.isEmpty()) return this
+        val homeLocation = home
+        val cleaned = events.filterNot { e ->
+            (e is RouteEvent.Pickup && e.dog.id in boardingDogIds && e.location == homeLocation) ||
+                (e is RouteEvent.Walk && e.durationSeconds == 0)
+        }
+        return copy(events = cleaned)
+    }
+
     private fun DayRoute.withBikeFetches(): DayRoute {
         if (events.size < 2) return this
         var bikePos = events.first().location
@@ -545,7 +607,27 @@ class DayPlanner(
         elapsedSeconds().toLong() +
             (cyclingWeight * cyclingSeconds()).toLong() +
             (overWalkWeight * overWalkSeconds()).toLong() +
+            boardingCapPenalty() +
             dogsOverPreferred().toLong() * OVERSIZE_PENALTY_SECONDS
+
+    /** Soft penalty for a capped boarding dog walked longer than its cap: per
+     *  joined Walk, `boardingCapWeight × overshoot-minutes²` (quadratic, so a
+     *  small overshoot is cheap and a large one dear). 0 when no cap / weight 0.
+     *  This is what tips a capped passenger from riding along into being parked
+     *  and walked short (stage 2). */
+    private fun Solution.boardingCapPenalty(): Long {
+        if (boardingCapWeight == 0f || boardingById.isEmpty()) return 0L
+        var penalty = 0.0
+        for (e in events) {
+            if (e !is RouteEvent.Walk) continue
+            for (d in e.dogs) {
+                val cap = boardingById[d.id]?.capSeconds ?: continue
+                val overMin = (e.durationSeconds - cap).coerceAtLeast(0) / 60.0
+                penalty += boardingCapWeight * overMin * overMin
+            }
+        }
+        return penalty.toLong()
+    }
 
     /** Pure ride time (excludes the on-foot walk-back folded into a bike leg). */
     private fun Solution.cyclingSeconds(): Int =
@@ -554,10 +636,12 @@ class DayPlanner(
     /** Seconds walked beyond what each dog's rule required, summed over every
      *  pickup→dropoff span (the over-walk the objective lightly discourages). */
     private fun Solution.overWalkSeconds(): Int =
-        events.walkSpans().sumOf { span ->
-            val required = span.pickup.rule.durationMinutes * 60
-            (span.walkedSeconds(events) - required).coerceAtLeast(0)
-        }
+        events.walkSpans()
+            .filter { it.pickup.dog.id !in boardingDogIds }
+            .sumOf { span ->
+                val required = span.pickup.rule.durationMinutes * 60
+                (span.walkedSeconds(events) - required).coerceAtLeast(0)
+            }
 
     private fun Solution.dogsOverPreferred(): Int =
         events.filterIsInstance<RouteEvent.Walk>()
@@ -634,8 +718,11 @@ class DayPlanner(
                 i == pIdx || i == dIdx -> Unit // drop this span's pickup / dropoff
                 i in (pIdx + 1) until dIdx && e is RouteEvent.Walk && e.dogs.any { it.id == dogId } -> {
                     val remaining = e.dogs.filter { it.id != dogId }
-                    if (remaining.isNotEmpty()) reduced.add(e.copy(dogs = remaining))
-                    // else: the walk had only this dog — drop it entirely.
+                    // Keep the walk only if a real (non-passenger) dog still walks
+                    // it. A walk left with only boarding passengers is an orphan —
+                    // the passenger merely rode along the removed dog's walk — so
+                    // drop it rather than leave a stray solo-passenger walk behind.
+                    if (remaining.any { it.id !in boardingDogIds }) reduced.add(e.copy(dogs = remaining))
                 }
                 else -> reduced.add(e)
             }
@@ -699,6 +786,11 @@ class DayPlanner(
         // plan wins.
         fun consider(structural: MutableList<RouteEvent>?) {
             if (structural == null) return
+            // Keep boarding passengers pinned as the day's backbone (presence
+            // span outermost), then fold them into every nested group walk
+            // (NoDogLeftBehind) before either feasibility check.
+            if (!boardingPinned(structural)) return
+            includeAboardPassengers(structural)
             if (!structurallyFeasible(structural)) return
             val (eventList, cost) = retimeAndCost(structural, matrix) ?: return
             if (cost >= bestCost) return
@@ -1014,10 +1106,35 @@ class DayPlanner(
         // standing at the first stop waiting for its window to open.
         // Adjusting also shrinks the day's elapsed cost, which steers the
         // algorithm toward schedules with less idle time.
-        val firstNonHome = retimed.getOrNull(1)
-        if (firstNonHome != null && retimed[0] is RouteEvent.HomeStart) {
-            val effectiveLeave = maxOf(dayStartSeconds, firstNonHome.timeSeconds - firstNonHome.incomingTravelSeconds)
-            retimed[0] = (retimed[0] as RouteEvent.HomeStart).copy(timeSeconds = effectiveLeave)
+        //
+        // Skip leading events that are still AT home with no travel — HomeStart
+        // and any home-located boarding-dog pickup. A boarding dog has been at
+        // home overnight, so collecting it does not make the working day start
+        // early; the day starts when the walker first rides/walks away. All
+        // those leading home events are pinned to that just-in-time departure.
+        // For a regular plan retimed[1] is a real stop (travel > 0 or a
+        // different location), so firstAway stays 1 and only HomeStart shifts —
+        // identical to the old behaviour.
+        if (retimed.firstOrNull() is RouteEvent.HomeStart) {
+            var firstAway = 1
+            while (firstAway < retimed.size &&
+                retimed[firstAway].incomingTravelSeconds == 0 &&
+                retimed[firstAway].location == homeLocation
+            ) {
+                firstAway++
+            }
+            val depart = retimed.getOrNull(firstAway)
+            if (depart != null) {
+                val effectiveLeave =
+                    maxOf(dayStartSeconds, depart.timeSeconds - depart.incomingTravelSeconds)
+                for (i in 0 until firstAway) {
+                    retimed[i] = when (val e = retimed[i]) {
+                        is RouteEvent.HomeStart -> e.copy(timeSeconds = effectiveLeave)
+                        is RouteEvent.Pickup -> e.copy(timeSeconds = effectiveLeave)
+                        else -> e
+                    }
+                }
+            }
         }
 
         val cost = retimed.last().timeSeconds - retimed.first().timeSeconds
@@ -1184,6 +1301,87 @@ class DayPlanner(
                 getOrPut(b) { HashSet() }.add(a)
             }
         }
+
+    // Boarding passengers indexed by dog id, and the set of their dog ids: used
+    // to add them to walks (includeAboardPassengers), to skip the WalkDuration
+    // check and the over-walk term, and to apply the soft cap penalty.
+    private val boardingById: Map<String, BoardingPassenger> =
+        boardingPassengers.associateBy { it.dog.id }
+    private val boardingDogIds: Set<String> = boardingById.keys
+
+    /** Synthetic schedule rule for a boarding dog's seeded pickup: no duration
+     *  requirement (max-gap coverage governs instead) and no window. */
+    private fun boardingRule(dogId: String) = DogScheduleRule(
+        id = "boarding-$dogId",
+        dogId = dogId,
+        weekdaysMask = 0,
+        earliestStart = null,
+        latestStart = null,
+        latestEnd = null,
+        durationMinutes = 0,
+    )
+
+    /**
+     * Whether the boarding passengers are still pinned as the day's backbone:
+     * every boarding Pickup sits before all regular activity (right after
+     * HomeStart) and every boarding Dropoff after it (right before HomeEnd). The
+     * seeded presence span must stay outermost so the passenger is aboard the
+     * whole day (picked up at home for free, not via a mid-day home detour) and
+     * regular walks nest inside it. Insertion candidates that would float a
+     * passenger pickup past the first walk, or a dropoff before the last, are
+     * rejected — that is what keeps "take her along the whole day" the shape.
+     */
+    private fun boardingPinned(events: List<RouteEvent>): Boolean {
+        if (boardingDogIds.isEmpty()) return true
+        var firstRegular = -1
+        var lastRegular = -1
+        for (i in events.indices) {
+            val regular = when (val e = events[i]) {
+                is RouteEvent.Pickup -> e.dog.id !in boardingDogIds
+                is RouteEvent.Dropoff -> e.dog.id !in boardingDogIds
+                is RouteEvent.Walk, is RouteEvent.Break, is RouteEvent.Appointment -> true
+                else -> false
+            }
+            if (regular) {
+                if (firstRegular < 0) firstRegular = i
+                lastRegular = i
+            }
+        }
+        if (firstRegular < 0) return true
+        for (i in events.indices) {
+            val e = events[i]
+            if (e is RouteEvent.Pickup && e.dog.id in boardingDogIds && i > firstRegular) return false
+            if (e is RouteEvent.Dropoff && e.dog.id in boardingDogIds && i < lastRegular) return false
+        }
+        return true
+    }
+
+    /**
+     * Add every boarding passenger currently aboard to each [RouteEvent.Walk]
+     * that does not already include it. A passenger is seeded aboard for its
+     * presence interval, so [NoDogLeftBehindConstraint] requires every walk
+     * there to include it (it rides along — "meenemen"); this makes that hold
+     * by construction, so the candidate passes both the structural pre-filter
+     * and the full check. Mutates [events] in place (the reused candidate
+     * scratch). No-op when there are no boarding passengers.
+     */
+    private fun includeAboardPassengers(events: MutableList<RouteEvent>) {
+        if (boardingById.isEmpty()) return
+        val aboard = LinkedHashMap<String, Dog>()
+        for (i in events.indices) {
+            when (val e = events[i]) {
+                is RouteEvent.Pickup -> if (e.dog.id in boardingDogIds) aboard[e.dog.id] = e.dog
+                is RouteEvent.Dropoff -> if (e.dog.id in boardingDogIds) aboard.remove(e.dog.id)
+                is RouteEvent.Walk -> {
+                    if (aboard.isEmpty()) continue
+                    val have = e.dogs.mapTo(HashSet()) { it.id }
+                    val missing = aboard.values.filter { it.id !in have }
+                    if (missing.isNotEmpty()) events[i] = e.copy(dogs = e.dogs + missing)
+                }
+                else -> Unit
+            }
+        }
+    }
 
     private fun homeStart() = RouteEvent.HomeStart(dayStartSeconds, home!!)
     private fun homeEnd(t: Int) = RouteEvent.HomeEnd(t, home!!)

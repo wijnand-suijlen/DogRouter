@@ -4,6 +4,7 @@ import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.DogStatus
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.prefs.AppSettings
 import kotlinx.serialization.encodeToString
@@ -22,7 +23,9 @@ class BackupModelsTest {
         ownerName = "Owner", ownerPhone = "0600000000", address = "1 Test Street",
         latitude = 48.8145, longitude = 102.2360, stopNotes = "ring bell, wait ~3 min",
         stopAdjustmentMinutes = 2, inCargoBike = TransportState.Yes,
-        inBackpack = TransportState.NotTested, allowLongerWalk = false, notes = "puppy",
+        inBackpack = TransportState.NotTested, allowLongerWalk = false,
+        shortWalksOverride = true, status = DogStatus.BOARD_STAY, keyAvailable = true,
+        notes = "puppy",
         createdAt = 1_700_000_000_000L,
     )
     private val rule = DogScheduleRule(
@@ -48,6 +51,8 @@ class BackupModelsTest {
         homeLunchMinFreeMinutes = 100,
         restarts = 6,
         lnsIterations = 40,
+        boardingMaxGapMinutes = 150, boardingMinWalkMinutes = 20,
+        boardingShortWalkMinutes = 25, boardingCapWeight = 40f,
         issuer = app.dogrouter.data.prefs.IssuerProfile(
             name = "Jane Doe EI", address = "1 rue Test",
             siret = "12345678900012", email = "jane@example.test", phone = "0102030405",

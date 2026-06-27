@@ -35,10 +35,17 @@ data class Dog(
     // injuries (e.g. a sore paw) must be set to false so they walk
     // exactly the requested duration, never more.
     val allowLongerWalk: Boolean = true,
-    // Whether the dog is currently walked. A temporarily paused dog (owner on
-    // holiday, etc.) is set inactive so the planner skips it, without losing
-    // its record. Toggled from the Dogs list; reactivated manually.
-    val active: Boolean = true,
+    // Cap this dog's walks at the short-walk length (extreme weather / old dog):
+    // ignores the rule durations and applies the boarding soft cap. Sits next to
+    // [allowLongerWalk] in the Walk-constraints UI. See docs/SLEEPOVER_DESIGN.md.
+    val shortWalksOverride: Boolean = false,
+    // What the dog needs today: off / normal walks / one of the boarding day
+    // positions (see [DogStatus]). Replaces the old `active` boolean — OFF is
+    // the paused state. Set on the Dogs list.
+    val status: DogStatus = DogStatus.WALK,
+    // Whether the walker holds the key to this dog's address, so its own home
+    // can serve as a depot while boarding (else only the walker's home).
+    val keyAvailable: Boolean = false,
     val notes: String?,
     val createdAt: Long = System.currentTimeMillis(),
 )

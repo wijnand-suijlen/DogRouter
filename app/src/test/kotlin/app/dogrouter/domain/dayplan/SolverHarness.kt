@@ -6,7 +6,10 @@ import app.dogrouter.data.backup.toEntity
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.DogStatus
+import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.prefs.AppSettings
+import app.dogrouter.domain.dayplan.constraints.MaxGapConstraint
 import app.dogrouter.domain.planner.PlannedWalk
 import app.dogrouter.domain.routing.GeoPoint
 import app.dogrouter.domain.routing.RouteEstimate
@@ -318,6 +321,159 @@ class SolverHarness {
         println("Sweep written to ${out.absolutePath}")
     }
 
+    /**
+     * Sleepover (boarding) dog spike — see docs/SLEEPOVER_DESIGN.md, stage 1
+     * (passenger model). Adds one synthetic boarding dog ("Alfa", fictional per
+     * the anonymisation rule) to a weekday and compares the plan WITH it against
+     * the same day WITHOUT it, to check that:
+     *   - the passenger rides along the existing group walks ("meenemen") and
+     *     adds little day length / cycling when uncapped;
+     *   - group-size / capacity see it from the start;
+     *   - the max-gap coverage holds;
+     *   - the three anchors (first/middle/last day) retime correctly.
+     *
+     * Gated behind -Dsolver.boarding so a normal test run skips it. Knobs:
+     *   -Dsolver.day=WEDNESDAY        which weekday (default WEDNESDAY)
+     *   -Dsolver.boardingCap=30       soft max walk minutes (default: no cap)
+     *   -Dsolver.boardingCapWeight=30 quadratic soft-cap weight (default 30)
+     *   -Dsolver.boardingGap=180      max gap minutes (default 180)
+     *   -Dsolver.boardingKey=true     walker has the key (owner home as depot)
+     *   -Dsolver.boardingStart=OWNER_HOME / WALKER_HOME  start anchor
+     *   -Dsolver.boardingEnd=OWNER_HOME / WALKER_HOME    end anchor
+     */
+    @Test
+    fun boardingSpike() = runBlocking {
+        Assume.assumeTrue("set -Dsolver.boarding", System.getProperty("solver.boarding") != null)
+        val backup = loadBackup()
+        val settings = backup.settings.toAppSettings()
+        val dogs = backup.dogs.map { it.toEntity() }
+        val rules = backup.scheduleRules.map { it.toEntity() }
+        val pairs = backup.incompatibilities.map { it.toEntity() }
+            .map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
+
+        val dow = System.getProperty("solver.day")?.let { DayOfWeek.valueOf(it.uppercase()) }
+            ?: DayOfWeek.WEDNESDAY
+        val date = LocalDate.of(2026, 6, 22).plusDays((dow.value - 1).toLong())
+        val seed = System.getProperty("solver.seed")?.toLongOrNull() ?: 0L
+        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: DayPlanner.DEFAULT_RESTARTS
+        val home = settings.homeGeoPoint() ?: error("home not set in backup settings")
+
+        val capMin = System.getProperty("solver.boardingCap")?.toIntOrNull()
+        val capWeight = System.getProperty("solver.boardingCapWeight")?.toFloatOrNull() ?: 30f
+        val gapMin = System.getProperty("solver.boardingGap")?.toIntOrNull() ?: 180
+        val key = System.getProperty("solver.boardingKey").toBoolean()
+        fun anchorOf(prop: String, default: BoardingAnchor) =
+            System.getProperty(prop)?.let { BoardingAnchor.valueOf(it.uppercase()) } ?: default
+        val startAnchor = anchorOf("solver.boardingStart", BoardingAnchor.WALKER_HOME)
+        val endAnchor = anchorOf("solver.boardingEnd", BoardingAnchor.WALKER_HOME)
+
+        // The boarding dog's own home sits ~1 km north of the walker's home.
+        val ownerHome = GeoPoint(home.latitude + 0.009, home.longitude)
+        val alfa = Dog(
+            id = "boarding-alfa",
+            name = "Alfa",
+            breed = null,
+            weightKg = 7f,
+            photoUri = null,
+            ownerName = "Boarding client",
+            ownerPhone = null,
+            address = "Boarding address",
+            latitude = ownerHome.latitude,
+            longitude = ownerHome.longitude,
+            stopNotes = null,
+            inCargoBike = TransportState.Yes,
+            inBackpack = TransportState.NotTested,
+            allowLongerWalk = true,
+            notes = null,
+        )
+        val passenger = BoardingPassenger(
+            dog = alfa,
+            ownerHome = ownerHome,
+            walkerHome = home,
+            keyAvailable = key,
+            capSeconds = capMin?.let { it * 60 },
+            maxGapSeconds = gapMin * 60,
+            minWalkSeconds = 15 * 60,
+            startAnchor = startAnchor,
+            endAnchor = endAnchor,
+        )
+
+        val options = buildOptions(date, dogs, rules)
+
+        val baseRoute = plannerFor(settings, pairs, restarts).plan(date, options, seed)
+        lateinit var boardingRoute: DayRoute
+        val nanos = measureNanoTime {
+            boardingRoute = plannerFor(
+                settings, pairs, restarts, boarding = listOf(passenger), boardingCapWeight = capWeight,
+            ).plan(date, options, seed)
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("=".repeat(72))
+        sb.appendLine("BOARDING SPIKE — ${dayName(dow)} ($date), ${options.size} regular walk options")
+        sb.appendLine("Passenger Alfa: cap=${capMin?.let { "$it min (weight $capWeight)" } ?: "none"}, " +
+            "maxGap=$gapMin min, key=$key, anchors=$startAnchor→$endAnchor")
+        sb.appendLine("=".repeat(72))
+        sb.appendLine()
+        sb.appendLine("--- Plan WITH boarding dog ---")
+        appendTimeline(sb, boardingRoute, settings)
+        sb.appendLine()
+        appendMetrics(sb, boardingRoute, settings, nanos)
+        sb.appendLine()
+
+        // Passenger coverage analysis.
+        val alfaWalks = boardingRoute.events.filterIsInstance<RouteEvent.Walk>()
+            .filter { w -> w.dogs.any { it.id == alfa.id } }
+        // A home-anchored boarding pickup is stripped from the final plan, so
+        // fall back to HomeStart as the presence start.
+        val presenceStart = boardingRoute.events
+            .firstOrNull { it is RouteEvent.Pickup && (it as RouteEvent.Pickup).dog.id == alfa.id }
+            ?.timeSeconds
+            ?: boardingRoute.events.first().timeSeconds
+        val qualifying = alfaWalks.filter { it.durationSeconds >= passenger.minWalkSeconds }
+            .sortedBy { it.timeSeconds }
+        var prevEnd = presenceStart
+        var maxGap = 0
+        for (w in qualifying) {
+            maxGap = maxOf(maxGap, w.timeSeconds - prevEnd)
+            prevEnd = w.timeSeconds + w.durationSeconds
+        }
+        val soloWalks = alfaWalks.count { it.dogs.size == 1 }
+        sb.appendLine("PASSENGER COVERAGE (Alfa)")
+        sb.appendLine("  Walks joined ................. ${alfaWalks.size} " +
+            "(${qualifying.size} qualifying >= ${passenger.minWalkSeconds / 60} min, $soloWalks solo)")
+        sb.appendLine("  Walk durations ............... " +
+            alfaWalks.sortedBy { it.timeSeconds }.joinToString(", ") {
+                "${it.durationSeconds / 60}m×${it.dogs.size}d"
+            }.ifEmpty { "(none)" })
+        sb.appendLine("  Largest gap .................. ${minutesOf(maxGap)} (max allowed ${gapMin}m)")
+        val gapViolation = MaxGapConstraint(listOf(passenger)).violation(boardingRoute.events)
+        sb.appendLine("  Max-gap check ................ ${gapViolation ?: "OK"}")
+        sb.appendLine()
+
+        // Cost of carrying the passenger (the b-vs-pure-a judgement axis).
+        val baseDay = baseRoute.events.let { it.last().timeSeconds - it.first().timeSeconds }
+        val boardDay = boardingRoute.events.let { it.last().timeSeconds - it.first().timeSeconds }
+        val baseCyc = baseRoute.totalCyclingSeconds
+        val boardCyc = boardingRoute.totalCyclingSeconds
+        sb.appendLine("COST OF CARRYING ALFA (vs the same day without her)")
+        sb.appendLine("  Day length ... ${minutesOf(baseDay)} -> ${minutesOf(boardDay)} " +
+            "(${deltaLabel(boardDay - baseDay)})")
+        sb.appendLine("  Cycling ...... ${minutesOf(baseCyc)} -> ${minutesOf(boardCyc)} " +
+            "(${deltaLabel(boardCyc - baseCyc)})")
+        sb.appendLine("  Conflicts .... ${baseRoute.conflicts.size} -> ${boardingRoute.conflicts.size}")
+
+        val text = sb.toString()
+        println(text)
+        val out = File("build/solver-boarding.txt")
+        out.parentFile?.mkdirs()
+        out.writeText(text)
+        println("Boarding spike written to ${out.absolutePath}")
+    }
+
+    private fun deltaLabel(sec: Int): String =
+        if (sec >= 0) "+${minutesOf(sec)}" else "-${minutesOf(-sec)}"
+
     /** Print raw routing distances (BRouter vs straight line) for a weekday's
      *  dogs, flagging failures and big detours. -Dsolver.dump (+ -Dsolver.router). */
     @Test
@@ -426,6 +582,11 @@ class SolverHarness {
         // Explicit LNS count for the sweep; null falls back to -Dsolver.lns or
         // the planner's adopted default (used by the other harness entry points).
         lns: Int? = null,
+        // Boarding ("sleepover") spike: passengers present across the day plus
+        // the soft cap weight. Empty by default — the planner is then identical
+        // to the regular one (see boardingSpike).
+        boarding: List<BoardingPassenger> = emptyList(),
+        boardingCapWeight: Float = 0f,
     ) = DayPlanner(
         routingProvider = harnessRouting(),
         home = settings.homeGeoPoint(),
@@ -443,6 +604,8 @@ class SolverHarness {
         lnsIterations = lns
             ?: System.getProperty("solver.lns")?.toIntOrNull()
             ?: DayPlanner.DEFAULT_LNS_ITERATIONS,
+        boardingPassengers = boarding,
+        boardingCapWeight = boardingCapWeight,
     )
 
     private fun daysWithRules(rules: List<DogScheduleRule>): List<DayOfWeek> =
@@ -646,8 +809,8 @@ class SolverHarness {
     ): List<WalkOption> {
         val bit = 1 shl (date.dayOfWeek.value - 1)
         val rulesForDay = rules.filter { (it.weekdaysMask and bit) != 0 }
-        // Mirror DayPlanService: paused (inactive) dogs are skipped.
-        val dogById = dogs.filter { it.active }.associateBy { it.id }
+        // Mirror DayPlanService: only WALK dogs are scheduled from their rules.
+        val dogById = dogs.filter { it.status == DogStatus.WALK }.associateBy { it.id }
         return rulesForDay
             .groupBy { it.dogId }
             .flatMap { (dogId, dogRules) ->

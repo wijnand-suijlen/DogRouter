@@ -211,10 +211,45 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+/**
+ * Sleepover (boarding) data model: replace the `active` boolean with a
+ * `status` enum (UIT→OFF, anything else→WALK), and add `keyAvailable` and
+ * `shortWalksOverride`. `DROP COLUMN` is unreliable on older Android SQLite, so
+ * the `dogs` table is recreated without `active` (it has no indices). See
+ * docs/SLEEPOVER_DESIGN.md §5.
+ */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `dogs_new` (" +
+                "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `breed` TEXT, `weightKg` REAL NOT NULL, " +
+                "`photoUri` TEXT, `ownerId` TEXT, `ownerName` TEXT NOT NULL, `ownerPhone` TEXT, " +
+                "`address` TEXT NOT NULL, `latitude` REAL, `longitude` REAL, `stopNotes` TEXT, " +
+                "`stopAdjustmentMinutes` INTEGER NOT NULL, `inCargoBike` TEXT NOT NULL, " +
+                "`inBackpack` TEXT NOT NULL, `allowLongerWalk` INTEGER NOT NULL, " +
+                "`shortWalksOverride` INTEGER NOT NULL, `status` TEXT NOT NULL, " +
+                "`keyAvailable` INTEGER NOT NULL, `notes` TEXT, `createdAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`id`))",
+        )
+        db.execSQL(
+            "INSERT INTO `dogs_new` (id, name, breed, weightKg, photoUri, ownerId, ownerName, " +
+                "ownerPhone, address, latitude, longitude, stopNotes, stopAdjustmentMinutes, " +
+                "inCargoBike, inBackpack, allowLongerWalk, shortWalksOverride, status, keyAvailable, " +
+                "notes, createdAt) " +
+                "SELECT id, name, breed, weightKg, photoUri, ownerId, ownerName, ownerPhone, address, " +
+                "latitude, longitude, stopNotes, stopAdjustmentMinutes, inCargoBike, inBackpack, " +
+                "allowLongerWalk, 0, CASE WHEN active = 0 THEN 'OFF' ELSE 'WALK' END, 0, notes, createdAt " +
+                "FROM `dogs`",
+        )
+        db.execSQL("DROP TABLE `dogs`")
+        db.execSQL("ALTER TABLE `dogs_new` RENAME TO `dogs`")
+    }
+}
+
 val ALL_MIGRATIONS: Array<Migration> =
     arrayOf(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
         MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
         MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-        MIGRATION_13_14,
+        MIGRATION_13_14, MIGRATION_14_15,
     )

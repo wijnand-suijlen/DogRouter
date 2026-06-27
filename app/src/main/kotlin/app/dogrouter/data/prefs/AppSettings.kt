@@ -56,6 +56,14 @@ data class AppSettings(
     // iterations find better plans but take longer; 0 disables LNS (fastest).
     // Big gains by ~25, small past it (see the sweep). Tunable on Settings.
     val lnsIterations: Int,
+    // Sleepover (boarding) parameters (see docs/SLEEPOVER_DESIGN.md). The max gap
+    // between a boarding dog's walks (hard), its minimum walk length, the cap
+    // length used when a dog's `shortWalksOverride` is on, and the weight of the
+    // soft over-cap penalty in the objective.
+    val boardingMaxGapMinutes: Int,
+    val boardingMinWalkMinutes: Int,
+    val boardingShortWalkMinutes: Int,
+    val boardingCapWeight: Float,
     // The walker's own business identity, printed on invoices.
     val issuer: IssuerProfile,
     // Next sequential invoice numbers (real / test series kept apart so the real
@@ -91,6 +99,10 @@ data class AppSettings(
             homeLunchMinFreeMinutes = 120,
             restarts = 8,
             lnsIterations = 25,
+            boardingMaxGapMinutes = 180,
+            boardingMinWalkMinutes = 15,
+            boardingShortWalkMinutes = 30,
+            boardingCapWeight = 30f,
             issuer = IssuerProfile.DEFAULT,
             nextInvoiceNumber = 1,
             nextTestInvoiceNumber = 1,

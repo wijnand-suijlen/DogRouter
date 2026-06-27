@@ -1,6 +1,7 @@
 package app.dogrouter.data.db
 
 import androidx.room.TypeConverter
+import app.dogrouter.data.entity.DogStatus
 import app.dogrouter.data.entity.TransportState
 import java.time.LocalDate
 import java.time.LocalTime
@@ -23,4 +24,10 @@ class Converters {
 
     @TypeConverter
     fun toTransportState(value: String?): TransportState? = value?.let(TransportState::valueOf)
+
+    @TypeConverter
+    fun fromDogStatus(value: DogStatus?): String? = value?.name
+
+    @TypeConverter
+    fun toDogStatus(value: String?): DogStatus? = value?.let(DogStatus::valueOf)
 }

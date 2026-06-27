@@ -9,6 +9,7 @@ import app.dogrouter.data.entity.Appointment
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.DogStatus
 import app.dogrouter.data.entity.SavedPlan
 import app.dogrouter.data.prefs.AppSettings
 import app.dogrouter.data.prefs.SettingsRepository
@@ -118,10 +119,10 @@ class DayPlanService(
     fun observeIsEdited(date: LocalDate): Flow<Boolean> =
         savedPlanDao.observeForDate(date).map { it?.edited == true }
 
-    /** Active dogs with coordinates — the candidates for a hand-added walk. */
+    /** Non-off dogs with coordinates — the candidates for a hand-added walk. */
     fun observeAddableDogs(): Flow<List<Dog>> =
         dogDao.observeAll().map { dogs ->
-            dogs.filter { it.active && it.latitude != null && it.longitude != null }
+            dogs.filter { it.status != DogStatus.OFF && it.latitude != null && it.longitude != null }
         }
 
     /**
@@ -204,8 +205,34 @@ class DayPlanService(
     ): DayRoute {
         val bit = 1 shl (inputs.date.dayOfWeek.value - 1)
         val rulesForDay = inputs.rules.filter { (it.weekdaysMask and bit) != 0 }
-        // Paused dogs are skipped: their rules find no dog and drop out below.
-        val dogById = inputs.dogs.filter { it.active }.associateBy { it.id }
+        // Only WALK dogs produce schedule-rule options: OFF dogs are skipped, and
+        // a boarding dog is an all-day passenger (below), not walked from its
+        // fixed-window rules. Both find no dog here and their rules drop out.
+        val dogById = inputs.dogs.filter { it.status == DogStatus.WALK }.associateBy { it.id }
+
+        // Boarding ("sleepover") dogs: one all-day passenger each (anchors from
+        // the status, soft cap when shortWalksOverride is on). Needs a home.
+        val walkerHome = inputs.settings.homeGeoPoint()
+        val boarding: List<BoardingPassenger> = if (walkerHome == null) emptyList() else inputs.dogs
+            .filter { it.status.isBoarding && it.latitude != null && it.longitude != null }
+            .mapNotNull { dog ->
+                val (start, end) = dog.status.anchors() ?: return@mapNotNull null
+                BoardingPassenger(
+                    dog = dog,
+                    ownerHome = GeoPoint(dog.latitude!!, dog.longitude!!),
+                    walkerHome = walkerHome,
+                    keyAvailable = dog.keyAvailable,
+                    capSeconds = if (dog.shortWalksOverride) {
+                        inputs.settings.boardingShortWalkMinutes * 60
+                    } else {
+                        null
+                    },
+                    maxGapSeconds = inputs.settings.boardingMaxGapMinutes * 60,
+                    minWalkSeconds = inputs.settings.boardingMinWalkMinutes * 60,
+                    startAnchor = start,
+                    endAnchor = end,
+                )
+            }
 
         // Group each dog's rules: every non-alternative rule is its own
         // required walk; all of a dog's alternative rules become one option
@@ -226,7 +253,7 @@ class DayPlanService(
         val pairs = inputs.incompatibilities
             .map { canonicalPair(it.dogIdA, it.dogIdB) }
             .toSet()
-        val planner = buildPlanner(inputs.settings, pairs)
+        val planner = buildPlanner(inputs.settings, pairs, boarding)
         val breakSpec = inputs.settings.breakSpec().takeIf { request.breakRequested }
         val appointments = inputs.appointments
             .filter { it.date == inputs.date }
@@ -249,7 +276,11 @@ class DayPlanService(
         }
     }
 
-    private fun buildPlanner(settings: AppSettings, pairs: Set<Pair<String, String>>) = DayPlanner(
+    private fun buildPlanner(
+        settings: AppSettings,
+        pairs: Set<Pair<String, String>>,
+        boarding: List<BoardingPassenger> = emptyList(),
+    ) = DayPlanner(
         routingProvider = routingProvider,
         routeCache = routeCache,
         home = settings.homeGeoPoint(),
@@ -263,6 +294,8 @@ class DayPlanService(
         bikeOverheadSeconds = settings.bikeOverheadMinutes * 60,
         restarts = settings.restarts,
         lnsIterations = settings.lnsIterations,
+        boardingPassengers = boarding,
+        boardingCapWeight = settings.boardingCapWeight,
     )
 
     /** A [BreakSpec] from the settings. Home lunch works even with no break

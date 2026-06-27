@@ -6,6 +6,7 @@ import app.dogrouter.data.entity.CommittedDay
 import app.dogrouter.data.entity.Dog
 import app.dogrouter.data.entity.DogIncompatibility
 import app.dogrouter.data.entity.DogScheduleRule
+import app.dogrouter.data.entity.DogStatus
 import app.dogrouter.data.entity.Invoice
 import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.TransportState
@@ -17,7 +18,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /** Current on-disk format version. Bump when the shape changes incompatibly. */
-const val BACKUP_VERSION = 6
+const val BACKUP_VERSION = 7
 
 /**
  * Self-contained snapshot of everything the walker enters: dogs (with
@@ -125,7 +126,13 @@ data class DogDto(
     val inCargoBike: String = TransportState.NotTested.name,
     val inBackpack: String = TransportState.NotTested.name,
     val allowLongerWalk: Boolean = true,
+    val shortWalksOverride: Boolean = false,
+    // `active` kept for backward compat with v6 backups (old paused dogs). New
+    // backups also carry `status`; on import `status` wins, falling back to
+    // `active = false` → OFF when only the old field is present.
     val active: Boolean = true,
+    val status: String = DogStatus.WALK.name,
+    val keyAvailable: Boolean = false,
     val notes: String? = null,
     val createdAt: Long,
 )
@@ -168,6 +175,10 @@ data class SettingsDto(
     val homeLunchMinFreeMinutes: Int = AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
     val restarts: Int = AppSettings.DEFAULTS.restarts,
     val lnsIterations: Int = AppSettings.DEFAULTS.lnsIterations,
+    val boardingMaxGapMinutes: Int = AppSettings.DEFAULTS.boardingMaxGapMinutes,
+    val boardingMinWalkMinutes: Int = AppSettings.DEFAULTS.boardingMinWalkMinutes,
+    val boardingShortWalkMinutes: Int = AppSettings.DEFAULTS.boardingShortWalkMinutes,
+    val boardingCapWeight: Float = AppSettings.DEFAULTS.boardingCapWeight,
     val issuer: IssuerProfile = AppSettings.DEFAULTS.issuer,
     val nextInvoiceNumber: Int = AppSettings.DEFAULTS.nextInvoiceNumber,
     val nextTestInvoiceNumber: Int = AppSettings.DEFAULTS.nextTestInvoiceNumber,
@@ -181,7 +192,9 @@ fun Dog.toDto() = DogDto(
     latitude = latitude, longitude = longitude, stopNotes = stopNotes,
     stopAdjustmentMinutes = stopAdjustmentMinutes,
     inCargoBike = inCargoBike.name, inBackpack = inBackpack.name,
-    allowLongerWalk = allowLongerWalk, active = active, notes = notes, createdAt = createdAt,
+    allowLongerWalk = allowLongerWalk, shortWalksOverride = shortWalksOverride,
+    active = status != DogStatus.OFF, status = status.name, keyAvailable = keyAvailable,
+    notes = notes, createdAt = createdAt,
 )
 
 fun DogScheduleRule.toDto() = ScheduleRuleDto(
@@ -232,6 +245,8 @@ fun AppSettings.toDto() = SettingsDto(
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
     homeLunchMinFreeMinutes = homeLunchMinFreeMinutes,
     restarts = restarts, lnsIterations = lnsIterations,
+    boardingMaxGapMinutes = boardingMaxGapMinutes, boardingMinWalkMinutes = boardingMinWalkMinutes,
+    boardingShortWalkMinutes = boardingShortWalkMinutes, boardingCapWeight = boardingCapWeight,
     issuer = issuer, nextInvoiceNumber = nextInvoiceNumber, nextTestInvoiceNumber = nextTestInvoiceNumber,
 )
 
@@ -243,7 +258,10 @@ fun DogDto.toEntity() = Dog(
     latitude = latitude, longitude = longitude, stopNotes = stopNotes,
     stopAdjustmentMinutes = stopAdjustmentMinutes,
     inCargoBike = transportStateOf(inCargoBike), inBackpack = transportStateOf(inBackpack),
-    allowLongerWalk = allowLongerWalk, active = active, notes = notes, createdAt = createdAt,
+    allowLongerWalk = allowLongerWalk, shortWalksOverride = shortWalksOverride,
+    // `status` wins; an old v6 backup with only `active = false` maps to OFF.
+    status = dogStatusOf(status).let { if (it == DogStatus.WALK && !active) DogStatus.OFF else it },
+    keyAvailable = keyAvailable, notes = notes, createdAt = createdAt,
 )
 
 fun ScheduleRuleDto.toEntity() = DogScheduleRule(
@@ -296,8 +314,13 @@ fun SettingsDto.toAppSettings() = AppSettings(
     breakDurationMinutes = breakDurationMinutes, breakLocations = breakLocations,
     homeLunchMinFreeMinutes = homeLunchMinFreeMinutes,
     restarts = restarts, lnsIterations = lnsIterations,
+    boardingMaxGapMinutes = boardingMaxGapMinutes, boardingMinWalkMinutes = boardingMinWalkMinutes,
+    boardingShortWalkMinutes = boardingShortWalkMinutes, boardingCapWeight = boardingCapWeight,
     issuer = issuer, nextInvoiceNumber = nextInvoiceNumber, nextTestInvoiceNumber = nextTestInvoiceNumber,
 )
 
 private fun transportStateOf(name: String): TransportState =
     runCatching { TransportState.valueOf(name) }.getOrDefault(TransportState.NotTested)
+
+private fun dogStatusOf(name: String): DogStatus =
+    runCatching { DogStatus.valueOf(name) }.getOrDefault(DogStatus.WALK)

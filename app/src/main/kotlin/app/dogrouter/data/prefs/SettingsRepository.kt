@@ -43,6 +43,13 @@ class SettingsRepository(
                 ?: AppSettings.DEFAULTS.homeLunchMinFreeMinutes,
             restarts = prefs[RESTARTS] ?: AppSettings.DEFAULTS.restarts,
             lnsIterations = prefs[LNS_ITERATIONS] ?: AppSettings.DEFAULTS.lnsIterations,
+            boardingMaxGapMinutes = prefs[BOARDING_MAX_GAP_MINUTES]
+                ?: AppSettings.DEFAULTS.boardingMaxGapMinutes,
+            boardingMinWalkMinutes = prefs[BOARDING_MIN_WALK_MINUTES]
+                ?: AppSettings.DEFAULTS.boardingMinWalkMinutes,
+            boardingShortWalkMinutes = prefs[BOARDING_SHORT_WALK_MINUTES]
+                ?: AppSettings.DEFAULTS.boardingShortWalkMinutes,
+            boardingCapWeight = prefs[BOARDING_CAP_WEIGHT] ?: AppSettings.DEFAULTS.boardingCapWeight,
             issuer = prefs[ISSUER_PROFILE]?.let {
                 runCatching { json.decodeFromString<IssuerProfile>(it) }.getOrNull()
             } ?: AppSettings.DEFAULTS.issuer,
@@ -153,6 +160,10 @@ class SettingsRepository(
             prefs[HOME_LUNCH_MIN_FREE_MINUTES] = settings.homeLunchMinFreeMinutes
             prefs[RESTARTS] = settings.restarts
             prefs[LNS_ITERATIONS] = settings.lnsIterations
+            prefs[BOARDING_MAX_GAP_MINUTES] = settings.boardingMaxGapMinutes
+            prefs[BOARDING_MIN_WALK_MINUTES] = settings.boardingMinWalkMinutes
+            prefs[BOARDING_SHORT_WALK_MINUTES] = settings.boardingShortWalkMinutes
+            prefs[BOARDING_CAP_WEIGHT] = settings.boardingCapWeight
             prefs[ISSUER_PROFILE] = json.encodeToString(settings.issuer)
             prefs[NEXT_INVOICE_NUMBER] = settings.nextInvoiceNumber
             prefs[NEXT_TEST_INVOICE_NUMBER] = settings.nextTestInvoiceNumber
@@ -177,6 +188,10 @@ class SettingsRepository(
         val HOME_LUNCH_MIN_FREE_MINUTES = intPreferencesKey("home_lunch_min_free_minutes")
         val RESTARTS = intPreferencesKey("restarts")
         val LNS_ITERATIONS = intPreferencesKey("lns_iterations")
+        val BOARDING_MAX_GAP_MINUTES = intPreferencesKey("boarding_max_gap_minutes")
+        val BOARDING_MIN_WALK_MINUTES = intPreferencesKey("boarding_min_walk_minutes")
+        val BOARDING_SHORT_WALK_MINUTES = intPreferencesKey("boarding_short_walk_minutes")
+        val BOARDING_CAP_WEIGHT = floatPreferencesKey("boarding_cap_weight")
         val ISSUER_PROFILE = stringPreferencesKey("issuer_profile_json")
         val NEXT_INVOICE_NUMBER = intPreferencesKey("next_invoice_number")
         val NEXT_TEST_INVOICE_NUMBER = intPreferencesKey("next_test_invoice_number")

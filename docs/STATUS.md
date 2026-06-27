@@ -559,44 +559,115 @@ Walker-requested day-shaping features beyond the dogs' own schedules.
    speed; the planner makes an adapted plan AND advises **which dogs are best
    to cancel** (needs a per-dog cancellation cost / priority, not just the
    conflict count). Introduces the capacity/advice model.
-2. **Sleepover (boarding) dog.** Board a client's dog at the walker's home
-   for one or more days. Two modes: (a) fit dog + good weather → it **comes
-   along all day** (effectively a dog living at the home address with a daily
-   walk requirement and no fixed window); (b) older dog / extreme heat or
-   cold → **keep it home and return a few times** (often coinciding with the
-   lunch / home visit) for a few short walks starting and ending at home.
-   Only accept a sleepover **when the day is not too busy** (an "is there
-   room?" check). Most complex; reuses #2/#3's capacity & advice and the
-   home-lunch home-visits — build last, likely in stages (Mode A then B).
+2. **Sleepover (boarding) dog.** Board a client's dog for one or more days
+   (full design + spike: `docs/SLEEPOVER_DESIGN.md`). The dog has a daily walk
+   requirement with **no fixed time window**, governed by two **independent
+   axes** (an earlier A/B/C "modes" framing was too flat and is replaced by
+   this):
 
-Priority rationale: ascending complexity and dependencies — #2 reuses what
-the break already built; #3's "is there room / which to drop" advice and
-the home-lunch home-visits both feed the sleepover dog (#3, then #5).
+   - **Walk constraints (always on for a sleepover dog):**
+     - **Minimum walk duration: 15 min** (constant).
+     - **Maximum gap (`tussenpoos`): N hours** (configurable) between the end
+       of the previous walk (or the start of the day) and the start of the
+       next — the *same* in all cases. **Hard** (welfare floor).
+     - **Maximum walk duration — SOFT, the single per-day knob.** Under extreme
+       weather (heatwave / severe cold) or for an old dog the walker caps the
+       walk length (e.g. 30 min); 35 min is fine, an hour is not — a growing
+       penalty, not a hard reject. No cap ⇒ the dog rides along every walk.
+       Per-dog this is the **"short walks override" checkbox** below (caps the
+       dog's walks at 30 min) — it also applies to a plain WANDEL dog in extreme
+       weather, so it lives on the dog, not only on a sleepover.
+   - **Depot — where the dog is left between walks (independent axis):** the
+     walker's home, or the **dog's own home** when the per-dog **"key available"**
+     flag is set (the walker holds the client's key). Without the key, only the
+     walker's home.
 
-**Captured 2026-06-21 (not yet designed) — membership over time, data-model impact:**
+   **Default is "comes along all day", NOT parking** — the walker only takes a
+   boarding dog on a quiet day (it fills empty capacity; a low-margin service
+   that binds clients: ~€25 vs €24 for a regular 2 h walk). So tag-along is the
+   intended norm; parking is the fallback (cap / weather, or capacity genuinely
+   impossible). The day-length cost of carrying it IS the "is this day too
+   heavy?" signal that feeds the capacity-advice model (#1): quiet day ≈ free
+   (cycling +15 min on the spike), busy day spikes (refuse the stay / drop a
+   dog). Spike confirmed the passenger model (`BoardingPassenger`,
+   `MaxGapConstraint`, soft-cap term in `score()`); see the design doc.
+
+   **No calendar for now (walker's call 2026-06-25).** Instead of a date-range
+   boarding "stay", boarding is expressed as a **per-dog day status** the walker
+   flips manually, replacing the `Dog.active` boolean with an enum (the three
+   boarding statuses are the day's start/end **anchors** from the design doc):
+   - **UIT** — no walks, no boarding; the dog is fully ignored (= today's
+     `active = false`).
+   - **WANDEL** — only the normal schedule-rule walks (today's behaviour).
+   - **OPHAAL** — picked up at the dog's address at the agreed time, ends the day
+     at the walker's home (boarding **first day**; anchor owner→walker).
+   - **LOGEER** — starts and ends the day at the walker's home (boarding
+     **middle day**; anchor walker→walker).
+   - **BRENG** — starts at the walker's home, dropped at the dog's address at the
+     agreed time (boarding **last day**; anchor walker→owner).
+
+   A multi-day stay is then: OPHAAL on day 1, LOGEER on the middle days, BRENG
+   on the last, flipped by hand each day (crude but no calendar needed; a real
+   calendar comes later, see the membership/agenda note below). Every dog also
+   needs a persistent **"key available"** flag (depot choice) and the
+   **"short walks override"** checkbox (next to `allowLongerWalk`).
+
+Priority rationale: ascending complexity and dependencies — the sleepover
+(#2) reuses what the lunch break already built (home visits) and the
+capacity / "is there room / which to drop" advice model from #1, so it is
+built last.
+
+**Captured 2026-06-21, expanded 2026-06-25 (not yet designed) — membership over
+time + built-in agenda, data-model impact:**
 The walker wants to manage *which dogs* a day involves over time, not just
-shape a single day. Three related needs:
+shape a single day — and to **answer a client yes/no on the spot** and have the
+answer recorded. The driving scenarios (2026-06-25): a regular client says
+"we're on holiday for a few weeks from next Monday"; a prospect calls "can you
+walk my dog every day from next week?"; "can you board him for a week?"; "can
+you also do a morning walk this week?". The walker wants to look, say yes or no,
+and on yes have a **built-in agenda** capture it. Related needs:
 - **Per-date dog availability (declarative).** A dog has one global on/off
-  (`Dog.active`, Dogs screen) plus a *reactive* plan edit ("mark a dog
-  not-today", Fase 0). Wanted: a per-`(dog, date)` on/off the walker sets
-  **ahead of time** (owner away next Tuesday), separate from editing a
-  generated plan. Likely a new per-date exception table, e.g.
-  `DogDateOverride(dogId, date, active)`, consulted when building the day's
-  walk options.
+  (now the **status enum** UIT/WANDEL/OPHAAL/LOGEER/BRENG, §2) plus a *reactive*
+  plan edit ("mark a dog not-today", Fase 0). Wanted: a per-`(dog, date)`
+  override the walker sets **ahead of time** (owner away next week; a one-off
+  extra morning walk this week), separate from editing a generated plan. Likely
+  a per-date exception table, e.g. `DogDateOverride(dogId, date, …)`, consulted
+  when building the day's walk options. The boarding statuses are the same shape
+  — a per-`(dog, date)` status — so the no-calendar manual-flip (§2) is the
+  stepping stone to this.
 - **Incidental dog on a date + clone.** Schedule a one-off dog for a single
   day, with a **clone-from-a-regular-dog** action that copies its details and
   normal walk times as a starting point. Generalises schedule rules to allow
   one-off date-scoped walks (or a one-off dog record); reuses the clone.
-- **Longer-term acceptance / capacity validation.** Beyond one day: can the
-  walker **take on a new dog** (walking, or day-boarding/daycare) over a
-  horizon of days? Look-ahead feasibility, not a single plan. This is the same
+- **Longer-term acceptance / capacity validation (the yes/no answer).** Beyond
+  one day: can the walker **take on a new dog** (walking, or boarding) over a
+  horizon of days? Look-ahead feasibility across the affected dates → a
+  **yes/no** the walker can give immediately, then commit to the agenda. Same
   capacity model as the sleepover "is there room?" check (#2) and the
   cancellation/capacity-advice model (#1), run forward across dates.
+
+**Built-in agenda + Google Calendar (captured 2026-06-25):** the membership
+changes above (a booked stay, a holiday pause, an accepted new dog) need to be
+*recorded somewhere* — a built-in agenda/calendar. The walker also wants the
+**day plan itself to land in the phone's Google Calendar**, and considers the
+**Follow plan screen then largely superfluous** (the calendar app on the phone
+becomes the during-the-day view). CAUTION / open: CLAUDE.md forbids pulling in
+proprietary Google SDKs (Maps/Firebase/etc.) without checking first. The clean
+path that avoids that is the **Android system Calendar Provider**
+(`CalendarContract`, an OS content provider) or an **ICS/CalDAV export** — these
+sync to whatever calendar account the phone has (incl. Google) **without** a
+Google SDK or a paid API, fitting the OSM / no-vendor ethos. Confirm the
+approach with the walker before building. This is a sizeable new direction (a
+calendar data model + sync), to be scoped separately; it sits behind the
+sleepover (which is being done **without** a calendar first, §2).
 
 ## App-surface follow-ups (deferred while solver is the focus)
 
 - Follow plan: resumable-across-exit (persist step), dog photo (needs an
-  image loader → user OK), surface conflicts.
+  image loader → user OK), surface conflicts. **NOTE (2026-06-25): the walker
+  now considers Follow plan largely superfluous** in favour of the day plan
+  appearing in the phone's Google Calendar (see the agenda note in the wishlist)
+  — so don't invest further here until that direction is decided.
 - Manual override of the plan — **done**, as a drag-and-drop chip editor
   (position = execution order; `Calvin-LL/Reorderable`, `PlanEdit` transforms,
   `LegMode` override, `commitEdit` with `allowInfeasible`).

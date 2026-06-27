@@ -148,6 +148,8 @@ fun DogEditScreen(
                 onToggleAlternative = viewModel::setRuleAlternative,
                 onRulePriceChange = viewModel::setRulePrice,
                 onAllowLongerWalkChange = viewModel::setAllowLongerWalk,
+                onShortWalksOverrideChange = viewModel::setShortWalksOverride,
+                onKeyAvailableChange = viewModel::setKeyAvailable,
                 onToggleIncompatibility = viewModel::toggleIncompatibility,
                 modifier = Modifier
                     .fillMaxSize()
@@ -197,6 +199,8 @@ private fun DogForm(
     onToggleAlternative: (ruleId: String, value: Boolean) -> Unit,
     onRulePriceChange: (ruleId: String, priceCents: Int?) -> Unit,
     onAllowLongerWalkChange: (Boolean) -> Unit,
+    onShortWalksOverrideChange: (Boolean) -> Unit,
+    onKeyAvailableChange: (Boolean) -> Unit,
     onToggleIncompatibility: (otherDogId: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -282,6 +286,13 @@ private fun DogForm(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        CheckboxRow(
+            value = state.keyAvailable,
+            onChange = onKeyAvailableChange,
+            title = "I have the key",
+            subtitle = "The walker holds this address's key, so the dog's own " +
+                "home can be a depot while it boards.",
+        )
 
         Spacer(Modifier.height(8.dp))
         SectionTitle("Transport")
@@ -316,6 +327,13 @@ private fun DogForm(
         AllowLongerWalkRow(
             value = state.allowLongerWalk,
             onChange = onAllowLongerWalkChange,
+        )
+        CheckboxRow(
+            value = state.shortWalksOverride,
+            onChange = onShortWalksOverrideChange,
+            title = "Short walks override",
+            subtitle = "Extreme weather / old dog: ignore the rule durations and " +
+                "keep this dog's walks short.",
         )
         IncompatibilitiesSection(
             selectedIds = state.incompatibleDogIds,
@@ -390,6 +408,23 @@ private fun AllowLongerWalkRow(
     value: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
+    CheckboxRow(
+        value = value,
+        onChange = onChange,
+        title = "Allow longer walks",
+        subtitle = "Off for puppies and dogs that should not be walked " +
+            "more than the requested duration.",
+    )
+}
+
+/** A checkbox with a title and an explanatory subtitle; the whole row toggles. */
+@Composable
+private fun CheckboxRow(
+    value: Boolean,
+    onChange: (Boolean) -> Unit,
+    title: String,
+    subtitle: String,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -398,13 +433,9 @@ private fun AllowLongerWalkRow(
     ) {
         Checkbox(checked = value, onCheckedChange = onChange)
         Column(modifier = Modifier.padding(start = 4.dp)) {
+            Text(text = title, style = MaterialTheme.typography.bodyMedium)
             Text(
-                text = "Allow longer walks",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = "Off for puppies and dogs that should not be walked " +
-                    "more than the requested duration.",
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

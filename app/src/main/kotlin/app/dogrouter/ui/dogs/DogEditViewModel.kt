@@ -7,6 +7,7 @@ import app.dogrouter.data.db.DogIncompatibilityDao
 import app.dogrouter.data.db.DogScheduleDao
 import app.dogrouter.data.db.OwnerDao
 import app.dogrouter.data.entity.Dog
+import app.dogrouter.data.entity.DogStatus
 import app.dogrouter.data.entity.Owner
 import app.dogrouter.data.entity.TransportState
 import app.dogrouter.data.remote.AddressSuggestion
@@ -50,9 +51,11 @@ data class DogFormState(
     val inCargoBike: TransportState = TransportState.NotTested,
     val inBackpack: TransportState = TransportState.NotTested,
     val allowLongerWalk: Boolean = true,
-    // Carried through edit so saving never reactivates a paused dog; the
-    // active toggle itself lives on the Dogs list, not this form.
-    val active: Boolean = true,
+    val shortWalksOverride: Boolean = false,
+    val keyAvailable: Boolean = false,
+    // Carried through edit so saving never changes the dog's day status; the
+    // status selector itself lives on the Dogs list, not this form.
+    val status: DogStatus = DogStatus.WALK,
     val notes: String = "",
     val scheduleRules: List<ScheduleRuleDraft> = emptyList(),
     val incompatibleDogIds: Set<String> = emptySet(),
@@ -134,7 +137,9 @@ class DogEditViewModel(
                     inCargoBike = existing.inCargoBike,
                     inBackpack = existing.inBackpack,
                     allowLongerWalk = existing.allowLongerWalk,
-                    active = existing.active,
+                    shortWalksOverride = existing.shortWalksOverride,
+                    keyAvailable = existing.keyAvailable,
+                    status = existing.status,
                     notes = existing.notes.orEmpty(),
                     scheduleRules = rules,
                     incompatibleDogIds = incompatibilities,
@@ -177,6 +182,14 @@ class DogEditViewModel(
 
     fun setAllowLongerWalk(value: Boolean) {
         _state.update { it.copy(allowLongerWalk = value) }
+    }
+
+    fun setShortWalksOverride(value: Boolean) {
+        _state.update { it.copy(shortWalksOverride = value) }
+    }
+
+    fun setKeyAvailable(value: Boolean) {
+        _state.update { it.copy(keyAvailable = value) }
     }
 
     fun addScheduleRule() {
@@ -270,7 +283,9 @@ class DogEditViewModel(
                 inCargoBike = s.inCargoBike,
                 inBackpack = s.inBackpack,
                 allowLongerWalk = s.allowLongerWalk,
-                active = s.active,
+                shortWalksOverride = s.shortWalksOverride,
+                status = s.status,
+                keyAvailable = s.keyAvailable,
                 notes = s.notes.trim().ifBlank { null },
             )
             if (isNew) dogDao.insert(dog) else dogDao.update(dog)

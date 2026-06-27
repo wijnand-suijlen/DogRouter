@@ -350,10 +350,12 @@ arrangement or gives up.
 
 Validated: rescues hold on every weekday; with N incompatible dogs it rescues
 the feasible subset and leaves the rest as conflicts (never breaking another
-dog), and dogs sharing a window share one park. Still open: a `PlanVerifier` /
-`docs/CSP_MODEL.md` note for the depot park events; tuning when a very long
-detour is worth it vs. leaving the dog a conflict (currently any feasible rescue
-is taken).
+dog), and dogs sharing a window share one park. The CSP spec is in sync —
+`docs/CSP_MODEL.md` now documents the boarding twist, the open-span C1 exception,
+the C4 exemption, and the new C12 max-gap; `PlanVerifier` no longer false-flags a
+boarding open span (the `WalkDurationConstraint` status keying). Still open:
+tuning when a very long detour is worth it vs. leaving the dog a conflict
+(currently any feasible rescue is taken).
 
 ## Open risks the spike must resolve
 

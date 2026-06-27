@@ -19,7 +19,7 @@ This is a reference, not a tutorial. For *how* the search explores this model
 ## 1. Problem shape
 
 The problem is a **Pickup-and-Delivery Problem with Time Windows (PDPTW)**
-specialised to one walker on one cargo bike, with two extra twists that an
+specialised to one walker on one cargo bike, with three extra twists that an
 ordinary PDPTW lacks:
 
 - **Service = walking**, and a single required walk may be **split** across
@@ -27,6 +27,13 @@ ordinary PDPTW lacks:
 - **Two transport modes per leg** — ride the cargo bike (dogs in the box) or
   walk the group on foot (bike parked) — with the mode constrained by each
   dog's physical transport state.
+- **Boarding ("sleepover") passengers.** A boarding dog is not a walk to place
+  but a dog **present across the whole day**: seeded aboard at a start anchor and
+  ending at an end anchor, it rides along every group walk (C6) instead of having
+  its own visit. It has **no fixed time window** and **no fixed walk duration** —
+  only a **maximum-gap coverage** rule (C12) — and may be **temporarily parked**
+  at a depot (a `Dropoff`…`Pickup` pair at the depot) to free a regular dog it
+  would otherwise block by incompatibility / capacity / group size.
 
 A plan is a single tour `HomeStart → … → HomeEnd` whose events are timed. The
 solver builds it constructively and the constraints below decide whether a
@@ -49,6 +56,12 @@ candidate tour is **feasible**; infeasible-to-place options become *conflicts*.
 - For a dog `g`: `w(g)` weight (kg), `cargo(g) = inCargoBike(g)` and
   `pack(g) = inBackpack(g)`, each in `{Yes, No, NotTested}`; `long(g) =
   allowLongerWalk(g)`.
+- A **boarding** ("sleepover") dog `g` has `boarding(g) = status(g).isBoarding`
+  (`DogStatus` ∈ {`BOARD_ARRIVE`, `BOARD_STAY`, `BOARD_LEAVE`}), a **start/end
+  anchor** (each owner-home or walker-home, derived from the status), one or more
+  **depots** `depots(g)` (the walker's home, plus the dog's own home when the key
+  is held), a minimum walk `minWalk(g)` and a maximum gap `maxGap(g)`
+  (`domain/dayplan/BoardingPassenger.kt`, from `AppSettings.boarding*`).
 - A **span** `s = (p, d)` pairs a `Pickup` `p` with its matching `Dropoff` `d`
   for one walk occurrence (FIFO per dog), with dog `dog(s)`, rule `rule(s)`,
   required seconds `req(s) = rule(s).durationMinutes · 60`
@@ -73,6 +86,19 @@ The **fixed frame** is not variable: `HomeStart`/`HomeEnd` are pinned at the
 day's ends, and any `Appointment` is pre-placed at its given time; the solver
 schedules dogs *around* these (`domain/dayplan/DayPlanner.kt`, `plan` →
 `baseEvents`).
+
+**Boarding passengers** are seeded into this frame too: a `Pickup` at the dog's
+start anchor (right after `HomeStart`, kept outermost so it rides the whole day),
+and a `Dropoff` at its end anchor **only** when that anchor is the owner's home
+(`BOARD_LEAVE`, a real evening return) — for a walker-home end (`BOARD_ARRIVE`/
+`BOARD_STAY`) the dog simply stays aboard through `HomeEnd` (it goes home with the
+walker), an intentionally open span (C1). A home-anchored pickup is stripped from
+the *presented* plan (the dog is already home; `DayPlanner.cleanBoarding`). The
+conflict-driven **parking** repair (`parkingRepair`) may additionally insert a
+depot `Dropoff`…`Pickup` pair into a passenger's presence and remove it from the
+walks in between (a V2 + V3 move) so a regular dog it blocks can be walked while
+it waits at the nearest depot in `depots(g)`; the hole this opens is bounded by
+C12.
 
 ### V1 — Alternative selection (placement)
 
@@ -208,8 +234,8 @@ window to open.
 ## 3. Constraints
 
 A plan is **feasible** iff every constraint below holds. Hard constraints C1–C9
-are checked either structurally (V2/WalkSpans) or by a `PlanningConstraint`
-(`domain/dayplan/constraints/`), applied after retiming via:
+and C12 are checked either structurally (V2/WalkSpans) or by a
+`PlanningConstraint` (`domain/dayplan/constraints/`), applied after retiming via:
 
 ```kotlin
 // DayPlanner.violation(events): first constraint to object wins.
@@ -230,8 +256,10 @@ val constraints = listOf(
     CapacityConstraint(capacityKg), TimeWindowConstraint(), WalkDurationConstraint(),
     IncompatibilityConstraint(incompatibilities), NoDogLeftBehindConstraint(),
     GroupSizeConstraint(maxGroupSize), AppointmentConstraint(),
-)
+) + if (boardingPassengers.isNotEmpty()) listOf(MaxGapConstraint(boardingPassengers)) else emptyList()
 ```
+
+`MaxGapConstraint` (C12) is added only when the day has boarding dogs.
 
 ### C1 — Pickup/dropoff pairing and ordering
 
@@ -245,6 +273,13 @@ two independent spans (FIFO pairing).
 d ≠ null  ∧  τ(p) ≤ τ(d)
 ∧  each Pickup pairs with exactly one later Dropoff of the same dog (FIFO)
 ```
+
+**Exception — boarding open spans.** A boarding dog (`boarding(g)`) whose end
+anchor is the walker's home (`BOARD_ARRIVE`/`BOARD_STAY`) ends the day **aboard**:
+its span is intentionally **open** (`d = null`, the dog goes home with the
+walker), so the `d ≠ null` requirement applies only to non-boarding dogs.
+`WalkDurationConstraint` skips boarding dogs (C4) and `TimeWindowConstraint`
+tolerates a null dropoff, so neither flags the open span.
 
 **Code.** Pairing in `domain/dayplan/WalkSpans.kt` (`walkSpans()`); ordering
 checked in `TimeWindowConstraint`:
@@ -324,10 +359,17 @@ where `footCredit(s)` is the on-foot seconds the dog accrues while aboard
 (full foot legs + the walk-back portion of bike legs), excluding the leg that
 fetches it.
 
+**Exception — boarding dogs.** A boarding dog has no per-span duration
+requirement (`req` does not apply; its coverage is C12) and may end its span
+aboard, so it is **exempt from C4**. The test keys on `dog.status.isBoarding`,
+so the exemption holds wherever the constraint runs — in the solver, in
+`PlanVerifier` (the warnings panel), and on saved/edited plans alike.
+
 **Code.** `domain/dayplan/constraints/WalkDurationConstraint.kt`, with
 `footCreditSeconds` from `domain/dayplan/WalkSpans.kt`:
 
 ```kotlin
+if (pickup.dog.status.isBoarding) continue   // C12 governs it, and it may end aboard
 val totalWalked = dwellWalked + span.footCreditSeconds(events)
 val required = pickup.rule.durationMinutes * 60
 if (totalWalked < required) return "${pickup.dog.name} walked … needs …"
@@ -529,6 +571,43 @@ private fun DistanceMatrix.bikeSeconds(from, to) =
 private fun DistanceMatrix.footSeconds(from, to) = (metersBetween(from, to) / walkingMetersPerSecond).toInt()
 ```
 
+### C12 — Boarding max-gap coverage
+
+**English.** A boarding dog must be walked often enough. It takes part in at
+least one **qualifying** walk (one it joins lasting at least its minimum walk
+length), and no gap longer than its configured maximum (`tussenpoos`) passes
+without one: not between its presence start (its first pickup) and its first
+qualifying walk, nor between two consecutive qualifying walks. This **replaces**
+the fixed-duration rule (C4) for boarding dogs and is the only coverage demand
+they carry. Added to the constraint set only when the day has boarding dogs.
+
+**Logic.** For each boarding dog `g`, let `QW(g) = ⟨w₁,…,w_k⟩` be the walks it
+joins of dwell ≥ `minWalk(g)`, in time order, and `start(g) = τ` of its first
+pickup:
+
+```
+k ≥ 1
+∧  τ(w₁) − start(g)                       ≤ maxGap(g)
+∧  ∀ j ∈ {2..k}.  τ(w_j) − (τ(w_{j-1}) + δ(w_{j-1}))  ≤ maxGap(g)
+```
+
+(The trailing gap from the last walk to the end anchor is not bounded — an open
+modelling choice noted in §5.)
+
+**Code.** `domain/dayplan/constraints/MaxGapConstraint.kt`:
+
+```kotlin
+val walks = events.filterIsInstance<RouteEvent.Walk>()
+    .filter { w -> w.durationSeconds >= p.minWalkSeconds && w.dogs.any { it.id == id } }
+    .sortedBy { it.timeSeconds }
+if (walks.isEmpty()) return "${p.dog.name}: no qualifying walk (>= … min) in the day"
+var prevEnd = presenceStart
+for (w in walks) {
+    if (w.timeSeconds - prevEnd > p.maxGapSeconds) return "${p.dog.name}: gap of … exceeds max …"
+    prevEnd = w.timeSeconds + w.durationSeconds
+}
+```
+
 ---
 
 ## 4. Objective (for completeness — not a feasibility constraint)
@@ -581,5 +660,15 @@ These are deliberate simplifications, documented so the spec is honest:
   cycling distance for walking). Good enough for the short hops where walking is
   chosen.
 - **Single continuous tour** — one `HomeStart → … → HomeEnd`; no multi-trip
-  structure.
+  structure. A boarding dog's depot parking is expressed within this one tour
+  (a `Dropoff`…`Pickup` detour), not as a separate trip home.
+- **A boarding passenger counts against capacity (C2) and group size (C7) the
+  whole time it is aboard**, exactly like a carried dog — which is why a busy day
+  cannot keep it aboard throughout and why **parking** (temporarily dropping it
+  at a depot, C12-bounded) is what frees a blocked regular dog. Parking is a last
+  resort: it is tried only for otherwise-unplaceable options and never delays or
+  drops another dog (every parked candidate is fully retimed and re-checked
+  against C1–C12).
+- **C12 ignores the trailing gap** from a boarding dog's last walk to its end
+  anchor (only gaps *before and between* qualifying walks are bounded).
 - **`dayStart`/`dayEnd` fixed** at 08:00–20:00 in the `DayPlanner` constructor.

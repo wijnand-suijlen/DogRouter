@@ -560,10 +560,21 @@ Walker-requested day-shaping features beyond the dogs' own schedules.
    to cancel** (needs a per-dog cancellation cost / priority, not just the
    conflict count). Introduces the capacity/advice model.
 2. **Sleepover (boarding) dog.** Board a client's dog for one or more days
-   (full design + spike: `docs/SLEEPOVER_DESIGN.md`). The dog has a daily walk
-   requirement with **no fixed time window**, governed by two **independent
-   axes** (an earlier A/B/C "modes" framing was too flat and is replaced by
-   this):
+   (full design + spike: `docs/SLEEPOVER_DESIGN.md`).
+
+   **STATUS: largely built (2026-06-27).** Per-dog status enum (Room v15 +
+   backup v7), the all-day passenger solver (seeded presence, ride-along via
+   `NoDogLeftBehind`, `MaxGapConstraint`, soft cap term), conflict-driven
+   parking (amortised multi-walk, nearest depot), the warnings-panel and
+   just-in-time-pickup fixes, and the Dogs/Today UI all landed. The CSP spec
+   (`docs/CSP_MODEL.md`) is in sync (boarding twist, open-span C1 exception, C4
+   exemption, new C12 max-gap). Remaining: Settings sliders for the boarding
+   knobs, `shortWalksOverride` for plain WALK dogs in the solver, and the
+   "is there room?" acceptance check (shares the #1 capacity/advice model).
+
+   The dog has a daily walk requirement with **no fixed time window**, governed
+   by two **independent axes** (an earlier A/B/C "modes" framing was too flat
+   and is replaced by this):
 
    - **Walk constraints (always on for a sleepover dog):**
      - **Minimum walk duration: 15 min** (constant).

@@ -112,6 +112,13 @@ class DayPlanner(
     // (overshoot in minutes). 0 = ignore the cap (pure meenemen). Far below
     // OVERSIZE_PENALTY_SECONDS. Drives the park-vs-ride-along trade (stage 2).
     private val boardingCapWeight: Float = 0f,
+    // When true, a boarding dog may be temporarily PARKED at its depot to rescue
+    // a regular dog it would otherwise block (incompatibility / capacity / group
+    // size): a Dropoff@depot + later Pickup@depot carves a hole in its presence
+    // so the regular dog can be walked while it waits at the depot. Parking is a
+    // last resort, used only to place an otherwise-unplaceable regular option;
+    // it never drops a regular dog. See docs/SLEEPOVER_DESIGN.md.
+    private val boardingParkingEnabled: Boolean = false,
 ) {
     companion object {
         /** Multi-start seeds the planner builds by default; see the ctor note. */
@@ -190,7 +197,7 @@ class DayPlanner(
             routable.map { GeoPoint(it.dog.latitude!!, it.dog.longitude!!) } +
                 home + (breakSpec?.locations ?: emptyList()) +
                 sortedAppointments.map { it.location } +
-                boardingPassengers.flatMap { listOf(it.startLocation(), it.endLocation(), it.depot) }
+                boardingPassengers.flatMap { it.allowedDepots + it.startLocation() + it.endLocation() }
             ).toSet()
         val matrix = DistanceMatrix.build(
             points,
@@ -203,7 +210,7 @@ class DayPlanner(
         val constraints = listOf(
             CapacityConstraint(capacityKg),
             TimeWindowConstraint(),
-            WalkDurationConstraint(boardingDogIds),
+            WalkDurationConstraint(),
             IncompatibilityConstraint(incompatibilities),
             NoDogLeftBehindConstraint(),
             GroupSizeConstraint(maxGroupSize),
@@ -257,6 +264,14 @@ class DayPlanner(
             if (SolverProfile.enabled) SolverProfile.lnsNanos += System.nanoTime() - lnsStart
 
             if (best == null || current.isBetterThan(best!!)) best = current
+        }
+
+        // Rescue regular dogs the boarding passenger blocks (incompatibility /
+        // capacity / group size) by temporarily parking it at its depot. Only
+        // when something is unplaced; never drops a regular dog (it strictly
+        // reduces the conflict count or is discarded). See parkingRepair.
+        if (boardingParkingEnabled && boardingPassengers.isNotEmpty() && best!!.unplaced.isNotEmpty()) {
+            best = parkingRepair(best!!, matrix, constraints)
         }
         SolverProfile.lastScoreSec = best!!.score()
 
@@ -535,9 +550,19 @@ class DayPlanner(
     private fun DayRoute.cleanBoarding(): DayRoute {
         if (boardingDogIds.isEmpty()) return this
         val homeLocation = home
-        val cleaned = events.filterNot { e ->
-            (e is RouteEvent.Pickup && e.dog.id in boardingDogIds && e.location == homeLocation) ||
-                (e is RouteEvent.Walk && e.durationSeconds == 0)
+        // Only the dog's FIRST pickup is the seeded presence start to strip when
+        // at home; a later pickup at home is a real re-collect after parking.
+        val firstPickupIdx = HashMap<String, Int>()
+        events.forEachIndexed { i, e ->
+            if (e is RouteEvent.Pickup && e.dog.id in boardingDogIds) {
+                firstPickupIdx.putIfAbsent(e.dog.id, i)
+            }
+        }
+        val cleaned = events.filterIndexed { i, e ->
+            val stripPickup = e is RouteEvent.Pickup && e.dog.id in boardingDogIds &&
+                e.location == homeLocation && firstPickupIdx[e.dog.id] == i
+            val emptyWalk = e is RouteEvent.Walk && e.durationSeconds == 0
+            !(stripPickup || emptyWalk)
         }
         return copy(events = cleaned)
     }
@@ -734,6 +759,190 @@ class DayPlanner(
             placed = solution.placed.filter { it !== option },
             unplaced = solution.unplaced,
         )
+    }
+
+    /**
+     * Rescue the still-unplaced regular options by parking a boarding passenger
+     * at its depot. Two complementary moves, each only ever *adding* a rescue
+     * (strictly fewer conflicts), so a regular dog is never dropped or pushed
+     * past its window to make room:
+     *
+     *  - **A) Amortised multi-walk parking** ([parkAndReinsert]): drop the
+     *    passenger once over a run of the walks it rides, then re-insert as many
+     *    unplaced options as fit into that one parked window (joining the
+     *    now-passenger-free walks or as solo walks), and re-collect once. One
+     *    detour rescues several dogs. Repeated while it keeps improving.
+     *  - **B) Solo fallback** ([tryPlaceSolo]): for a leftover victim that only
+     *    fits an empty-handed gap (no group walk in its window), park the
+     *    passenger just for a solo walk there.
+     *
+     * [MaxGapConstraint] bounds the parked hole in the passenger's walks, and
+     * every candidate is fully retimed and checked against all constraints, so a
+     * rescue is accepted only when it breaks nothing else.
+     */
+    private fun parkingRepair(
+        solution: Solution,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution {
+        var current = solution
+        // A) Amortised multi-walk parking, repeated so separate runs can each
+        // rescue a different cluster of dogs.
+        for (passenger in boardingPassengers) {
+            while (current.unplaced.isNotEmpty()) {
+                val walkIdx = current.events.indices.filter { i ->
+                    val e = current.events[i]
+                    e is RouteEvent.Walk && e.dogs.any { d -> d.id == passenger.dog.id }
+                }
+                var bestRun: Solution? = null
+                for (a in walkIdx.indices) {
+                    for (b in a until walkIdx.size) {
+                        val cand = parkAndReinsert(current, passenger, walkIdx[a], walkIdx[b], matrix, constraints)
+                        if (cand != null && (bestRun == null || cand.isBetterThan(bestRun!!))) bestRun = cand
+                    }
+                }
+                if (bestRun != null && bestRun!!.isBetterThan(current)) current = bestRun!! else break
+            }
+        }
+        // B) Solo fallback for anything still unplaced.
+        for (option in current.unplaced.toList()) {
+            val placed = tryPlaceSolo(current, option, matrix, constraints) ?: continue
+            if (placed.isBetterThan(current)) current = placed
+        }
+        return current
+    }
+
+    /**
+     * Park [passenger] over the run of its walks from index [fromWalk] to
+     * [toWalk] — drop it at the nearest depot just before the run, remove it
+     * from those walks, and re-collect it just after — then greedily re-insert
+     * every unplaced option
+     * into the parked plan ([tryInsertOption], which can join the freed walks or
+     * add a solo one). Returns the improved solution if at least one option is
+     * placed and the whole plan stays feasible (the parked hole respects
+     * [MaxGapConstraint]); null otherwise.
+     */
+    private fun parkAndReinsert(
+        solution: Solution,
+        passenger: BoardingPassenger,
+        fromWalk: Int,
+        toWalk: Int,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution? {
+        val events = solution.events
+        val id = passenger.dog.id
+        val depot = nearestDepot(passenger, events[fromWalk].location, matrix)
+        val parked = ArrayList<RouteEvent>(events.size + 2)
+        for (i in events.indices) {
+            if (i == fromWalk) parked.add(RouteEvent.Dropoff(0, depot, passenger.dog))
+            val e = events[i]
+            if (i in fromWalk..toWalk && e is RouteEvent.Walk && e.dogs.any { it.id == id }) {
+                val remaining = e.dogs.filter { it.id != id }
+                if (remaining.isNotEmpty()) parked.add(e.copy(dogs = remaining)) // else drop emptied walk
+            } else {
+                parked.add(e)
+            }
+            if (i == toWalk) parked.add(RouteEvent.Pickup(0, depot, passenger.dog, boardingRule(id)))
+        }
+        var current = retimeAndCost(parked, matrix)?.first ?: return null
+        // Removing the passenger only relaxes the structural constraints; the one
+        // thing that can newly break is its own max-gap (the parked hole). Reject
+        // the run early when the hole is too long.
+        if (constraints.violation(current) != null) return null
+        val placed = ArrayList<WalkOption>()
+        val stillUnplaced = ArrayList<WalkOption>()
+        for (option in solution.unplaced) {
+            val inserted = tryInsertOption(current, option, matrix, constraints)
+            if (inserted != null) { current = inserted; placed.add(option) } else stillUnplaced.add(option)
+        }
+        if (placed.isEmpty()) return null
+        return Solution(current, solution.placed + placed, stillUnplaced)
+    }
+
+    /**
+     * Place the leftover [option] as a solo walk in an empty-handed gap of a
+     * passenger (only the passenger aboard), parking it just for that walk:
+     * `Dropoff(passenger)@depot, Pickup(O), Walk(O), Dropoff(O), Pickup(passenger)@depot`.
+     * Covers a victim with no group walk in its window to join. Cheapest feasible
+     * placement across passengers and gaps; null if none fits.
+     */
+    private fun tryPlaceSolo(
+        solution: Solution,
+        option: WalkOption,
+        matrix: DistanceMatrix,
+        constraints: List<PlanningConstraint>,
+    ): Solution? {
+        val events = solution.events
+        var best: List<RouteEvent>? = null
+        var bestCost = Int.MAX_VALUE
+        for (passenger in boardingPassengers) {
+            for (alternative in option.alternatives) {
+                for (pos in parkablePositions(events, passenger)) {
+                    val depot = nearestDepot(passenger, alternative.geoPoint(), matrix)
+                    val cand = buildParkBlock(events, pos, alternative, passenger, depot)
+                    includeAboardPassengers(cand)
+                    if (!structurallyFeasible(cand)) continue
+                    val (eventList, cost) = retimeAndCost(cand, matrix) ?: continue
+                    if (cost >= bestCost) continue
+                    if (constraints.violation(eventList) != null) continue
+                    best = eventList
+                    bestCost = cost
+                }
+            }
+        }
+        return best?.let {
+            Solution(it, solution.placed + option, solution.unplaced.filter { o -> o !== option })
+        }
+    }
+
+    /** The allowed depot nearest [ref] (road metres) — the dog's own home when
+     *  the key is held, else the walker's home; minimises the park detour. */
+    private fun nearestDepot(passenger: BoardingPassenger, ref: GeoPoint, matrix: DistanceMatrix): GeoPoint =
+        passenger.allowedDepots.minByOrNull { matrix.metersBetween(ref, it) } ?: passenger.depot
+
+    /**
+     * Gap positions (insert-before indices) where ONLY [passenger] is aboard —
+     * the passenger has been picked up, not yet dropped off, and no other dog is
+     * in the bag. A solo park block can be carved only here: dropping the
+     * passenger and walking the rescued dog alone would otherwise strand any
+     * other aboard dog (it must be in every walk — NoDogLeftBehind).
+     */
+    private fun parkablePositions(events: List<RouteEvent>, passenger: BoardingPassenger): List<Int> {
+        val id = passenger.dog.id
+        val positions = ArrayList<Int>()
+        var passengerAboard = false
+        var othersAboard = 0
+        for (i in events.indices) {
+            if (passengerAboard && othersAboard == 0) positions.add(i)
+            when (val e = events[i]) {
+                is RouteEvent.Pickup -> if (e.dog.id == id) passengerAboard = true else othersAboard++
+                is RouteEvent.Dropoff -> if (e.dog.id == id) passengerAboard = false else othersAboard--
+                else -> Unit
+            }
+        }
+        return positions
+    }
+
+    /** Build the un-retimed solo park block for [walk] at [pos], parking the
+     *  passenger at [depot]. */
+    private fun buildParkBlock(
+        events: List<RouteEvent>,
+        pos: Int,
+        walk: PlannedWalk,
+        passenger: BoardingPassenger,
+        depot: GeoPoint,
+    ): MutableList<RouteEvent> {
+        val oLoc = walk.geoPoint()
+        val out = ArrayList<RouteEvent>(events.size + 5)
+        out.addAll(events.subList(0, pos))
+        out.add(RouteEvent.Dropoff(0, depot, passenger.dog))
+        out.add(RouteEvent.Pickup(0, oLoc, walk.dog, walk.rule))
+        out.add(RouteEvent.Walk(0, oLoc, listOf(walk.dog), walk.rule.durationMinutes * 60))
+        out.add(RouteEvent.Dropoff(0, oLoc, walk.dog))
+        out.add(RouteEvent.Pickup(0, depot, passenger.dog, boardingRule(passenger.dog.id)))
+        out.addAll(events.subList(pos, events.size))
+        return out
     }
 
     /**
@@ -1102,36 +1311,39 @@ class DayPlanner(
             retimed.add(placed)
         }
 
-        // Push HomeStart forward to "leave home just in time": no point
-        // standing at the first stop waiting for its window to open.
-        // Adjusting also shrinks the day's elapsed cost, which steers the
-        // algorithm toward schedules with less idle time.
-        //
-        // Skip leading events that are still AT home with no travel — HomeStart
-        // and any home-located boarding-dog pickup. A boarding dog has been at
-        // home overnight, so collecting it does not make the working day start
-        // early; the day starts when the walker first rides/walks away. All
-        // those leading home events are pinned to that just-in-time departure.
-        // For a regular plan retimed[1] is a real stop (travel > 0 or a
-        // different location), so firstAway stays 1 and only HomeStart shifts —
-        // identical to the old behaviour.
+        // Leave home — and collect any boarding dog — just in time. Walk back
+        // from the first time-constrained event and delay the whole leading
+        // chain that has no earliest-time requirement of its own — HomeStart,
+        // home stops, and **boarding-dog pickups** (which carry no window) — by
+        // the idle the walker would otherwise wait at that constrained event. So
+        // instead of collecting an Ophaal dog at dawn and then standing around an
+        // hour until the first walk's window opens, the walker leaves late enough
+        // to ride home→owner→first dog straight through. For a regular day the
+        // chain is just HomeStart, so this matches the old "leave just in time".
         if (retimed.firstOrNull() is RouteEvent.HomeStart) {
-            var firstAway = 1
-            while (firstAway < retimed.size &&
-                retimed[firstAway].incomingTravelSeconds == 0 &&
-                retimed[firstAway].location == homeLocation
-            ) {
-                firstAway++
+            // Extent of the leading no-window chain.
+            var chainEnd = 0
+            while (chainEnd + 1 < retimed.size) {
+                val e = retimed[chainEnd + 1]
+                val noWindow = (e.incomingTravelSeconds == 0 && e.location == homeLocation) ||
+                    (e is RouteEvent.Pickup && e.dog.status.isBoarding)
+                if (!noWindow) break
+                chainEnd++
             }
-            val depart = retimed.getOrNull(firstAway)
-            if (depart != null) {
-                val effectiveLeave =
-                    maxOf(dayStartSeconds, depart.timeSeconds - depart.incomingTravelSeconds)
-                for (i in 0 until firstAway) {
-                    retimed[i] = when (val e = retimed[i]) {
-                        is RouteEvent.HomeStart -> e.copy(timeSeconds = effectiveLeave)
-                        is RouteEvent.Pickup -> e.copy(timeSeconds = effectiveLeave)
-                        else -> e
+            val anchor = retimed.getOrNull(chainEnd + 1)
+            if (anchor != null) {
+                // Idle the walker would wait at the anchor (it arrived before its
+                // window); delay the chain by it so the anchor is reached on time.
+                val arrival = retimed[chainEnd].timeSeconds +
+                    retimed[chainEnd].durationAtSeconds(stopBufferSeconds) + anchor.incomingTravelSeconds
+                val slack = (anchor.timeSeconds - arrival).coerceAtLeast(0)
+                if (slack > 0) {
+                    for (i in 0..chainEnd) {
+                        retimed[i] = when (val e = retimed[i]) {
+                            is RouteEvent.HomeStart -> e.copy(timeSeconds = e.timeSeconds + slack)
+                            is RouteEvent.Pickup -> e.copy(timeSeconds = e.timeSeconds + slack)
+                            else -> e
+                        }
                     }
                 }
             }

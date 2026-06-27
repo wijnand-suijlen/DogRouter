@@ -288,7 +288,74 @@ and run on the real data. Results:
   be aboard during it) — needs parking during the appointment (not yet handled;
   spike scenarios have no appointments).
 
-### Open risks the spike must resolve
+## 8. Conflict-driven parking (spike — built & measured)
+
+The passenger backbone keeps the boarding dog aboard every walk, so a regular
+dog that is **incompatible** with it (or blocked by capacity / group size) can
+never share a walk and becomes a conflict — wrong, since a paying client must
+never be dropped for a boarding dog. Fix: temporarily **park** the boarding dog
+at its depot to rescue such a dog. Spike behind `boardingParkingEnabled`
+(`DayPlanner`), driven by `SolverHarness.boardingParkingSpike`
+(`-Dsolver.boardingPark`).
+
+**Mechanism.** After the normal solve, `parkingRepair` walks the unplaced
+options and tries to place each by parking a passenger (`tryPlaceByParking`):
+
+- **Join a group walk** (`buildParkAroundWalk`): around an existing walk the
+  passenger rides, insert `Dropoff(passenger)@depot, Pickup(O), walk(others−passenger+O),
+  Dropoff(O), Pickup(passenger)@depot`. The passenger rides every *other* walk,
+  so the park is minimal and its max-gap still holds; O joins the group the
+  passenger stepped out of.
+- **Solo in an empty-handed gap** (`buildParkBlock` at `parkablePositions`):
+  where only the passenger is aboard, drop it and walk O alone (covers a victim
+  with no group walk in its window).
+
+Because the passenger is dropped (a real `Dropoff`/`Pickup` pair), the existing
+machinery does the rest for free: `includeAboardPassengers` stops adding it
+while parked, and capacity / incompatibility / group / NoDogLeftBehind stop
+counting it. Each candidate is fully retimed and checked against ALL
+constraints, so a rescue is accepted only if it breaks nothing else — parking
+never drops or delays another dog past its window; it either finds a feasible
+arrangement or gives up.
+
+**Findings.**
+- Works on every weekday: a regular dog made incompatible with the boarding dog
+  is a conflict without parking and is walked with it (join or solo).
+- The repair is conservative by construction — it only ever *adds* a rescue
+  (strictly fewer conflicts), never trades one dog for another.
+- **Cost: the depot detour is significant** (e.g. Monday +1h34 day length with
+  the depot at the owner's home ~1 km away — drop the dog, walk the victim,
+  ride back to collect it). Acceptable per the walker's priority (ride more
+  rather than drop a client), but a strong argument for the **nearest-depot**
+  choice and, later, amortising one park across several walks instead of a
+  round-trip per rescue.
+- **Tight windows resist rescue**: when the detour would push the victim past
+  its own latest-start, or push another dog past its window, that candidate is
+  rejected; a victim with a flexible window is rescued, a tight morning one may
+  remain a conflict. Correct, but it means parking is not a cure-all on a packed
+  day (which is itself the "too busy, do not accept the stay" signal).
+
+**Productionised (2026-06-27).** Parking now runs in the real pipeline:
+
+- `DayPlanService` always passes `boardingParkingEnabled = true` (it only ever
+  adds a rescue, so there is no reason to gate it).
+- **Nearest depot** (`nearestDepot`): `BoardingPassenger.allowedDepots` is the
+  walker's home plus the dog's own home when the key is held; each park picks
+  whichever is nearest (road metres) to the rescued walk, shrinking the detour.
+- **Amortised multi-walk parking** (`parkAndReinsert`): one drop over a run of
+  the passenger's walks, re-collect once, and re-insert *every* unplaced option
+  into that single window (join or solo) — so several blocked dogs can share one
+  detour. `parkingRepair` repeats it (separate clusters get their own window)
+  and falls back to a solo empty-gap park (`tryPlaceSolo`) for leftovers.
+
+Validated: rescues hold on every weekday; with N incompatible dogs it rescues
+the feasible subset and leaves the rest as conflicts (never breaking another
+dog), and dogs sharing a window share one park. Still open: a `PlanVerifier` /
+`docs/CSP_MODEL.md` note for the depot park events; tuning when a very long
+detour is worth it vs. leaving the dog a conflict (currently any feasible rescue
+is taken).
+
+## Open risks the spike must resolve
 
 - **Open spans** through the retimer (`aboard` seeded at `HomeStart`; aboard at
   `HomeEnd`) and through every span-based constraint / `effectiveDwells`.

@@ -296,6 +296,10 @@ class DayPlanService(
         lnsIterations = settings.lnsIterations,
         boardingPassengers = boarding,
         boardingCapWeight = settings.boardingCapWeight,
+        // Always rescue a regular dog the boarding passenger would block by
+        // temporarily parking it — it only ever places an otherwise-conflicting
+        // dog, never drops one.
+        boardingParkingEnabled = true,
     )
 
     /** A [BreakSpec] from the settings. Home lunch works even with no break

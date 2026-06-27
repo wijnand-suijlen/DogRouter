@@ -50,8 +50,14 @@ data class BoardingPassenger(
     val startAnchor: BoardingAnchor,
     val endAnchor: BoardingAnchor,
 ) {
-    /** Where the dog may be left between walks. */
+    /** Where the dog may be left between walks (the default single depot). */
     val depot: GeoPoint get() = if (keyAvailable) ownerHome else walkerHome
+
+    /** Every depot the dog may be parked at: the walker's home always, plus the
+     *  dog's own home when the walker holds the key. The parking repair picks
+     *  whichever is nearest to each park, to keep the detour short. */
+    val allowedDepots: List<GeoPoint>
+        get() = if (keyAvailable) listOf(walkerHome, ownerHome) else listOf(walkerHome)
 
     fun startLocation(): GeoPoint =
         if (startAnchor == BoardingAnchor.OWNER_HOME) ownerHome else walkerHome

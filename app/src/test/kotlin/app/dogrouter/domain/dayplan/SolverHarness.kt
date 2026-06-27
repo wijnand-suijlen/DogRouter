@@ -384,6 +384,9 @@ class SolverHarness {
             inCargoBike = TransportState.Yes,
             inBackpack = TransportState.NotTested,
             allowLongerWalk = true,
+            // Mirror production: a boarding dog carries a boarding status, which is
+            // how WalkDurationConstraint / PlanVerifier recognise its open span.
+            status = boardingStatusFor(startAnchor, endAnchor),
             notes = null,
         )
         val passenger = BoardingPassenger(
@@ -449,6 +452,15 @@ class SolverHarness {
         sb.appendLine("  Largest gap .................. ${minutesOf(maxGap)} (max allowed ${gapMin}m)")
         val gapViolation = MaxGapConstraint(listOf(passenger)).violation(boardingRoute.events)
         sb.appendLine("  Max-gap check ................ ${gapViolation ?: "OK"}")
+        // PlanVerifier (the warnings panel) must NOT flag the boarding dog's
+        // intentional open span (it ends aboard / is returned at its address).
+        val verifierViolations = PlanVerifier.violations(
+            route = boardingRoute,
+            capacityKg = settings.bikeCapacityKg,
+            stopBufferSeconds = settings.stopBufferMinutes * 60,
+            incompatibilities = pairs,
+        )
+        sb.appendLine("  PlanVerifier ................. ${if (verifierViolations.isEmpty()) "OK" else verifierViolations}")
         sb.appendLine()
 
         // Cost of carrying the passenger (the b-vs-pure-a judgement axis).
@@ -473,6 +485,129 @@ class SolverHarness {
 
     private fun deltaLabel(sec: Int): String =
         if (sec >= 0) "+${minutesOf(sec)}" else "-${minutesOf(-sec)}"
+
+    /**
+     * Conflict-driven parking spike — see docs/SLEEPOVER_DESIGN.md. A boarding
+     * dog ("Alfa") rides along all day, but is made INCOMPATIBLE with one
+     * regular dog (the first option's dog). Without parking that regular dog
+     * cannot be walked at all (Alfa is aboard every walk) and becomes a
+     * conflict. With parking enabled, Alfa is temporarily dropped at its depot
+     * during that dog's walk, so the regular dog is rescued. The spike shows the
+     * conflict count drop and prints the park block.
+     *
+     * Gated behind -Dsolver.boardingPark. Knobs: -Dsolver.day (default THURSDAY),
+     * -Dsolver.seed, -Dsolver.restarts, -Dsolver.boardingKey (depot = owner home
+     * when true, default true here so the depot differs from the walker's home).
+     */
+    @Test
+    fun boardingParkingSpike() = runBlocking {
+        Assume.assumeTrue("set -Dsolver.boardingPark", System.getProperty("solver.boardingPark") != null)
+        val backup = loadBackup()
+        val settings = backup.settings.toAppSettings()
+        val dogs = backup.dogs.map { it.toEntity() }
+        val rules = backup.scheduleRules.map { it.toEntity() }
+        val basePairs = backup.incompatibilities.map { it.toEntity() }
+            .map { canonicalPair(it.dogIdA, it.dogIdB) }.toSet()
+
+        val dow = System.getProperty("solver.day")?.let { DayOfWeek.valueOf(it.uppercase()) }
+            ?: DayOfWeek.THURSDAY
+        val date = LocalDate.of(2026, 6, 22).plusDays((dow.value - 1).toLong())
+        val seed = System.getProperty("solver.seed")?.toLongOrNull() ?: 0L
+        val restarts = System.getProperty("solver.restarts")?.toIntOrNull() ?: DayPlanner.DEFAULT_RESTARTS
+        val key = System.getProperty("solver.boardingKey")?.let { it.toBoolean() } ?: true
+        val home = settings.homeGeoPoint() ?: error("home not set in backup settings")
+
+        val ownerHome = GeoPoint(home.latitude + 0.009, home.longitude)
+        val alfa = Dog(
+            id = "boarding-alfa", name = "Alfa", breed = null, weightKg = 7f, photoUri = null,
+            ownerName = "Boarding client", ownerPhone = null, address = "Boarding address",
+            latitude = ownerHome.latitude, longitude = ownerHome.longitude, stopNotes = null,
+            inCargoBike = TransportState.Yes, inBackpack = TransportState.NotTested,
+            allowLongerWalk = true, status = DogStatus.BOARD_STAY, notes = null,
+        )
+        val passenger = BoardingPassenger(
+            dog = alfa, ownerHome = ownerHome, walkerHome = home, keyAvailable = key,
+            capSeconds = null, maxGapSeconds = 180 * 60, minWalkSeconds = 15 * 60,
+            startAnchor = BoardingAnchor.WALKER_HOME, endAnchor = BoardingAnchor.WALKER_HOME,
+        )
+
+        val options = buildOptions(date, dogs, rules)
+        // Pick a victim that the base plan (no boarding dog) DOES walk, so it is
+        // demonstrably feasible on its own and only the incompatibility with Alfa
+        // can block it. Prefer one with the widest schedule window.
+        val basePlan = plannerFor(settings, basePairs, restarts).plan(date, options, seed)
+        val walkedIds = basePlan.events.filterIsInstance<RouteEvent.Walk>()
+            .flatMap { it.dogs }.map { it.id }.toSet()
+        // Make Alfa incompatible with the N widest-START-window walked dogs, so
+        // the park detour has slack and several blocked dogs can share one park
+        // window (-Dsolver.boardingVictims, default 1).
+        val nVictims = System.getProperty("solver.boardingVictims")?.toIntOrNull() ?: 1
+        val victims = options.map { it.alternatives.first() }
+            .filter { it.dog.id in walkedIds }
+            .distinctBy { it.dog.id }
+            .sortedByDescending { pw ->
+                val e = pw.rule.earliestStart?.toSecondOfDay() ?: 0
+                val l = pw.rule.latestStart?.toSecondOfDay()
+                    ?: pw.rule.latestEnd?.toSecondOfDay()?.minus(pw.rule.durationMinutes * 60)
+                    ?: 24 * 3600
+                l - e
+            }
+            .take(nVictims)
+            .map { it.dog }
+            .ifEmpty { listOf(options.first().dog) }
+        val pairs = basePairs + victims.map { canonicalPair(alfa.id, it.id) }
+
+        val noPark = plannerFor(settings, pairs, restarts, boarding = listOf(passenger)).plan(date, options, seed)
+        val parked = plannerFor(
+            settings, pairs, restarts, boarding = listOf(passenger), boardingParkingEnabled = true,
+        ).plan(date, options, seed)
+
+        fun walked(route: DayRoute, dogId: String) =
+            route.events.any { it is RouteEvent.Walk && it.dogs.any { d -> d.id == dogId } }
+        // Each park window opens with one Alfa depot Dropoff (BOARD_STAY seeds no
+        // dropoff), so counting them shows how many detours the rescue took.
+        fun parkWindows(route: DayRoute) =
+            route.events.count { it is RouteEvent.Dropoff && it.dog.id == alfa.id }
+
+        val sb = StringBuilder()
+        sb.appendLine("=".repeat(72))
+        sb.appendLine("BOARDING PARKING SPIKE — ${dayName(dow)} ($date)")
+        sb.appendLine("Alfa (boarding, depot=${if (key) "owner home" else "walker home"}) " +
+            "made incompatible with ${victims.joinToString { it.name }}")
+        sb.appendLine("=".repeat(72))
+        sb.appendLine()
+        sb.appendLine("WITHOUT parking:")
+        sb.appendLine("  Conflicts ............ ${noPark.conflicts.size} " +
+            "(${noPark.conflicts.joinToString { it.dog.name }})")
+        sb.appendLine("  victims walked ....... ${victims.count { walked(noPark, it.id) }}/${victims.size}")
+        sb.appendLine()
+        sb.appendLine("WITH parking:")
+        sb.appendLine("  Conflicts ............ ${parked.conflicts.size} " +
+            "(${parked.conflicts.joinToString { it.dog.name }})")
+        sb.appendLine("  victims walked ....... ${victims.count { walked(parked, it.id) }}/${victims.size}")
+        sb.appendLine("  park windows ......... ${parkWindows(parked)} (Alfa depot dropoffs)")
+        sb.appendLine("  Day length ........... ${minutesOf(dayLen(noPark))} -> ${minutesOf(dayLen(parked))}")
+        sb.appendLine()
+        sb.appendLine("--- Plan WITH parking ---")
+        appendTimeline(sb, parked, settings)
+
+        val text = sb.toString()
+        println(text)
+        val out = File("build/solver-boarding-park.txt")
+        out.parentFile?.mkdirs()
+        out.writeText(text)
+        println("Parking spike written to ${out.absolutePath}")
+    }
+
+    private fun dayLen(route: DayRoute): Int =
+        if (route.events.size >= 2) route.events.last().timeSeconds - route.events.first().timeSeconds else 0
+
+    /** The DogStatus matching a pair of boarding anchors (mirrors production). */
+    private fun boardingStatusFor(start: BoardingAnchor, end: BoardingAnchor): DogStatus = when {
+        start == BoardingAnchor.OWNER_HOME -> DogStatus.BOARD_ARRIVE
+        end == BoardingAnchor.OWNER_HOME -> DogStatus.BOARD_LEAVE
+        else -> DogStatus.BOARD_STAY
+    }
 
     /** Print raw routing distances (BRouter vs straight line) for a weekday's
      *  dogs, flagging failures and big detours. -Dsolver.dump (+ -Dsolver.router). */
@@ -587,6 +722,7 @@ class SolverHarness {
         // to the regular one (see boardingSpike).
         boarding: List<BoardingPassenger> = emptyList(),
         boardingCapWeight: Float = 0f,
+        boardingParkingEnabled: Boolean = false,
     ) = DayPlanner(
         routingProvider = harnessRouting(),
         home = settings.homeGeoPoint(),
@@ -606,6 +742,7 @@ class SolverHarness {
             ?: DayPlanner.DEFAULT_LNS_ITERATIONS,
         boardingPassengers = boarding,
         boardingCapWeight = boardingCapWeight,
+        boardingParkingEnabled = boardingParkingEnabled,
     )
 
     private fun daysWithRules(rules: List<DogScheduleRule>): List<DayOfWeek> =

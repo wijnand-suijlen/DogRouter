@@ -124,6 +124,8 @@ fun TodayScreen(
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val breakRequested by viewModel.breakRequested.collectAsStateWithLifecycle()
     val stopBufferSeconds by viewModel.stopBufferSeconds.collectAsStateWithLifecycle()
+    val homePoint by viewModel.homePoint.collectAsStateWithLifecycle()
+    val homeAddress by viewModel.homeAddress.collectAsStateWithLifecycle()
     val isPlanEdited by viewModel.isPlanEdited.collectAsStateWithLifecycle()
     val removingDogIds by viewModel.removingDogIds.collectAsStateWithLifecycle()
     val planWarnings by viewModel.planWarnings.collectAsStateWithLifecycle()
@@ -235,6 +237,8 @@ fun TodayScreen(
                 EditableTimeline(
                     items = items,
                     removingDogIds = removingDogIds,
+                    homePoint = homePoint,
+                    homeAddress = homeAddress,
                     onMove = viewModel::onMove,
                     onReorderStart = viewModel::onReorderStart,
                     onReorderStop = viewModel::onReorderStop,
@@ -246,7 +250,7 @@ fun TodayScreen(
                     onNotToday = viewModel::markDogNotToday,
                 )
             } else {
-                DayRouteContent(planState, stopBufferSeconds, onOpenLegMap)
+                DayRouteContent(planState, stopBufferSeconds, onOpenLegMap, homePoint, homeAddress)
             }
         }
     }
@@ -372,6 +376,8 @@ fun TodayScreen(
 private fun EditableTimeline(
     items: List<EditItem>,
     removingDogIds: Set<String>,
+    homePoint: GeoPoint?,
+    homeAddress: String,
     onMove: (from: Int, to: Int) -> Unit,
     onReorderStart: () -> Unit,
     onReorderStop: () -> Unit,
@@ -423,6 +429,8 @@ private fun EditableTimeline(
                     inSharedRun = inSharedRun,
                     mergeable = mergeable,
                     handleModifier = handle,
+                    homePoint = homePoint,
+                    homeAddress = homeAddress,
                     removing = event.removesWith(removingDogIds),
                     onToggleLeg = if (index > 0 && event.incomingTravelSeconds > 0) {
                         { onToggleLeg(index) }
@@ -466,6 +474,8 @@ private fun EditChip(
     inSharedRun: Boolean,
     mergeable: Boolean,
     handleModifier: Modifier,
+    homePoint: GeoPoint?,
+    homeAddress: String,
     removing: Boolean,
     onToggleLeg: (() -> Unit)?,
     onBodyTap: (() -> Unit)?,
@@ -528,7 +538,7 @@ private fun EditChip(
                         fontWeight = FontWeight.Medium,
                         textDecoration = if (removing) TextDecoration.LineThrough else null,
                     )
-                    event.subtitle()?.let { sub ->
+                    event.subtitle(homePoint, homeAddress)?.let { sub ->
                         Text(
                             text = sub,
                             style = MaterialTheme.typography.bodySmall,
@@ -902,6 +912,8 @@ private fun DayRouteContent(
     state: PlanState,
     stopBufferSeconds: Int,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+    homePoint: GeoPoint?,
+    homeAddress: String,
 ) {
     when (state) {
         is PlanState.Loading -> LoadingBox(state.fraction, state.phase)
@@ -924,7 +936,7 @@ private fun DayRouteContent(
                     }
                     val timeline = buildTimelineRows(route.events, stopBufferSeconds)
                     items(timeline) { row ->
-                        TimelineRowView(row, onOpenLegMap)
+                        TimelineRowView(row, onOpenLegMap, homePoint, homeAddress)
                     }
                 }
             }
@@ -1116,10 +1128,12 @@ private fun buildTimelineRows(events: List<RouteEvent>, stopBufferSeconds: Int):
 private fun TimelineRowView(
     row: TimelineRow,
     onOpenLegMap: (from: GeoPoint, to: GeoPoint) -> Unit,
+    homePoint: GeoPoint?,
+    homeAddress: String,
 ) {
     when (row) {
         is TimelineRow.Leg -> LegRow(row, onOpenLegMap)
-        is TimelineRow.Event -> EventRow(row.event)
+        is TimelineRow.Event -> EventRow(row.event, homePoint, homeAddress)
         is TimelineRow.Wait -> WaitRow(row)
     }
 }
@@ -1175,7 +1189,7 @@ private fun LegRow(
 }
 
 @Composable
-private fun EventRow(event: RouteEvent) {
+private fun EventRow(event: RouteEvent, homePoint: GeoPoint? = null, homeAddress: String = "") {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
@@ -1202,7 +1216,7 @@ private fun EventRow(event: RouteEvent) {
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
             )
-            event.subtitle()?.let { sub ->
+            event.subtitle(homePoint, homeAddress)?.let { sub ->
                 Text(
                     text = sub,
                     style = MaterialTheme.typography.bodySmall,
@@ -1246,11 +1260,22 @@ private fun RouteEvent.title(): String = when (this) {
     is RouteEvent.FetchBike -> "Walk back to the bike"
 }
 
-private fun RouteEvent.subtitle(): String? = when (this) {
-    is RouteEvent.Pickup -> dog.address.ifBlank { null }
-    is RouteEvent.Dropoff -> dog.address.ifBlank { null }
+private fun RouteEvent.subtitle(homePoint: GeoPoint? = null, homeAddress: String = ""): String? = when (this) {
+    is RouteEvent.Pickup -> stopAddress(location, dog.address, homePoint, homeAddress)
+    is RouteEvent.Dropoff -> stopAddress(location, dog.address, homePoint, homeAddress)
     else -> null
 }
+
+/** The address to show for a stop: the walker's home address when the stop is at
+ *  home (a boarding dog parked there), otherwise the dog's own address. */
+private fun stopAddress(
+    location: GeoPoint,
+    dogAddress: String,
+    homePoint: GeoPoint?,
+    homeAddress: String,
+): String? =
+    if (homePoint != null && location == homePoint && homeAddress.isNotBlank()) homeAddress
+    else dogAddress.ifBlank { null }
 
 @Composable
 private fun DateSelector(

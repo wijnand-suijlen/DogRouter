@@ -61,6 +61,19 @@ class TodayViewModel(
         .map { it.stopBufferMinutes * 60 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /**
+     * The walker's home location and address, so the timeline can label a stop
+     * at home (e.g. a boarding dog parked at the walker's home) with the home
+     * address instead of the dog's own.
+     */
+    val homePoint: StateFlow<GeoPoint?> = settingsRepository.settings
+        .map { s -> s.homeLatitude?.let { lat -> s.homeLongitude?.let { lon -> GeoPoint(lat, lon) } } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val homeAddress: StateFlow<String> = settingsRepository.settings
+        .map { it.homeAddress }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
     /** The plan for the selected date, recomputed whenever the date or any
      *  underlying data changes. */
     val planState: StateFlow<PlanState> = _selectedDate

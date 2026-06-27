@@ -132,6 +132,18 @@ class SettingsRepository(
         dataStore.edit { it[OVER_WALK_WEIGHT] = weight.coerceAtLeast(0f) }
     }
 
+    suspend fun setBoardingMaxGapMinutes(minutes: Int) {
+        dataStore.edit { it[BOARDING_MAX_GAP_MINUTES] = minutes.coerceAtLeast(1) }
+    }
+
+    suspend fun setBoardingMinWalkMinutes(minutes: Int) {
+        dataStore.edit { it[BOARDING_MIN_WALK_MINUTES] = minutes.coerceAtLeast(1) }
+    }
+
+    suspend fun setBoardingShortWalkMinutes(minutes: Int) {
+        dataStore.edit { it[BOARDING_SHORT_WALK_MINUTES] = minutes.coerceAtLeast(1) }
+    }
+
     suspend fun setHomeAddress(address: String, latitude: Double?, longitude: Double?) {
         dataStore.edit { prefs ->
             prefs[HOME_ADDRESS] = address

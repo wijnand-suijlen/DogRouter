@@ -55,6 +55,12 @@ data class SettingsFormState(
     val overWalkWeightValid: Boolean,
     val restarts: Int,
     val lnsIterations: Int,
+    val boardingMaxGapText: String,
+    val boardingMaxGapValid: Boolean,
+    val boardingMinWalkText: String,
+    val boardingMinWalkValid: Boolean,
+    val boardingShortWalkText: String,
+    val boardingShortWalkValid: Boolean,
     val homeAddress: String,
     val homeLatitude: Double?,
     val homeLongitude: Double?,
@@ -77,6 +83,12 @@ data class SettingsFormState(
             overWalkWeightValid = true,
             restarts = settings.restarts,
             lnsIterations = settings.lnsIterations,
+            boardingMaxGapText = settings.boardingMaxGapMinutes.toString(),
+            boardingMaxGapValid = true,
+            boardingMinWalkText = settings.boardingMinWalkMinutes.toString(),
+            boardingMinWalkValid = true,
+            boardingShortWalkText = settings.boardingShortWalkMinutes.toString(),
+            boardingShortWalkValid = true,
             homeAddress = settings.homeAddress,
             homeLatitude = settings.homeLatitude,
             homeLongitude = settings.homeLongitude,
@@ -199,6 +211,24 @@ class SettingsViewModel(
         val parsed = text.toIntOrNull()?.takeIf { it >= 0 }
         _form.update { it?.copy(bikeOverheadText = text, bikeOverheadValid = parsed != null) }
         parsed?.let { minutes -> viewModelScope.launch { repo.setBikeOverheadMinutes(minutes) } }
+    }
+
+    fun onBoardingMaxGapTextChange(text: String) {
+        val parsed = text.toIntOrNull()?.takeIf { it >= 1 }
+        _form.update { it?.copy(boardingMaxGapText = text, boardingMaxGapValid = parsed != null) }
+        parsed?.let { minutes -> viewModelScope.launch { repo.setBoardingMaxGapMinutes(minutes) } }
+    }
+
+    fun onBoardingMinWalkTextChange(text: String) {
+        val parsed = text.toIntOrNull()?.takeIf { it >= 1 }
+        _form.update { it?.copy(boardingMinWalkText = text, boardingMinWalkValid = parsed != null) }
+        parsed?.let { minutes -> viewModelScope.launch { repo.setBoardingMinWalkMinutes(minutes) } }
+    }
+
+    fun onBoardingShortWalkTextChange(text: String) {
+        val parsed = text.toIntOrNull()?.takeIf { it >= 1 }
+        _form.update { it?.copy(boardingShortWalkText = text, boardingShortWalkValid = parsed != null) }
+        parsed?.let { minutes -> viewModelScope.launch { repo.setBoardingShortWalkMinutes(minutes) } }
     }
 
     fun onHomeAddressTextChange(text: String) {

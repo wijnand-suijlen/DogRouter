@@ -162,6 +162,9 @@ fun SettingsScreen(
                 onOverWalkWeightChange = viewModel::onOverWalkWeightTextChange,
                 onRestartsChange = viewModel::onRestartsChange,
                 onLnsIterationsChange = viewModel::onLnsIterationsChange,
+                onBoardingMaxGapChange = viewModel::onBoardingMaxGapTextChange,
+                onBoardingMinWalkChange = viewModel::onBoardingMinWalkTextChange,
+                onBoardingShortWalkChange = viewModel::onBoardingShortWalkTextChange,
                 onHomeAddressTextChange = viewModel::onHomeAddressTextChange,
                 onHomeAddressPick = viewModel::pickHomeAddressSuggestion,
                 onOpenHomeMapPicker = {
@@ -231,6 +234,9 @@ private fun SettingsForm(
     onOverWalkWeightChange: (String) -> Unit,
     onRestartsChange: (Int) -> Unit,
     onLnsIterationsChange: (Int) -> Unit,
+    onBoardingMaxGapChange: (String) -> Unit,
+    onBoardingMinWalkChange: (String) -> Unit,
+    onBoardingShortWalkChange: (String) -> Unit,
     onHomeAddressTextChange: (String) -> Unit,
     onHomeAddressPick: (AddressSuggestion) -> Unit,
     onOpenHomeMapPicker: () -> Unit,
@@ -433,6 +439,61 @@ private fun SettingsForm(
                 "longer. Default 25; 0 is fastest (multi-start only, no fine-tuning).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(16.dp))
+        SectionTitle("Boarding (sleepover)")
+
+        OutlinedTextField(
+            value = state.boardingMaxGapText,
+            onValueChange = onBoardingMaxGapChange,
+            label = { Text("Max gap between walks") },
+            suffix = { Text("min") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            isError = !state.boardingMaxGapValid,
+            supportingText = {
+                Text(
+                    if (!state.boardingMaxGapValid) "Enter a positive whole number"
+                    else "Longest a boarding dog may go between walks. Default 180.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = state.boardingMinWalkText,
+            onValueChange = onBoardingMinWalkChange,
+            label = { Text("Minimum walk length") },
+            suffix = { Text("min") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            isError = !state.boardingMinWalkValid,
+            supportingText = {
+                Text(
+                    if (!state.boardingMinWalkValid) "Enter a positive whole number"
+                    else "Shortest walk that counts toward a boarding dog's coverage. Default 15.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = state.boardingShortWalkText,
+            onValueChange = onBoardingShortWalkChange,
+            label = { Text("Short-walk cap") },
+            suffix = { Text("min") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            isError = !state.boardingShortWalkValid,
+            supportingText = {
+                Text(
+                    if (!state.boardingShortWalkValid) "Enter a positive whole number"
+                    else "Walk-length cap used when a dog's \"short walks override\" is on " +
+                        "(extreme weather / old dog). Default 30.",
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(Modifier.height(16.dp))
